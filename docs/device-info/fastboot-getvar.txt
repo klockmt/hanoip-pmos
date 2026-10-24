@@ -1,0 +1,73 @@
+kernel: uefi
+version-bootloader[0]: MBM-3.0-hanoip_retail-9522caba9cf-23
+version-bootloader[1]: 0725
+product: hanoip
+board: hanoip
+secure: yes
+hwrev: PVT
+radio: LATAM
+storage-type: UFS
+emmc: N/A
+ufs: 128GB SAMSUNG KM5V8001DM-B622 FV=1500 WB=0
+ram: 4GB SAMSUNG LP4x DIE=16Gb M5-M8=01 07 01 12
+cpu: SM7150 1.0
+channelid: 0x19
+securestate: flashing_unlocked
+factory-modes: disabled
+verity-state: disabled (0)
+iswarrantyvoid: yes
+max-download-size: 805306368
+reason: Reboot mode set to fastboot
+date: 03-24-2022
+sku: XT2135-1
+carrier_sku: XT2135-1
+battid: REDACTED
+battery-voltage: 4355
+cust_md5: 
+max-sparse-size: 268435456
+poweroffalarm: 0
+ro.carrier: retbr
+ro.build.fingerprint[0]: motorola/hanoip_retailnq/hanoip:12
+ro.build.fingerprint[1]: /S2RI32.32-20-9-9-2/1591b-5bf47:us
+ro.build.fingerprint[2]: er/release-keys
+ro.build.version.qcom[0]: LA.UM.9.1.r1-11500.02-SMxxx0.QSSI
+ro.build.version.qcom[1]: 12.0
+version-baseband: M7150_25.333.01.85R HANOIP_LATAMDSDS_CUST
+kernel.version[0]: Linux version 4.14.190-perf+ (nobody@and
+kernel.version[1]: roid-build) (clang version 10.0.7 for An
+kernel.version[2]: droid NDK, GNU ld (binutils-2.27-bd24d23
+kernel.version[3]: f) 2.27.0.20170315) #1 SMP PREEMPT Tue J
+kernel.version[4]: ul 25 12:21:17 CDT 2023
+git:xbl: MBM-3.0-hanoip_retail-c2faf593e-230725
+git:xbl_config: MBM-3.0-hanoip_retail-c2faf593e-230725
+git:aop: MBM-3.0-hanoip_retail-2af95bb-230725
+git:tz: MBM-3.0-hanoip_retail-845be54dd-230725
+git:hyp: MBM-3.0-hanoip_retail-845be54dd-230725
+git:devcfg: MBM-3.0-hanoip_retail-845be54dd-230725
+git:cmnlib: MBM-3.0-hanoip_retail-845be54dd-230725
+git:keymaster: MBM-3.0-hanoip_retail-49ec050-230725
+git:storsec: MBM-3.0-hanoip_retail-845be54dd-230725
+git:prov: MBM-3.0-hanoip_retail-845be54dd-230725
+git:abl: MBM-3.0-hanoip_retail-9522caba9cf-230725
+git:qupfw: MBM-3.0-hanoip_retail-9d9f407-230725
+git:uefisecapp: MBM-3.0-hanoip_retail-845be54dd-230725
+frp-state: no protection (0)
+current-slot: b
+running-bl-slot: _b/_b
+running-boot-lun: 3
+slot-count: 2
+slot-successful:_a: no
+slot-successful:_b: yes
+slot-unbootable:_a: no
+slot-unbootable:_b: no
+slot-retry-count:_a: 7
+slot-retry-count:_b: 6
+logical-block-size: 0x1000
+erase-block-size: 0x1000
+is-userspace: no
+pcb-part-no: REDACTED
+primary-display: tm_ili7807s_fhd_vid
+secondary-display: 
+fdr-allowed: yes
+all: listed above
+Finished. Total time: 0.044s
