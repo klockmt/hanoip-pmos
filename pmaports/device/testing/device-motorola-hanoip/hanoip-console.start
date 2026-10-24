@@ -1,7 +1,13 @@
 #!/bin/sh
 # Runs at the end of boot (OpenRC "local" service).
-# The kernel command line has ignore_loglevel so the whole boot log shows on the screen. Once the system is
-# up, keep the console to warnings: the Motorola kernel prints a "[signal] ... send death sig" line for
-# every signal sent to a process, and with ignore_loglevel they would scribble over the login prompt forever.
-echo 0 > /sys/module/printk/parameters/ignore_loglevel
-dmesg -n 4
+# The screen shows the live kernel log on tty0 and never blanks.
+# The kernel console is kept quiet (dmesg -n 1) so the stream below is the only log on screen; the
+# per-signal "[signal] send death" lines of the Motorola kernel are filtered out as noise.
+# Login stays available over SSH, or on the console with Ctrl+Alt+F2 (getty on tty1).
+# consoleblank is read-only on this kernel; setterm switches the screen blanking off on the console
+pkill -x dmesg 2>/dev/null
+setterm -blank 0 -powersave off -powerdown 0 >/dev/tty0 2>&1
+dmesg -n 1
+# detached: the stream must not keep the caller's session open
+(dmesg -w -l emerg,alert,crit,err,warn,notice,info \
+	| awk '!/\[signal\]/ { print; fflush() }' > /dev/tty0 2>/dev/null) </dev/null >/dev/null 2>&1 &
