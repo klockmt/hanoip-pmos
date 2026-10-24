@@ -1,13 +1,24 @@
 #!/bin/sh
 # Runs at the end of boot (OpenRC "local" service).
 # The screen shows the live kernel log on tty0 and never blanks.
-# The kernel console is kept quiet (dmesg -n 1) so the stream below is the only log on screen; the
-# per-signal "[signal] send death" lines of the Motorola kernel are filtered out as noise.
+# - The kernel console is kept quiet (dmesg -n 1); the stream below is the only log on screen. The per-signal
+#   "[signal] send death" lines of the Motorola kernel are filtered out as noise.
+# - consoleblank is read-only on this kernel. The VT escape ESC[9;0 sets the blanking interval to 0, but it
+#   did not survive boot on its own, so it is sent again every minute.
 # Login stays available over SSH, or on the console with Ctrl+Alt+F2 (getty on tty1).
-# consoleblank is read-only on this kernel; setterm switches the screen blanking off on the console
+
+# stop what an earlier run of this script started
+for pidfile in /run/hanoip-console.pid; do
+	[ -f "$pidfile" ] && kill $(cat "$pidfile") 2>/dev/null
+	rm -f "$pidfile"
+done
 pkill -x dmesg 2>/dev/null
-setterm -blank 0 -powersave off -powerdown 0 >/dev/tty0 2>&1
+
 dmesg -n 1
-# detached: the stream must not keep the caller's session open
+
+# detached, so it does not hold the caller's session open
+( while :; do printf '\033[9;0]' >/dev/tty0; sleep 60; done ) </dev/null >/dev/null 2>&1 &
+echo $! > /run/hanoip-console.pid
 (dmesg -w -l emerg,alert,crit,err,warn,notice,info \
 	| awk '!/\[signal\]/ { print; fflush() }' > /dev/tty0 2>/dev/null) </dev/null >/dev/null 2>&1 &
+echo $! >> /run/hanoip-console.pid
