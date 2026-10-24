@@ -69,7 +69,7 @@ The screen used to stay on the Motorola logo for the whole boot. What was found 
 - Command line (in `scripts/mkbootimg-kernel` and `deviceinfo`): `ignore_loglevel fbcon=font:SUN12x22`. `ignore_loglevel` shows the whole boot log but also every `[signal] ... send death sig` line the Motorola kernel prints for each signal, which scribbles over the login prompt, so `hanoip-console.start` (installed in `/etc/local.d` by the device package, or by `scripts/setup-console`) switches it off and sets `dmesg -n 4` at the end of boot. Checked by rendering the buffer before and after.
 - State after the framebuffer works: OpenRC boot output (coloured `[ ok ]`), then `Welcome to Nura! ... motorola-hanoip login:` on tty1. Still noisy in that log: `systemd-sysusers`/`tmpfiles` fail on 4.14 ("Failed to chase and open directory").
 - **A/B retry counter (found 2026-10-24, important for a server):** each boot of a slot that was never marked successful costs one retry; after ~7 the ABL sets `unbootable=yes` on it and switches the active slot (here to `a`, which holds the old Lineage `boot_a`/`vendor_boot_a`, so nothing useful boots and the phone drops to the bootloader). Android marks the slot successful; pmOS does not. Seen as `fastboot getvar slot-retry-count:b` = 0, `slot-unbootable:b` = yes, `slot-successful:b` = no, `current-slot` = a, after a day of reboots. The fix is the `qbootctl` OpenRC service, which runs `qbootctl -m` at every boot: the device package now depends on `soc-qcom-qbootctl` (as `device-qcom-sm7150` does). A phone installed before that needs it installed by hand: `apk add soc-qcom-qbootctl` (packages `qbootctl`, `qbootctl-openrc` from Alpine edge community; `soc-qcom-qbootctl`, `-openrc` from the pmOS repo, which can be installed offline with `apk add --no-network`), then `qbootctl -m`.
-- Recovery when it happens: `fastboot set_active b` (restores retries and clears `unbootable`; **needs the user to ask for it**, the permission classifier blocks it otherwise), then `fastboot reboot`. With slot `a` active `fastboot boot` of pmOS images does not work either, because vendor_boot comes from the active slot.
+- Recovery when it happens: `fastboot set_active b` (restores retries and clears `unbootable`; the user allowed it, see the working rules), then `fastboot reboot`. With slot `a` active `fastboot boot` of pmOS images does not work either, because vendor_boot comes from the active slot.
 - **Open: not yet seen by eye** (only through the scanout buffer).
 
 ## Boot test results (`fastboot boot`, nothing flashed)
@@ -148,7 +148,8 @@ Active slot `b`. **Lineage was replaced by pmOS** (the user's choice on 24/10): 
 
 ## Working rules
 
-- Do not flash partitions, run `fastboot set_active`, wipe or factory reset unless the user asks.
+- Do not flash partitions beyond what the user asked for, and never wipe or factory reset, unless the user asks.
+- **Allowed without asking (the user authorized it on 2026-10-24):** `fastboot set_active b` and `fastboot reboot`, to recover the A/B slot when the bootloader made slot `b` unbootable (see "A/B retry counter"). Check the slot flags first and say what was done.
 - Before flashing or overwriting anything, inspect the target and compare with the backups (SHA256SUMS).
 - When zeroing the in-use slot's `dtbo` for a test, restore the backup right afterwards, before `fastboot continue` or any reboot.
 - Report test results as they are, failures included.
