@@ -1,0 +1,20 @@
+# Device dumps and proprietary firmware: they contain serial/IMEI/MAC or blobs that cannot be published.
+# Backups live outside the repo, in $HANOIP_BACKUP_DIR and $HANOIP_COLLECTION_DIR (see .env.example).
+*.img
+*.enc.z
+pmsg-ramoops*
+dmesg-ours.txt
+/coleta*/
+/collection*/
+/hanoip-kernel/
+/firmware/
+/identidade/
+/identity/
+/particoes/
+/partitions/
+/device-tree/
+
+# Local configuration (user, paths); the template is .env.example
+.env
+# Output of userspace/modem/build.sh
+/userspace/modem/build/
