@@ -1,0 +1,5 @@
+#!/bin/sh
+# pmbootstrap with the paths from .env (our pmaports checkout and the pmbootstrap executable).
+# Usage: scripts/pmb init   |   scripts/pmb install   |   any pmbootstrap command
+. "$(dirname "$0")/env.sh"
+exec "$PMBOOTSTRAP" -p "$PMAPORTS_DIR" "$@"
