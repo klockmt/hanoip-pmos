@@ -1,0 +1,23 @@
+#!/bin/sh
+# Builds the pmOS image with pmbootstrap: kernel package from the tree built by scripts/build-kernel,
+# the device package, then the rootfs, boot.img and vendor_boot.img. Needs sudo (asks for the password).
+set -eu
+. "$(dirname "$0")/env.sh"
+tree=${1:-$KERNEL_DOWNSTREAM_DIR}
+img=$tree/.output/arch/arm64/boot/Image.gz
+[ -s "$img" ] || { echo "No $img: run scripts/build-kernel first." >&2; exit 1; }
+
+pm() { run "$PMBOOTSTRAP" -p "$PMAPORTS_DIR" "$@"; }
+pm checksum linux-motorola-hanoip
+pm checksum device-motorola-hanoip
+# --envkernel packages the kernel already built in $tree/.output (it does not rebuild it).
+# Do NOT activate envkernel's own build: it runs mrproper and wipes .output.
+if [ -n "${DRY_RUN:-}" ]; then echo "+ (cd $tree && $PMBOOTSTRAP -p $PMAPORTS_DIR build --envkernel linux-motorola-hanoip)"; else (cd "$tree" && "$PMBOOTSTRAP" -p "$PMAPORTS_DIR" build --envkernel linux-motorola-hanoip); fi
+pm build --force device-motorola-hanoip
+pm install
+
+echo
+echo "Artifacts:"
+ls -l "$PMB_WORK/chroot_native/home/pmos/rootfs/motorola-hanoip.img" \
+	"$PMB_WORK/chroot_rootfs_motorola-hanoip/boot/boot.img" \
+	"$PMB_WORK/chroot_rootfs_motorola-hanoip/boot/vendor_boot.img" 2>/dev/null || true
