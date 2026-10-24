@@ -1,0 +1,40 @@
+#!/bin/sh
+# Flashes the pmOS vendor_boot and boot to the active slot, testing before committing:
+#   1. flash vendor_boot (initramfs, cmdline, DTB)
+#   2. `fastboot boot` the boot.img (nothing written) and wait for SSH
+#   3. only if SSH answers: reboot to the bootloader and flash boot, then reboot.
+# Run it with the device in fastboot. DRY_RUN=1 only prints; ASSUME_YES=1 skips the questions.
+# Only slot b was tested by the author; the script warns on any other slot.
+set -eu
+. "$(dirname "$0")/env.sh"
+dir=$(dirname "$0")
+bootdir=${1:-$PMB_WORK/chroot_rootfs_motorola-hanoip/boot}
+[ -f "$bootdir/boot.img" ] && [ -f "$bootdir/vendor_boot.img" ] || { echo "Missing boot.img/vendor_boot.img in $bootdir (run scripts/build-image)." >&2; exit 1; }
+
+fastboot devices | grep -q . || { echo "No device in fastboot (hold Volume Down while powering on, or scripts/reboot-bootloader)." >&2; exit 1; }
+product=$(fastboot getvar product 2>&1 | sed -n 's/^product: *//p')
+[ "$product" = hanoip ] || [ -n "${FORCE:-}" ] || { echo "Device reports product '$product', not hanoip. Refusing (FORCE=1 overrides)." >&2; exit 1; }
+slot=$(fastboot getvar current-slot 2>&1 | sed -n 's/^current-slot: *//p')
+[ -n "$slot" ] || { echo "Could not read current-slot." >&2; exit 1; }
+[ "$slot" = b ] || echo "WARNING: active slot is '$slot'; the port was only tested on slot b." >&2
+
+confirm "Flash vendor_boot_$slot and (after a boot test) boot_$slot from $bootdir?" || { echo aborted; exit 1; }
+run fastboot flash "vendor_boot_$slot" "$bootdir/vendor_boot.img"
+run fastboot boot "$bootdir/boot.img"
+[ -z "${DRY_RUN:-}" ] || { echo "+ wait up to \${BOOT_WAIT:-600}s for SSH, then scripts/reboot-bootloader, flash boot_$slot, fastboot reboot"; exit 0; }
+
+echo "Waiting for SSH at $HANOIP_HOST (the first boot takes a few minutes)..."
+end=$(( $(date +%s) + ${BOOT_WAIT:-600} ))
+net=
+until "$dir/hanoip-ssh" true 2>/dev/null; do
+	[ "$(date +%s)" -lt "$end" ] || { echo "No SSH. boot_$slot was NOT flashed. Check scripts/setup-usb-net and your SSH key; the device is still running the temporary boot." >&2; exit 1; }
+	# The USB interface only exists once the device is up, so give the PC its address as soon as it shows.
+	[ -n "$net" ] || { "$dir/setup-usb-net" >/dev/null 2>&1 && net=1 && echo "USB network configured on the PC." || true; }
+	sleep 5
+done
+echo "SSH is up."
+confirm "The boot test worked. Flash boot_$slot now?" || { echo "Not flashed; the next reboot returns to the old boot_$slot."; exit 0; }
+"$dir/reboot-bootloader"
+fastboot flash "boot_$slot" "$bootdir/boot.img"
+fastboot reboot
+echo "Done. pmOS should come up by itself in a few minutes."
