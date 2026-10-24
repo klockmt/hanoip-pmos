@@ -1,0 +1,18 @@
+--- a/kernel/printk/printk.c
++++ b/kernel/printk/printk.c
+@@ -2116,9 +2116,14 @@
+ 	 * console="" or console=null have been suggested as a way to
+ 	 * disable console output. Use ttynull that has been created
+ 	 * for exacly this purpose.
++	 *
++	 * hanoip: Motorola's ABL rewrites every console= on the command line to
++	 * console=null, so no console could ever be chosen. Use the virtual
++	 * terminal (tty0, drawn by fbcon) instead of discarding all output.
+ 	 */
+ 	if (str[0] == 0 || strcmp(str, "null") == 0) {
+-		__add_preferred_console("ttynull", 0, NULL, NULL);
++		__add_preferred_console("tty", 0, NULL, NULL);
++		console_set_on_cmdline = 1;
+ 		return 1;
+ 	}
+ 
