@@ -162,3 +162,7 @@ I want to be clear about what has and has not been run end to end.
 ## What is not in this repo
 
 Partition backups, the device collection (serial, MAC and IMEI), and the proprietary firmware from `/vendor`. Take them from your own phone with `scripts/backup-partitions` and `scripts/coletar-g60.sh`.
+
+## License
+
+GPL-2.0-only, see [`LICENSE`](LICENSE). The kernel patches and the device-tree sources are derived from the Linux kernel; the packaging, scripts and documentation use the same license. Proprietary firmware and device identifiers are not part of the repository.
