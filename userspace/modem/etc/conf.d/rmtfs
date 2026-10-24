@@ -1,0 +1,2 @@
+# 4.14 has no remoteproc (so no -s); -r: never writes to modemst1/2/fsg.
+command_args="-P -r -v"
