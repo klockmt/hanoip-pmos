@@ -31,7 +31,7 @@ Everything is scripted. Steps marked **[manual]** need your hands on the phone o
 ### 1. Get the repo and configure
 
 ```sh
-git clone https://github.com/klockmt/hanoip-pmos-downstrim.git hanoip && cd hanoip
+git clone https://github.com/klockmt/hanoip-pmos.git hanoip && cd hanoip
 cp .env.example .env      # [manual] set HANOIP_USER (the login name you will use) and adjust paths if you like
 scripts/check-host
 ```
