@@ -4,9 +4,10 @@
 # USB_CONFIGFS_RNDIS, SYSVIPC and FHANDLE for postmarketOS, nftables with its
 # set backends, the qcacld WLAN driver and DEBUG_FS (needs patch 0002).
 # Patch 0003 is the icnss experiment for the Wi-Fi firmware crash.
+# Patches 0004 and 0005 (+ FRAMEBUFFER_CONSOLE and fonts) put the console on the screen.
 pkgname=linux-motorola-hanoip
 pkgver=4.14.357
-pkgrel=3
+pkgrel=5
 pkgdesc="Motorola Moto G (60) downstream kernel (cool585 Cybertron v18)"
 arch="aarch64"
 _carch="arm64"
@@ -26,6 +27,8 @@ source="
 	0001-loop-rescan-partitions-after-block-size-change.patch
 	0002-clk-drop-duplicate-all_lists-for-debugfs.patch
 	0003-icnss-send-host-cap-regdb-and-bdf-like-cnss-daemon.patch
+	0004-printk-map-console-null-to-tty0.patch
+	0005-fbdev-add-hanoip-splash-framebuffer-console.patch
 "
 builddir="$srcdir/$_repository-$_commit"
 
@@ -54,8 +57,10 @@ package() {
 
 sha512sums="
 d56517f53b84077a931aa2911bbc218fd1627cb6d1d6b18885ce43df7705df79fb67f8a766e451e8091ae2ff3d3207dd9039d2a28097bebf3077caac19ca2b13  linux-motorola-hanoip-b92cb6cd8376a426543d48b80383c417a719a619.tar.gz
-5c5dc0c1ce0589abd05ae39bef969fee63c96a587268d27c5bcedaf2b2171eb185f5716ebed305a3e5ac4a0dd38b187f5ed9f084b32e3750b2a39e8014374ba1  config-motorola-hanoip.aarch64
+28faa945e4619f42b9afe886cf591807c71d011be29065eb258a2a4da12b6d583dcf368e79b97c222388b2d525c919e880fc9854158518e75b2531b72b25f58f  config-motorola-hanoip.aarch64
 2689921d0478951e24f88b5594e0344a7a3e710498e0c269bf017c713e17db70277fe3d7193052a2202f749b4af7d84cf8584bce4e47fc37ed6d4e259b9ca441  0001-loop-rescan-partitions-after-block-size-change.patch
 b403d53ba0a4eeb4dfcc8ab849ccce90d370fc18196d80e4bdf73ca031c49772bb3801b8f6c28be5993f3b74c82e1f3ad16b7dd53f112355afbba5a2e0847485  0002-clk-drop-duplicate-all_lists-for-debugfs.patch
 c8d71af7e443467e1800cb6fe3892c5aa44b1c4d841d80aa9e4cd99eab137a1abed6407e533548cab91cebf984d4994de8a49138db24f2b8829177e6314a2ca8  0003-icnss-send-host-cap-regdb-and-bdf-like-cnss-daemon.patch
+7e0ad0e509e5e2e0d143911e49aef0289952aea037d1aa5e9ed68d1ceb03fe336d9c3b7fa2db9b34ad0e5afd203055f86074b61ba552813e6b90b393c5cdec3c  0004-printk-map-console-null-to-tty0.patch
+833d56f2b96f594bb8a672b8fbea2c86b3eec2cb4df74f5049ea06ab2c7be07f10b727f4e0950ea84aa5798516916fc7ac0e9d36e08a2fd00ecdf859e080627c  0005-fbdev-add-hanoip-splash-framebuffer-console.patch
 "
