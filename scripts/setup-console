@@ -1,0 +1,8 @@
+#!/bin/sh
+# Installs the end-of-boot console script on a phone whose image was built without it (new images
+# already include it through the device package). Quiets the console once the boot has finished.
+# DRY_RUN=1 only prints.
+set -eu
+. "$(dirname "$0")/env.sh"
+src=$HANOIP_ROOT/pmaports/device/testing/device-motorola-hanoip/hanoip-console.start
+run "$(dirname "$0")/hanoip-ssh" 'sudo tee /etc/local.d/10-hanoip-console.start >/dev/null && sudo chmod 755 /etc/local.d/10-hanoip-console.start && echo "installed /etc/local.d/10-hanoip-console.start"' < "$src"
