@@ -1,0 +1,43 @@
+# Reference: <https://postmarketos.org/deviceinfo>
+# Please use double quotes only. You can source this file in shell
+# scripts.
+
+deviceinfo_format_version="0"
+deviceinfo_name="Motorola Moto G (60)"
+deviceinfo_manufacturer="Motorola"
+deviceinfo_codename="motorola-hanoip"
+deviceinfo_year="2021"
+deviceinfo_dtb="qcom/sdmmagpie-hanoi-base"
+deviceinfo_append_dtb="false"
+deviceinfo_arch="aarch64"
+deviceinfo_flash_kernel_on_update="true"
+
+# Device related
+deviceinfo_gpu_accelerated="false"
+deviceinfo_chassis="handset"
+deviceinfo_keyboard="false"
+deviceinfo_external_storage="true"
+deviceinfo_screen_width="1080"
+deviceinfo_screen_height="2460"
+
+# Bootloader related
+deviceinfo_flash_method="fastboot"
+# Non-Android options from the stock vendor_boot cmdline.
+deviceinfo_kernel_cmdline="console=ttyMSM0,115200n8 lpm_levels.sleep_disabled=1 service_locator.enable=1 swiotlb=1 loop.max_part=7 printk.devkmsg=on"
+deviceinfo_generate_bootimg="true"
+deviceinfo_bootimg_qcdt="false"
+# The ABL only runs header v3 images; DTB and dtbo stay stock (vendor_boot/dtbo).
+deviceinfo_header_version="3"
+# Stock kernel and ABL only unpack LZ4 legacy ramdisks.
+deviceinfo_initfs_compression="lz4"
+# Same base, offsets and version as the stock vendor_boot (unpack_bootimg).
+deviceinfo_bootimg_custom_args="--base 0x00000000 --kernel_offset 0x00008000 --ramdisk_offset 0x01000000 --tags_offset 0x00000100 --dtb_offset 0x01f00000 --os_version 15.0.0 --os_patch_level 2025-04"
+deviceinfo_bootimg_dtb_second="false"
+deviceinfo_flash_pagesize="4096"
+deviceinfo_flash_offset_base="0x00000000"
+deviceinfo_flash_offset_kernel="0x00008000"
+deviceinfo_flash_offset_ramdisk="0x01000000"
+deviceinfo_flash_offset_second="0x00000000"
+deviceinfo_flash_offset_tags="0x00000100"
+# UFS uses 4096-byte logical sectors; the GPT inside userdata must match for fdisk.
+deviceinfo_rootfs_image_sector_size="4096"

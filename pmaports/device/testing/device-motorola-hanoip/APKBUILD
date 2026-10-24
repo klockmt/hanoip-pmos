@@ -1,0 +1,50 @@
+# Reference: <https://postmarketos.org/devicepkg>
+# Motorola Moto G (60) "hanoip" (XT2135-1), SM7150. Bring-up package.
+
+pkgname=device-motorola-hanoip
+pkgdesc="Motorola Moto G (60)"
+pkgver=0
+pkgrel=0
+url="https://postmarketos.org"
+license="MIT"
+arch="aarch64"
+options="!check !archcheck"
+depends="
+	android-tools
+	firmware-qcom-sm7150
+	mkbootimg-osm0sis
+	postmarketos-base
+	soc-qcom
+"
+makedepends="devicepkg-dev"
+subpackages="
+	$pkgname-kernel-downstream:kernel_downstream
+	$pkgname-kernel-mainline:kernel_mainline
+"
+source="
+	deviceinfo
+"
+
+build() {
+	devicepkg_build $startdir $pkgname
+}
+
+package() {
+	devicepkg_package $startdir $pkgname
+}
+
+kernel_downstream() {
+	pkgdesc="Downstream kernel (cool585 Cybertron, works)"
+	depends="linux-motorola-hanoip"
+	devicepkg_subpackage_kernel $startdir $pkgname $subpkgname
+}
+
+kernel_mainline() {
+	pkgdesc="Mainline kernel for Motorola Moto G (60)"
+	depends="linux-postmarketos-qcom-sm7150"
+	devicepkg_subpackage_kernel $startdir $pkgname $subpkgname
+}
+
+sha512sums="
+c5f3eaf1d8247712cdcb69a0adf6d34052c77c4f58647c50a5dfa06894f8135b7221876962b58a1288a0c2f4f52fcc44a9cd6d1871e42c244e2e83d9a4989d4c  deviceinfo
+"
