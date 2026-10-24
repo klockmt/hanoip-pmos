@@ -1,0 +1,35 @@
+#!/bin/sh
+# Writes the pmOS rootfs image to the `userdata` partition through a recovery with adb, then reads it
+# back and compares SHA-256. Motorola's fastboot refuses to flash userdata, hence the recovery.
+# ERASES userdata (all user data on the device). DRY_RUN=1 only prints; ASSUME_YES=1 skips the question.
+#
+# Before running: boot a recovery that has adb with root (LineageOS recovery: Advanced > Enable ADB;
+# then `adb devices` must list the device). To get there after pmOS replaced vendor_boot_b, restore the
+# backups first:  fastboot flash vendor_boot_b <backup>/vendor_boot_b.img ; fastboot reboot recovery
+set -eu
+. "$(dirname "$0")/env.sh"
+img=${1:-$PMB_WORK/chroot_native/home/pmos/rootfs/motorola-hanoip.img}
+[ -f "$img" ] || { echo "No rootfs image at $img (run scripts/build-image)." >&2; exit 1; }
+size=$(wc -c < "$img")
+[ $((size % 4096)) -eq 0 ] || { echo "Image size $size is not a multiple of 4096." >&2; exit 1; }
+
+state=$(adb get-state 2>/dev/null || true)
+[ "$state" = recovery ] || { echo "adb state is '${state:-none}', expected 'recovery' (see the header of this script)." >&2; exit 1; }
+device=$(adb shell getprop ro.product.device | tr -d '\r')
+[ "$device" = hanoip ] || [ -n "${FORCE:-}" ] || { echo "Device reports '$device', not hanoip. Refusing (FORCE=1 overrides)." >&2; exit 1; }
+
+echo "Image: $img ($size bytes)"
+confirm "This ERASES userdata on the connected $device. Continue?" || { echo aborted; exit 1; }
+
+if [ -n "${DRY_RUN:-}" ]; then
+	echo "+ adb exec-in \"dd of=/dev/block/by-name/userdata bs=4M\" < $img"
+	echo "+ read back $((size / 4096)) blocks of 4096 from userdata and compare sha256"
+	exit 0
+fi
+want=$(sha256sum "$img" | cut -d' ' -f1)
+adb exec-in "dd of=/dev/block/by-name/userdata bs=4M" < "$img"
+adb shell 'sync; echo 3 > /proc/sys/vm/drop_caches'
+got=$(adb exec-out "dd if=/dev/block/by-name/userdata bs=4096 count=$((size / 4096)) 2>/dev/null" | sha256sum | cut -d' ' -f1)
+echo "image: $want"
+echo "read:  $got"
+[ "$want" = "$got" ] && echo "userdata written and verified." || { echo "MISMATCH: write again." >&2; exit 1; }
