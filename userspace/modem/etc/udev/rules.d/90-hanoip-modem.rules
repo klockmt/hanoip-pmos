@@ -1,0 +1,4 @@
+# rmtfs looks for the EFS shared memory at /dev/qcom_rmtfs_uio1 (4.14 exposes it as the uio device named "rmtfs").
+SUBSYSTEM=="uio", ATTR{name}=="rmtfs", SYMLINK+="qcom_rmtfs_uio1"
+# The modem asks for the "fsg" partition, which on the hanoip only exists per slot; pmOS runs on slot b.
+SUBSYSTEM=="block", ENV{ID_PART_ENTRY_NAME}=="fsg_b", SYMLINK+="disk/by-partlabel/fsg"
