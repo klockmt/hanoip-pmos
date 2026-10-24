@@ -1,0 +1,52 @@
+#!/bin/sh
+# Self-check of this repository; run it before every commit/push. Exits 1 on any problem.
+# It looks for classes of private data with generic patterns (it never stores a real value).
+cd "$(dirname "$0")/.." || exit 1
+bad=0
+fail() { echo "FAIL  $*"; bad=1; }
+ok() { echo "ok    $*"; }
+
+# 1. every script parses
+for f in scripts/*; do
+	sh -n "$f" 2>/dev/null || fail "syntax error in $f"
+done
+[ $bad -eq 0 ] && ok "all scripts parse"
+
+# 2. APKBUILD checksums match the files next to them (the kernel tarball is skipped: it is downloaded)
+for d in pmaports/device/*/*/; do
+	[ -f "$d/APKBUILD" ] || continue
+	grep -E '^[0-9a-f]{128}  ' "$d/APKBUILD" | while read -r sum name; do
+		[ -f "$d/$name" ] || continue
+		[ "$(sha512sum "$d/$name" | cut -d' ' -f1)" = "$sum" ] || echo "stale checksum: $d$name"
+	done
+done > /tmp/hanoip-check-sums.$$
+if [ -s /tmp/hanoip-check-sums.$$ ]; then while read -r l; do fail "$l"; done < /tmp/hanoip-check-sums.$$; else ok "APKBUILD checksums match"; fi
+rm -f /tmp/hanoip-check-sums.$$
+
+# 3. the patch copies in the package and in kernel/downstream-patches are identical
+for p in kernel/downstream-patches/*.patch; do
+	cmp -s "$p" "pmaports/device/downstream/linux-motorola-hanoip/$(basename "$p")" || fail "patch copy differs or is missing: $(basename "$p")"
+done
+[ $bad -eq 0 ] && ok "patch copies identical"
+
+# 4. private data. Only files git would commit are scanned (tracked, plus untracked and not ignored).
+files=$(git ls-files; git ls-files -o --exclude-standard)
+hits=$(for f in $files; do [ -f "$f" ] || continue; case $f in *.dtb) continue;; esac
+	grep -InE '([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}' "$f" | grep -v '00:00:00:00:00:00' | sed "s|^|$f:|"
+	grep -InE 'androidboot\.serialno=[^X"[:space:]]' "$f" | sed "s|^|$f:|"
+	grep -InE 'linux,seriallow *= *<0x0*[1-9a-f]' "$f" | sed "s|^|$f:|"
+	grep -InE 'mmi,battid *= *"[^R]' "$f" | sed "s|^|$f:|"
+	grep -InE '^(battid|pcb-part-no): *[^R ]' "$f" | sed "s|^|$f:|"
+	grep -InE '(^|[[:space:]"'"'"'=:(])/home/[a-z][a-z0-9_-]*/' "$f" | sed "s|^|$f:|"
+	grep -InE '[A-Za-z0-9._-]+@[A-Za-z0-9-]+\.(com|org|net|io|dev)' "$f" | grep -v 'noreply@' | sed "s|^|$f:|"
+done)
+if [ -n "$hits" ]; then echo "$hits" | cut -c1-160 | while read -r l; do fail "private-looking data: $l"; done; bad=1; else ok "no private-looking data in committable files"; fi
+# the DTB is binary: check the same fields through fdtget when available
+if command -v fdtget >/dev/null 2>&1; then
+	s=$(fdtget -t x docs/device-info/running.dtb /chosen linux,seriallow 2>/dev/null)
+	[ "${s:-0}" = 0 ] && ok "running.dtb serial zeroed" || fail "running.dtb has a non-zero linux,seriallow"
+fi
+# .env must stay out of git
+git check-ignore -q .env && ok ".env is ignored" || fail ".env is NOT ignored"
+
+[ $bad -eq 0 ] && echo "Repository check passed." || { echo "Repository check FAILED." >&2; exit 1; }
