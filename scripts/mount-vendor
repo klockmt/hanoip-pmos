@@ -1,0 +1,12 @@
+#!/bin/sh
+# Mounts Android's vendor_b (inside super) read-only on /mnt/vendor, on the device.
+# vendor_b is a single linear extent of super; the sectors come from: lpdump -s 1 /dev/disk/by-partlabel/super
+# Usage: scripts/mount-vendor        (mount)
+#        scripts/mount-vendor -u     (unmount and release the loop)
+set -eu
+start=18258944 # 512-byte sectors
+count=1313712
+if [ "${1:-}" = -u ]; then
+	exec "$(dirname "$0")/hanoip-ssh" 'sudo sh -c "umount /mnt/vendor; for l in \$(losetup -a | grep -F /dev/sdb23 | cut -d: -f1); do losetup -d \$l; done"'
+fi
+exec "$(dirname "$0")/hanoip-ssh" "sudo sh -c 'L=\$(losetup -r -f --show -o \$(($start * 512)) --sizelimit \$(($count * 512)) /dev/disk/by-partlabel/super) && mkdir -p /mnt/vendor && mount -o ro,noload \$L /mnt/vendor && echo mounted on /mnt/vendor'"
