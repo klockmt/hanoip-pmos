@@ -1,0 +1,22 @@
+#!/bin/sh
+# Recomputes the sha512sums in this repo's APKBUILDs for every source file that sits next to the APKBUILD
+# (config, patches, deviceinfo). The downloaded kernel tarball is left alone. It saves a `pmbootstrap
+# checksum` round trip, and a stale sum makes the package build fail. New sources: add them to source=
+# and a line "<128 zeros>  <name>" to sha512sums, then run this.
+set -eu
+cd "$(dirname "$0")/.."
+for apk in pmaports/device/*/*/APKBUILD; do
+	d=$(dirname "$apk")
+	tmp=$apk.new
+	: > "$tmp"
+	while IFS= read -r line; do
+		case $line in
+		[0-9a-f]*"  "*)
+			hash=${line%%  *}
+			name=${line#*  }
+			if [ ${#hash} -eq 128 ] && [ -f "$d/$name" ]; then line="$(sha512sum "$d/$name" | cut -d' ' -f1)  $name"; fi ;;
+		esac
+		printf '%s\n' "$line" >> "$tmp"
+	done < "$apk"
+	if cmp -s "$tmp" "$apk"; then rm -f "$tmp"; else mv "$tmp" "$apk"; echo "updated $apk"; fi
+done
