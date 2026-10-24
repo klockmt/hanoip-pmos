@@ -22,8 +22,9 @@ deviceinfo_screen_height="2460"
 
 # Bootloader related
 deviceinfo_flash_method="fastboot"
-# Non-Android options from the stock vendor_boot cmdline.
-deviceinfo_kernel_cmdline="console=ttyMSM0,115200n8 lpm_levels.sleep_disabled=1 service_locator.enable=1 swiotlb=1 loop.max_part=7 printk.devkmsg=on"
+# Non-Android options from the stock vendor_boot cmdline. The ABL rewrites every console= to console=null
+# (patch 0004 turns that into tty0); ignore_loglevel shows the whole boot log on the screen.
+deviceinfo_kernel_cmdline="console=tty0 lpm_levels.sleep_disabled=1 service_locator.enable=1 swiotlb=1 loop.max_part=7 printk.devkmsg=on ignore_loglevel fbcon=font:SUN12x22"
 deviceinfo_generate_bootimg="true"
 deviceinfo_bootimg_qcdt="false"
 # The ABL only runs header v3 images; DTB and dtbo stay stock (vendor_boot/dtbo).

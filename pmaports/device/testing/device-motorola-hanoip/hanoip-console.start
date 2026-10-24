@@ -1,0 +1,7 @@
+#!/bin/sh
+# Runs at the end of boot (OpenRC "local" service).
+# The kernel command line has ignore_loglevel so the whole boot log shows on the screen. Once the system is
+# up, keep the console to warnings: the Motorola kernel prints a "[signal] ... send death sig" line for
+# every signal sent to a process, and with ignore_loglevel they would scribble over the login prompt forever.
+echo 0 > /sys/module/printk/parameters/ignore_loglevel
+dmesg -n 4

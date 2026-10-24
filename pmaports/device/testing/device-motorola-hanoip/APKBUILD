@@ -4,7 +4,7 @@
 pkgname=device-motorola-hanoip
 pkgdesc="Motorola Moto G (60)"
 pkgver=0
-pkgrel=0
+pkgrel=1
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -23,6 +23,7 @@ subpackages="
 "
 source="
 	deviceinfo
+	hanoip-console.start
 "
 
 build() {
@@ -31,6 +32,7 @@ build() {
 
 package() {
 	devicepkg_package $startdir $pkgname
+	install -Dm755 "$srcdir/hanoip-console.start" "$pkgdir/etc/local.d/10-hanoip-console.start"
 }
 
 kernel_downstream() {
@@ -46,5 +48,6 @@ kernel_mainline() {
 }
 
 sha512sums="
-c5f3eaf1d8247712cdcb69a0adf6d34052c77c4f58647c50a5dfa06894f8135b7221876962b58a1288a0c2f4f52fcc44a9cd6d1871e42c244e2e83d9a4989d4c  deviceinfo
+c71ed0c5d3357addd5bf1314ecacdd1f8964ed731e71d6ef9856f2c56323b32e0e0ba57182cca9798a7c743f8f91ff224364df57d0445d1e17a89571b8da1078  deviceinfo
+dc8db90c3d3cb329658e88ef4f9578a2a9db876919585bdf5bc709b41b210a847da0e872577f987b09117044c7264ca3d5b72f2a78a241c2205a19fe03cdbc17  hanoip-console.start
 "
