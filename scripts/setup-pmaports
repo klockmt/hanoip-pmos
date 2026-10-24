@@ -1,0 +1,22 @@
+#!/bin/sh
+# Prepares the pmaports checkout: the exact official commit this port was built on
+# (pmaports/PMAPORTS_COMMIT) plus this repo's two device packages. Run it BEFORE `pmbootstrap init`
+# so the device motorola-hanoip exists when init asks for it. DRY_RUN=1 only prints.
+set -eu
+. "$(dirname "$0")/env.sh"
+commit=$(awk 'NR==1{print $1}' "$HANOIP_ROOT/pmaports/PMAPORTS_COMMIT")
+url=https://gitlab.postmarketos.org/postmarketOS/pmaports.git
+
+if [ ! -d "$PMAPORTS_DIR/.git" ]; then
+	run mkdir -p "$PMAPORTS_DIR"
+	run git -C "$PMAPORTS_DIR" init -q
+	run git -C "$PMAPORTS_DIR" remote add origin "$url"
+fi
+if [ "$(git -C "$PMAPORTS_DIR" rev-parse HEAD 2>/dev/null || true)" != "$commit" ]; then
+	run git -C "$PMAPORTS_DIR" fetch --depth 1 origin "$commit"
+	run git -C "$PMAPORTS_DIR" checkout -q FETCH_HEAD
+fi
+run mkdir -p "$PMAPORTS_DIR/device"
+run cp -r "$HANOIP_ROOT/pmaports/device/." "$PMAPORTS_DIR/device/"
+echo "pmaports ready in $PMAPORTS_DIR at $commit with device-motorola-hanoip and linux-motorola-hanoip."
+echo "Next: run '$PMBOOTSTRAP -p $PMAPORTS_DIR init' once (interactive), then scripts/configure-pmbootstrap."
