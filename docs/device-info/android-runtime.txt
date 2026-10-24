@@ -1,0 +1,10 @@
+cgroup_disable=pressure quiet rcupdate.rcu_expedited=1 rcu_nocbs=0-7 noirqdebug kpti=off mitigations=off console=null androidboot.hardware=qcom androidboot.memcg=1 lpm_levels.sleep_disabled=1 service_locator.enable=1 swiotlb=1 androidboot.usbcontroller=a600000.dwc3 loop.max_part=7 printk.devkmsg=on firmware_class.path=/vendor/firmware_mnt/image quiet androidboot.verifiedbootstate=orange androidboot.keymaster=1 androidboot.bootdevice=1d84000.ufshc androidboot.fstab_suffix=default androidboot.boot_devices=soc/1d84000.ufshc androidboot.serialno=XXXXXXXXXX androidboot.device=hanoip androidboot.revision=pvt androidboot.hwrev=0xC000 androidboot.radio=LATAM androidboot.powerup_reason=0x00004000 androidboot.bootreason=reboot msm_poweroff.download_mode=0 wifimacaddr=00:00:00:00:00:00,00:00:00:00:00:00 androidboot.btmacaddr=00:00:00:00:00:00 androidboot.bootloader=MBM-3.0-hanoip_retail-9522caba9cf-230725 androidboot.carrier=retbr androidboot.hardware.sku=XT2135-1 androidboot.mode=normal androidboot.baseband=msm msm_drm.dsi_display0=dsi_ili7807s_tm_678_vid_display: androidboot.slot_suffix=_b rootwait ro init=/init androidboot.dtbo_idx=1 androidboot.dtb_idx=0 androidboot.force_normal_boot=1 storage_mfrid=0x1CE androidboot.sku_variant=nq androidboot.dualsim=true androidboot.secure_hardware=1 androidboot.cid=0x0032 androidboot.write_protect=0 androidboot.bl_state=2 androidboot.ssm_data=00000000000F1111
+
+Linux localhost 4.14.357-openela-Cybertron-v18-ksu-g2ba54960868a #42 SMP PREEMPT Wed Oct 14 14:13:02 IST 2026 aarch64 Toybox
+
+Linux version 4.14.357-openela-Cybertron-v18-ksu-g2ba54960868a (cool585@cybertron) (Neutron clang version 19.0.0git (https://github.com/llvm/llvm-project.git fd3eaf76ba3392a4406247d996e757ef49f7a8b2), Neutron LLD 19.0.0) #42 SMP PREEMPT Wed Oct 14 14:13:02 IST 2026
+
+hanoip
+qcom
+sm6150
+
