@@ -1,12 +1,15 @@
 #!/bin/sh
 # Builds the v3 boot.img with only the kernel (initramfs, DTB and cmdline stay in the pmOS vendor_boot).
-# Usage: scripts/mkbootimg-kernel [Image.gz] [output]
+# Usage: scripts/mkbootimg-kernel [Image.gz] [output]     (an empty first argument means the default kernel)
+# KERNEL_CMDLINE sets the parameters in the boot.img header (the bootloader appends them to vendor_boot's).
+# The default shows the whole boot log on the screen (ignore_loglevel) in the 12x22 font; KERNEL_CMDLINE= empties it.
 set -eu
 . "$(dirname "$0")/env.sh"
-kernel=${1:-$KERNEL_DOWNSTREAM_DIR/.output/arch/arm64/boot/Image.gz}
+kernel=${1:-}
+[ -n "$kernel" ] || kernel=$KERNEL_DOWNSTREAM_DIR/.output/arch/arm64/boot/Image.gz
 out=${2:-boot.img}
 mkbootimg --header_version 3 --os_version 15.0.0 --os_patch_level 2025-04 \
-	--kernel "$kernel" --cmdline '' -o "$out"
+	--kernel "$kernel" --cmdline "${KERNEL_CMDLINE-ignore_loglevel fbcon=font:SUN12x22}" -o "$out"
 # The ABL only loads a gzip kernel (Image.gz), not EFI zboot.
 [ "$(od -An -tx1 -j4096 -N2 "$out" | tr -d ' ')" = 1f8b ] || { echo "kernel in $out is not gzip" >&2; exit 1; }
 echo "$out"
