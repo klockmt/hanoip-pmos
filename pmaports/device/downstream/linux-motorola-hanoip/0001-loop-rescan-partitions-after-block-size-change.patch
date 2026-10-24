@@ -1,0 +1,17 @@
+--- a/drivers/block/loop.c
++++ b/drivers/block/loop.c
+@@ -1404,6 +1404,14 @@
+ out_unfreeze:
+ 	blk_mq_unfreeze_queue(lo->lo_queue);
+ 
++	/*
++	 * The partition table layout depends on the logical block size, so
++	 * rescan it like newer kernels do (LOOP_CONFIGURE sets the size first).
++	 * Without this, "losetup -P --sector-size 4096" finds no partitions.
++	 */
++	if (!err && (lo->lo_flags & LO_FLAGS_PARTSCAN))
++		loop_reread_partitions(lo, lo->lo_device);
++
+ 	return err;
+ }
+ 

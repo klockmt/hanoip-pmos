@@ -1,0 +1,55 @@
+# Reference: <https://postmarketos.org/vendorkernel>
+# Kernel config based on: /proc/config.gz of the Cybertron v18 kernel running
+# on LineageOS 22.1, plus DEVTMPFS, DEVTMPFS_MOUNT, USB_CONFIGFS_ECM,
+# USB_CONFIGFS_RNDIS, SYSVIPC and FHANDLE for postmarketOS.
+pkgname=linux-motorola-hanoip
+pkgver=4.14.357
+pkgrel=2
+pkgdesc="Motorola Moto G (60) downstream kernel (cool585 Cybertron v18)"
+arch="aarch64"
+_carch="arm64"
+_flavor="motorola-hanoip"
+url="https://github.com/cool585/android_kernel_motorola_sm6150"
+license="GPL-2.0-only"
+options="!strip !check !tracedeps pmb:cross-native"
+makedepends="bash bc bison clang devicepkg-dev dtc flex linux-headers lld llvm openssl-dev perl"
+
+# Source
+_repository="android_kernel_motorola_sm6150"
+_commit="b92cb6cd8376a426543d48b80383c417a719a619"
+_config="config-$_flavor.$arch"
+source="
+	$pkgname-$_commit.tar.gz::https://github.com/cool585/$_repository/archive/$_commit.tar.gz
+	$_config
+	0001-loop-rescan-partitions-after-block-size-change.patch
+"
+builddir="$srcdir/$_repository-$_commit"
+
+prepare() {
+	default_prepare
+	. downstreamkernel_prepare
+}
+
+build() {
+	unset LDFLAGS
+	# clang >= 16 turns these warnings into errors; the 4.14 tree still triggers them.
+	_w="-Wno-error=incompatible-pointer-types -Wno-error=incompatible-function-pointer-types"
+	_w="$_w -Wno-error=int-conversion -Wno-error=implicit-function-declaration -Wno-error=implicit-int"
+	make ARCH="$_carch" LLVM=1 LLVM_IAS=1 CC=clang HOSTCC="clang $_w" \
+		KCFLAGS="-Wno-error $_w" \
+		DTC=dtc KBUILD_BUILD_VERSION="$((pkgrel + 1 ))-postmarketOS" Image.gz dtbs
+}
+
+package() {
+	# The DTB goes into vendor_boot (header v3), so ship the plain Image.gz.
+	KERNEL_IMAGE_NAME=Image.gz downstreamkernel_package "$builddir" "$pkgdir" "$_carch" "$_flavor" "$_outdir"
+	# Base DTB for vendor_boot; the stock dtbo applies the board overlay on top.
+	install -Dm644 "$builddir/arch/$_carch/boot/dts/qcom/sdmmagpie-hanoi-base.dtb" \
+		"$pkgdir/boot/dtbs/qcom/sdmmagpie-hanoi-base.dtb"
+}
+
+sha512sums="
+d56517f53b84077a931aa2911bbc218fd1627cb6d1d6b18885ce43df7705df79fb67f8a766e451e8091ae2ff3d3207dd9039d2a28097bebf3077caac19ca2b13  linux-motorola-hanoip-b92cb6cd8376a426543d48b80383c417a719a619.tar.gz
+51928aff9c66a1d2eade886649b83131c4f288a5a4242c474621f5f41e4684fa6d5a120c8a3bc46b356b26d19961559a29cf1093b011dd004bd28ac0287decb6  config-motorola-hanoip.aarch64
+2689921d0478951e24f88b5594e0344a7a3e710498e0c269bf017c713e17db70277fe3d7193052a2202f749b4af7d84cf8584bce4e47fc37ed6d4e259b9ca441  0001-loop-rescan-partitions-after-block-size-change.patch
+"
