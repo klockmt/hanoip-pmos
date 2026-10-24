@@ -1,0 +1,4 @@
+#!/bin/sh
+# Marks the current boot as successful in the Android A/B interface. Without it the bootloader
+# spends a retry on every boot and, after about seven, makes the slot unbootable.
+qbootctl -m >/dev/null 2>&1 || true

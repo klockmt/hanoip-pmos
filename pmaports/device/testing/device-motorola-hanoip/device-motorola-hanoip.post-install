@@ -1,0 +1,13 @@
+#!/bin/sh
+# Things that do not work on the 4.14 kernel, removed from the runlevels on install:
+# - systemd-sysusers and systemd-tmpfiles use openat2 (kernel 5.6+), so they cannot read any
+#   sysusers.d/tmpfiles.d directory. The users the system needs already exist.
+# - the qbootctl service runs one command and exits; it is run from /etc/local.d instead.
+for svc in systemd-sysusers systemd-tmpfiles-setup systemd-tmpfiles-setup-dev \
+	systemd-tmpfiles-setup-dev-early systemd-tmpfiles-clean; do
+	for lvl in sysinit boot default shutdown; do
+		rc-update del "$svc" "$lvl" >/dev/null 2>&1 || true
+	done
+done
+rc-update del qbootctl default >/dev/null 2>&1 || true
+exit 0
