@@ -1,0 +1,287 @@
+--- a/drivers/soc/qcom/icnss.c
++++ b/drivers/soc/qcom/icnss.c
+@@ -1007,6 +1007,9 @@
+ 		goto err_power_on;
+ 	}
+ 
++	if (wlfw_host_cap_send_sync_msg(penv) < 0)
++		icnss_pr_err("Host capability request failed\n");
++
+ 	if (!penv->msa_va) {
+ 		icnss_pr_err("Invalid MSA address\n");
+ 		ret = -EINVAL;
+@@ -1042,6 +1045,16 @@
+ 	wlfw_dynamic_feature_mask_send_sync_msg(penv,
+ 						dynamic_feature_mask);
+ 
++	/* cnss-daemon's job on Android: without the board data the firmware crashes. */
++	if (wlfw_bdf_dnld_send_sync_msg(penv, true) < 0)
++		icnss_pr_err("REGDB download failed\n");
++	ret = wlfw_bdf_dnld_send_sync_msg(penv, false);
++	if (ret < 0)
++		icnss_pr_err("BDF download failed: %d\n", ret);
++	else if (wlfw_cal_report_send_sync_msg(penv) < 0)
++		icnss_pr_err("Cal report failed\n");
++	ret = 0;
++
+ 	if (!penv->fw_error_fatal_irq)
+ 		register_fw_error_notifications(&penv->pdev->dev);
+ 
+--- a/drivers/soc/qcom/icnss_qmi.c
++++ b/drivers/soc/qcom/icnss_qmi.c
+@@ -26,6 +26,8 @@
+ #include <linux/ipc_logging.h>
+ #include <linux/thread_info.h>
+ #include <linux/soc/qcom/qmi.h>
++#include <linux/firmware.h>
++#include <linux/platform_device.h>
+ #include <soc/qcom/icnss.h>
+ #include <soc/qcom/service-locator.h>
+ #include <soc/qcom/service-notifier.h>
+@@ -1434,3 +1436,214 @@
+ 	priv->stats.vbatt_req_err++;
+ 	return ret;
+ }
++
++/*
++ * On Android it is cnss-daemon (userspace) that sends the board data to the
++ * firmware. Without it the WCN3990 firmware crashes right after the capability
++ * exchange. Same flow as ath10k on mainline: just the BDF (file_id 0, no
++ * bdf_type) and an empty cal_report.
++ */
++int wlfw_bdf_dnld_send_sync_msg(struct icnss_priv *priv, bool regdb)
++{
++	struct wlfw_bdf_download_req_msg_v01 *req;
++	struct wlfw_bdf_download_resp_msg_v01 *resp;
++	const struct firmware *fw;
++	char filename[32];
++	struct qmi_txn txn;
++	unsigned int remaining;
++	const u8 *temp;
++	int ret;
++
++	if (regdb)
++		snprintf(filename, sizeof(filename), "regdb.bin");
++	else if (priv->board_id == 0xFF)
++		snprintf(filename, sizeof(filename), "bdwlan.bin");
++	else
++		snprintf(filename, sizeof(filename), "bdwlan.b%02x",
++			 priv->board_id);
++
++	ret = request_firmware(&fw, filename, &priv->pdev->dev);
++	if (ret) {
++		icnss_pr_err("Failed to load BDF %s: %d\n", filename, ret);
++		return ret;
++	}
++
++	req = kzalloc(sizeof(*req), GFP_KERNEL);
++	resp = kzalloc(sizeof(*resp), GFP_KERNEL);
++	if (!req || !resp) {
++		ret = -ENOMEM;
++		goto out;
++	}
++
++	icnss_pr_info("Downloading BDF %s, size %zu\n", filename, fw->size);
++
++	temp = fw->data;
++	remaining = fw->size;
++	while (remaining) {
++		req->valid = 1;
++		req->file_id_valid = 1;
++		req->file_id = 0;
++		req->total_size_valid = 1;
++		req->total_size = fw->size;
++		req->seg_id_valid = 1;
++		req->data_valid = 1;
++		req->end_valid = 1;
++		/* type 4 = REGDB, as in cnss2; the BDF goes without a type, as in ath10k */
++		req->bdf_type_valid = regdb;
++		req->bdf_type = regdb ? 4 : 0;
++
++		if (remaining > QMI_WLFW_MAX_DATA_SIZE_V01) {
++			req->data_len = QMI_WLFW_MAX_DATA_SIZE_V01;
++		} else {
++			req->data_len = remaining;
++			req->end = 1;
++		}
++		memcpy(req->data, temp, req->data_len);
++
++		ret = qmi_txn_init(&priv->qmi, &txn,
++				   wlfw_bdf_download_resp_msg_v01_ei, resp);
++		if (ret < 0)
++			goto out;
++
++		ret = qmi_send_request(&priv->qmi, NULL, &txn,
++				       QMI_WLFW_BDF_DOWNLOAD_REQ_V01,
++				       WLFW_BDF_DOWNLOAD_REQ_MSG_V01_MAX_MSG_LEN,
++				       wlfw_bdf_download_req_msg_v01_ei, req);
++		if (ret < 0) {
++			qmi_txn_cancel(&txn);
++			goto out;
++		}
++
++		ret = qmi_txn_wait(&txn, WLFW_TIMEOUT);
++		if (ret < 0)
++			goto out;
++
++		/* end = 1 makes the firmware check the CRC; as in ath10k, MALFORMED on the last segment is not fatal */
++		if (resp->resp.result != QMI_RESULT_SUCCESS_V01 &&
++		    !(req->end == 1 &&
++		      resp->resp.error == QMI_ERR_MALFORMED_MSG_V01)) {
++			icnss_pr_err("BDF download rejected, result: %d error: %d\n",
++				     resp->resp.result, resp->resp.error);
++			ret = -EINVAL;
++			goto out;
++		}
++
++		remaining -= req->data_len;
++		temp += req->data_len;
++		req->seg_id++;
++	}
++	ret = 0;
++
++out:
++	kfree(resp);
++	kfree(req);
++	release_firmware(fw);
++	return ret;
++}
++
++int wlfw_cal_report_send_sync_msg(struct icnss_priv *priv)
++{
++	struct wlfw_cal_report_req_msg_v01 req = {};
++	struct wlfw_cal_report_resp_msg_v01 resp = {};
++	struct qmi_txn txn;
++	int ret;
++
++	ret = qmi_txn_init(&priv->qmi, &txn, wlfw_cal_report_resp_msg_v01_ei,
++			   &resp);
++	if (ret < 0)
++		return ret;
++
++	ret = qmi_send_request(&priv->qmi, NULL, &txn,
++			       QMI_WLFW_CAL_REPORT_REQ_V01,
++			       WLFW_CAL_REPORT_REQ_MSG_V01_MAX_MSG_LEN,
++			       wlfw_cal_report_req_msg_v01_ei, &req);
++	if (ret < 0) {
++		qmi_txn_cancel(&txn);
++		return ret;
++	}
++
++	ret = qmi_txn_wait(&txn, WLFW_TIMEOUT);
++	if (ret < 0)
++		return ret;
++
++	if (resp.resp.result != QMI_RESULT_SUCCESS_V01) {
++		icnss_pr_err("Cal report rejected, error: %d\n", resp.resp.error);
++		return -EINVAL;
++	}
++
++	return 0;
++}
++
++/*
++ * Tells the firmware there is no cnss-daemon; without it the firmware waits
++ * for the daemon and crashes (ath10k does the same). This firmware wants
++ * daemon_support as 4 bytes, and the 4.14 wlfw_host_cap_req_msg_v01_ei encodes
++ * it as 1 (the answer is MALFORMED).
++ */
++struct icnss_host_cap_req {
++	u8 daemon_support_valid;
++	u32 daemon_support;
++};
++
++static struct qmi_elem_info icnss_host_cap_req_ei[] = {
++	{
++		.data_type      = QMI_OPT_FLAG,
++		.elem_len       = 1,
++		.elem_size      = sizeof(u8),
++		.is_array       = NO_ARRAY,
++		.tlv_type       = 0x10,
++		.offset         = offsetof(struct icnss_host_cap_req,
++					   daemon_support_valid),
++	},
++	{
++		.data_type      = QMI_UNSIGNED_4_BYTE,
++		.elem_len       = 1,
++		.elem_size      = sizeof(u32),
++		.is_array       = NO_ARRAY,
++		.tlv_type       = 0x10,
++		.offset         = offsetof(struct icnss_host_cap_req,
++					   daemon_support),
++	},
++	{
++		.data_type      = QMI_EOTI,
++		.is_array       = NO_ARRAY,
++		.tlv_type       = QMI_COMMON_TLV_TYPE,
++	},
++};
++
++int wlfw_host_cap_send_sync_msg(struct icnss_priv *priv)
++{
++	struct icnss_host_cap_req req = {};
++	struct wlfw_host_cap_resp_msg_v01 resp = {};
++	struct qmi_txn txn;
++	int ret;
++
++	req.daemon_support_valid = 1;
++	req.daemon_support = 0;
++
++	ret = qmi_txn_init(&priv->qmi, &txn, wlfw_host_cap_resp_msg_v01_ei,
++			   &resp);
++	if (ret < 0)
++		return ret;
++
++	ret = qmi_send_request(&priv->qmi, NULL, &txn,
++			       QMI_WLFW_HOST_CAP_REQ_V01,
++			       WLFW_HOST_CAP_REQ_MSG_V01_MAX_MSG_LEN,
++			       icnss_host_cap_req_ei, &req);
++	if (ret < 0) {
++		qmi_txn_cancel(&txn);
++		return ret;
++	}
++
++	ret = qmi_txn_wait(&txn, WLFW_TIMEOUT);
++	if (ret < 0)
++		return ret;
++
++	icnss_pr_info("Host capability: result %d, error %d\n",
++		      resp.resp.result, resp.resp.error);
++	if (resp.resp.result != QMI_RESULT_SUCCESS_V01 &&
++	    resp.resp.error != QMI_ERR_NOT_SUPPORTED_V01)
++		return -EINVAL;
++
++	return 0;
++}
+--- a/drivers/soc/qcom/icnss_qmi.h
++++ b/drivers/soc/qcom/icnss_qmi.h
+@@ -36,6 +36,19 @@
+ {
+ 	return 0;
+ }
++static inline int wlfw_bdf_dnld_send_sync_msg(struct icnss_priv *priv,
++					      bool regdb)
++{
++	return 0;
++}
++static inline int wlfw_host_cap_send_sync_msg(struct icnss_priv *priv)
++{
++	return 0;
++}
++static inline int wlfw_cal_report_send_sync_msg(struct icnss_priv *priv)
++{
++	return 0;
++}
+ static inline int wlfw_dynamic_feature_mask_send_sync_msg(
+ 		struct icnss_priv *priv, uint64_t dynamic_feature_mask)
+ {
+@@ -104,6 +117,9 @@
+ int wlfw_msa_mem_info_send_sync_msg(struct icnss_priv *priv);
+ int wlfw_msa_ready_send_sync_msg(struct icnss_priv *priv);
+ int wlfw_cap_send_sync_msg(struct icnss_priv *priv);
++int wlfw_bdf_dnld_send_sync_msg(struct icnss_priv *priv, bool regdb);
++int wlfw_host_cap_send_sync_msg(struct icnss_priv *priv);
++int wlfw_cal_report_send_sync_msg(struct icnss_priv *priv);
+ int icnss_qmi_pin_connect_result_ind(struct icnss_priv *priv,
+ 					void *msg, unsigned int msg_len);
+ int wlfw_dynamic_feature_mask_send_sync_msg(struct icnss_priv *priv,
