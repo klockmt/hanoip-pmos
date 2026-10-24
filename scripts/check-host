@@ -1,0 +1,34 @@
+#!/bin/sh
+# Checks that this machine has everything the other scripts need. Exits 1 if a required tool is missing.
+. "$(dirname "$0")/env.sh"
+missing=0
+need() { # need TOOL "where it usually comes from"
+	if command -v "$1" >/dev/null 2>&1; then printf 'ok        %s\n' "$1"; else printf 'MISSING   %-14s (%s)\n' "$1" "$2"; missing=1; fi
+}
+optional() {
+	if command -v "$1" >/dev/null 2>&1; then printf 'ok        %s\n' "$1"; else printf 'optional  %-14s (%s)\n' "$1" "$2"; fi
+}
+
+echo "== Flashing and images"
+need adb "android-tools"
+need fastboot "android-tools"
+need mkbootimg "android-tools"
+need pv "pv"
+need python3 "python3"
+need ssh "openssh-client"
+need ssh-keygen "openssh-client"
+echo "== Kernel build (LLVM=1)"
+for t in make bc bison flex patch curl tar git sha256sum sha512sum; do need "$t" "base build tools"; done
+need clang "clang"
+need ld.lld "lld"
+for t in llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-strip; do need "$t" "llvm"; done
+need dtc "dtc (device-tree-compiler)"
+if printf '#include <openssl/bio.h>\n' | cc -E -x c - >/dev/null 2>&1; then echo "ok        openssl headers"; else echo "MISSING   openssl headers (libssl-dev / openssl-devel)"; missing=1; fi
+echo "== postmarketOS"
+if [ -x "${PMBOOTSTRAP:-}" ]; then echo "ok        pmbootstrap ($PMBOOTSTRAP)"; else echo "MISSING   pmbootstrap: PMBOOTSTRAP in .env is not an executable file"; missing=1; fi
+echo "== Optional"
+optional nmcli "NetworkManager, for scripts/setup-usb-net"
+optional aarch64-linux-gnu-gcc "only for userspace/modem/build.sh"
+optional lz4 "only to inspect ramdisks"
+
+[ $missing -eq 0 ] && echo "Host looks ready." || { echo "Install what is MISSING and run again." >&2; exit 1; }
