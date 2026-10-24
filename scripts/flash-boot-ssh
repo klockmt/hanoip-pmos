@@ -1,0 +1,45 @@
+#!/bin/sh
+# Writes a kernel-only boot.img to the ACTIVE slot's boot partition through the running phone (SSH),
+# for when the phone sits on a hub/Ethernet and has no USB link to the PC, so fastboot is not available.
+# It backs the current partition up to $HANOIP_BACKUP_DIR first, stages the image on the phone and
+# checks its hash, writes it, then reads the partition back and compares. Reboot yourself afterwards.
+# Usage: scripts/flash-boot-ssh [boot.img]      (default: ./boot.img)   DRY_RUN=1 stops before writing.
+# A bad kernel needs fastboot to recover (hold Volume Down while powering on, then flash the backup).
+set -eu
+. "$(dirname "$0")/env.sh"
+dir=$(dirname "$0")
+img=${1:-boot.img}
+[ -f "$img" ] || { echo "No image at $img (see scripts/mkbootimg-kernel)." >&2; exit 1; }
+[ "$(head -c 8 "$img")" = "ANDROID!" ] || { echo "$img is not an Android boot image." >&2; exit 1; }
+size=$(wc -c < "$img")
+want=$(sha256sum "$img" | cut -d' ' -f1)
+
+ssh_() { "$dir/hanoip-ssh" "$@"; }
+slot=$(ssh_ "sed -n 's/.*slot_suffix=_\\([ab]\\).*/\\1/p' /proc/cmdline")
+[ -n "$slot" ] || { echo "Could not read the active slot from the phone." >&2; exit 1; }
+ssh_ "grep -q 'androidboot.device=hanoip' /proc/cmdline" || [ -n "${FORCE:-}" ] || { echo "The phone does not report androidboot.device=hanoip. Refusing (FORCE=1 overrides)." >&2; exit 1; }
+part=boot_$slot
+dev=/dev/disk/by-partlabel/$part
+psize=$(ssh_ "sudo blockdev --getsize64 $dev")
+[ "$size" -le "$psize" ] || { echo "Image ($size bytes) does not fit $part ($psize bytes)." >&2; exit 1; }
+[ "$slot" = b ] || echo "WARNING: active slot is '$slot'; the port was only tested on slot b." >&2
+
+echo "Image:  $img ($size bytes, sha256 ${want%"${want#????????????????}"})"
+echo "Target: $part on the phone ($psize bytes)"
+confirm "Back up $part, write the image over it and verify?" || { echo aborted; exit 1; }
+
+mkdir -p "$HANOIP_BACKUP_DIR"
+bk=$HANOIP_BACKUP_DIR/$part.before-$(date +%Y%m%d-%H%M%S).img
+if [ -n "${DRY_RUN:-}" ]; then echo "+ back up $dev to $bk, stage, dd, read back and compare"; exit 0; fi
+ssh_ "sudo dd if=$dev bs=4M 2>/dev/null" > "$bk.part"
+[ "$(wc -c < "$bk.part")" -eq "$psize" ] || { rm -f "$bk.part"; echo "Backup has the wrong size; nothing was written." >&2; exit 1; }
+mv "$bk.part" "$bk"
+echo "Backup: $bk"
+
+ssh_ 'cat > /tmp/boot-stage.img' < "$img"
+got=$(ssh_ 'sha256sum /tmp/boot-stage.img' | cut -d' ' -f1)
+[ "$got" = "$want" ] || { echo "Staged copy differs; nothing was written." >&2; exit 1; }
+ssh_ "sudo dd if=/tmp/boot-stage.img of=$dev bs=4M conv=fsync 2>/dev/null; sync; echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null"
+back=$(ssh_ "sudo head -c $size $dev | sha256sum" | cut -d' ' -f1)
+ssh_ 'rm -f /tmp/boot-stage.img'
+[ "$back" = "$want" ] && echo "$part written and verified. Reboot to use it: scripts/hanoip-ssh sudo reboot" || { echo "MISMATCH after writing $part! Restore: $bk" >&2; exit 1; }
