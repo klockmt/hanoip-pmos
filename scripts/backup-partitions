@@ -1,0 +1,25 @@
+#!/bin/sh
+# Backs up the partitions this port touches (read-only) from a device with root adb, into
+# $HANOIP_BACKUP_DIR (or the first argument), plus SHA256SUMS. Never overwrites an existing backup.
+# Needs: USB debugging on, and root (su) for adb shell, e.g. KernelSU or Magisk.
+set -eu
+. "$(dirname "$0")/env.sh"
+out=${1:-$HANOIP_BACKUP_DIR}
+parts="boot_a boot_b dtbo_a dtbo_b vbmeta_a vbmeta_b vendor_boot_a vendor_boot_b persist modemst1 modemst2 fsg_a fsg_b misc abl_a abl_b"
+
+adb get-state >/dev/null 2>&1 || { echo "No device in adb (enable USB debugging and authorize this PC)." >&2; exit 1; }
+[ "$(adb shell su -c id 2>/dev/null | tr -d '\r' | grep -c 'uid=0')" -ge 1 ] || { echo "adb shell su -c id did not return uid=0: root is required." >&2; exit 1; }
+device=$(adb shell getprop ro.product.device | tr -d '\r')
+[ "$device" = hanoip ] || { echo "This is '$device', not hanoip. Aborting." >&2; exit 1; }
+
+mkdir -p "$out"
+cd "$out"
+for p in $parts; do
+	if [ -s "$p.img" ]; then echo "keep   $p.img (already exists)"; continue; fi
+	adb exec-out su -c "dd if=/dev/block/by-name/$p bs=4M 2>/dev/null" > "$p.img.part"
+	[ -s "$p.img.part" ] || { rm -f "$p.img.part"; echo "FAILED $p (empty read)" >&2; exit 1; }
+	mv "$p.img.part" "$p.img"
+	echo "saved  $p.img ($(wc -c < "$p.img") bytes)"
+done
+sha256sum ./*.img | sed 's|\./||' > SHA256SUMS
+echo "$(wc -l < SHA256SUMS) checksums in $out/SHA256SUMS"
