@@ -1,0 +1,29 @@
+#!/sbin/openrc-run
+# Brings the modem up (it runs the Wi-Fi firmware): the downstream kernel powers the subsystem while /dev/subsys_modem is open.
+command=/bin/sh
+command_args="-c 'exec sleep 2147483647 < /dev/subsys_modem'"
+command_background=true
+pidfile=/run/hanoip-modem.pid
+# Fechar /dev/subsys_modem espera o modem desligar.
+retry="TERM/30/KILL/5"
+
+depend() {
+	need qrtr-ns pd-mapper tqftpserv-legacy rmtfs
+}
+
+start_pre() {
+	# Without the IPA firmware loaded the modem crashes right after coming up; this is what Android's init does.
+	# Loading is asynchronous: the first time, wait for rmnet_ipa0 (it goes away when the modem stops, so only wait the first time).
+	if ! grep -qx ONLINE "$(grep -lx ipa_fws /sys/bus/msm_subsys/devices/*/name | sed 's/name$/state/')"; then
+		echo 1 > /dev/ipa || ewarn "failed to write to /dev/ipa"
+		local i=0
+		while ! [ -e /sys/class/net/rmnet_ipa0 ] && [ $i -lt 100 ]; do
+			sleep 0.1; i=$((i+1))
+		done
+		[ -e /sys/class/net/rmnet_ipa0 ] || ewarn "IPA did not initialize"
+	fi
+	# A modem crash restarts only the modem, not the whole device.
+	for d in /sys/bus/msm_subsys/devices/*; do
+		if [ "$(cat $d/name)" = modem ]; then echo RELATED > $d/restart_level; fi
+	done
+}
