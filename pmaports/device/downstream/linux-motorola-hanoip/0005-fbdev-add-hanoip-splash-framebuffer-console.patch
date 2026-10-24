@@ -1,0 +1,196 @@
+--- a/drivers/video/fbdev/Kconfig
++++ b/drivers/video/fbdev/Kconfig
+@@ -2448,6 +2448,18 @@
+ 	help
+ 	  This framebuffer driver supports Microsoft Hyper-V Synthetic Video.
+ 
++config FB_HANOIP_SPLASH
++	bool "Console on the Moto G60 (hanoip) bootloader framebuffer"
++	depends on FB && ARM64
++	select FB_CFB_FILLRECT
++	select FB_CFB_COPYAREA
++	select FB_CFB_IMAGEBLIT
++	help
++	  Registers a framebuffer on the cont_splash_region the bootloader leaves
++	  scanning out, so fbcon can draw the kernel log and a login prompt.
++	  The MSM fbdev emulation does not work with the downstream SDE driver.
++	  Only active when that reserved-memory node exists in the device tree.
++
+ config FB_SIMPLE
+ 	bool "Simple framebuffer support"
+ 	depends on (FB = y)
+--- a/drivers/video/fbdev/Makefile
++++ b/drivers/video/fbdev/Makefile
+@@ -152,6 +152,7 @@
+ obj-$(CONFIG_FB_MXS)		  += mxsfb.o
+ obj-$(CONFIG_FB_SSD1307)	  += ssd1307fb.o
+ obj-$(CONFIG_FB_SIMPLE)           += simplefb.o
++obj-$(CONFIG_FB_HANOIP_SPLASH)     += hanoip-splashfb.o
+ 
+ # the test framebuffer is last
+ obj-$(CONFIG_FB_VIRTUAL)          += vfb.o
+--- /dev/null
++++ b/drivers/video/fbdev/hanoip-splashfb.c
+@@ -0,0 +1,162 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Framebuffer console for the Moto G60 (hanoip) on the buffer the bootloader leaves on screen.
++ *
++ * The MSM display driver's own fbdev emulation cannot be used: the downstream SDE driver never
++ * fills kms->aspace, so msm_fbdev fails with "failed to get buffer obj iova". simplefb cannot map the
++ * cont_splash_region either: it is plain reserved RAM (no "no-map"), and arm64 refuses to ioremap RAM.
++ *
++ * This maps those pages write-combined and registers a plain fbdev on the memory the display controller
++ * is already scanning out, so fbcon can draw the kernel log and the login prompt over the boot logo.
++ * It does not touch the display pipeline. Geometry and channel order are module parameters because the
++ * bootloader does not describe them (hanoip_splashfb.stride=... on the kernel command line).
++ */
++#include <linux/debugfs.h>
++#include <linux/fb.h>
++#include <linux/init.h>
++#include <linux/io.h>
++#include <linux/mm.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/pfn.h>
++#include <linux/slab.h>
++#include <linux/vmalloc.h>
++#include <asm/cacheflush.h>
++
++static unsigned long base = 0x9c000000;
++static unsigned int width = 1080;
++static unsigned int height = 2460;
++static unsigned int stride = 4320;
++static bool swap_rb;
++module_param(base, ulong, 0444);
++module_param(width, uint, 0444);
++module_param(height, uint, 0444);
++module_param(stride, uint, 0444);
++module_param(swap_rb, bool, 0444);
++
++static u32 pseudo_palette[16];
++static struct debugfs_blob_wrapper raw_blob;
++
++static int hanoip_fb_setcolreg(unsigned int regno, unsigned int red, unsigned int green,
++			       unsigned int blue, unsigned int transp, struct fb_info *info)
++{
++	u32 *pal = info->pseudo_palette;
++
++	if (regno >= 16)
++		return -EINVAL;
++	red >>= 8;
++	green >>= 8;
++	blue >>= 8;
++	/* alpha is forced opaque in case the display pipe blends */
++	pal[regno] = 0xff000000 | (swap_rb ? (blue << 16 | green << 8 | red)
++					   : (red << 16 | green << 8 | blue));
++	return 0;
++}
++
++static struct fb_ops hanoip_fb_ops = {
++	.owner		= THIS_MODULE,
++	.fb_setcolreg	= hanoip_fb_setcolreg,
++	.fb_fillrect	= cfb_fillrect,
++	.fb_copyarea	= cfb_copyarea,
++	.fb_imageblit	= cfb_imageblit,
++};
++
++static void __iomem *hanoip_map(unsigned long phys, unsigned long size)
++{
++	unsigned long i, n = size >> PAGE_SHIFT;
++	struct page **pages;
++	void *va;
++
++	if (!pfn_valid(PHYS_PFN(phys)))
++		return ioremap_wc(phys, size);
++
++	/* reserved RAM that is still in the linear map: remap it write-combined */
++	pages = kmalloc_array(n, sizeof(*pages), GFP_KERNEL);
++	if (!pages)
++		return NULL;
++	for (i = 0; i < n; i++)
++		pages[i] = pfn_to_page(PHYS_PFN(phys) + i);
++	va = vmap(pages, n, VM_MAP, pgprot_writecombine(PAGE_KERNEL));
++	kfree(pages);
++	if (va)
++		__flush_dcache_area(__va(phys), size);
++	return (void __iomem *)va;
++}
++
++static int __init hanoip_splashfb_init(void)
++{
++	struct device_node *np;
++	struct fb_info *info;
++	unsigned long size;
++	void __iomem *va;
++	int ret;
++
++	np = of_find_node_by_path("/reserved-memory/cont_splash_region@9c000000");
++	if (!np)
++		return -ENODEV;
++	of_node_put(np);
++
++	size = PAGE_ALIGN((unsigned long)stride * height);
++	va = hanoip_map(base, size);
++	if (!va)
++		return -ENOMEM;
++
++	info = framebuffer_alloc(0, NULL);
++	if (!info) {
++		ret = -ENOMEM;
++		goto unmap;
++	}
++
++	info->fbops = &hanoip_fb_ops;
++	info->screen_base = va;
++	info->screen_size = size;
++	info->pseudo_palette = pseudo_palette;
++	info->flags = FBINFO_DEFAULT;
++
++	strlcpy(info->fix.id, "hanoip-splash", sizeof(info->fix.id));
++	info->fix.type = FB_TYPE_PACKED_PIXELS;
++	info->fix.visual = FB_VISUAL_TRUECOLOR;
++	info->fix.accel = FB_ACCEL_NONE;
++	info->fix.smem_start = base;
++	info->fix.smem_len = size;
++	info->fix.line_length = stride;
++
++	info->var.xres = info->var.xres_virtual = width;
++	info->var.yres = info->var.yres_virtual = height;
++	info->var.bits_per_pixel = 32;
++	info->var.red.offset = swap_rb ? 0 : 16;
++	info->var.red.length = 8;
++	info->var.green.offset = 8;
++	info->var.green.length = 8;
++	info->var.blue.offset = swap_rb ? 16 : 0;
++	info->var.blue.length = 8;
++	info->var.transp.offset = 24;
++	info->var.transp.length = 8;
++	info->var.activate = FB_ACTIVATE_NOW;
++	info->var.vmode = FB_VMODE_NONINTERLACED;
++	info->var.height = -1;
++	info->var.width = -1;
++
++	ret = register_framebuffer(info);
++	if (ret < 0)
++		goto free;
++
++	raw_blob.data = (void __force *)va;
++	raw_blob.size = size;
++	debugfs_create_blob("hanoip_splashfb", 0400, NULL, &raw_blob);
++
++	pr_info("hanoip-splashfb: %ux%u stride %u at %#lx registered as fb%d\n",
++		width, height, stride, base, info->node);
++	return 0;
++
++free:
++	framebuffer_release(info);
++unmap:
++	if (pfn_valid(PHYS_PFN(base)))
++		vunmap((void __force *)va);
++	else
++		iounmap(va);
++	return ret;
++}
++/* fbmem and fbcon are up at subsys_initcall; run before the drivers so the log lands on the screen */
++fs_initcall(hanoip_splashfb_init);
