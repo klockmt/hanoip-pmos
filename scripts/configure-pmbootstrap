@@ -1,0 +1,20 @@
+#!/bin/sh
+# Sets the pmbootstrap options this port needs (run it after `pmbootstrap init`). DRY_RUN=1 only prints.
+set -eu
+. "$(dirname "$0")/env.sh"
+pm() { run "$PMBOOTSTRAP" -p "$PMAPORTS_DIR" config "$@"; }
+pm aports "$PMAPORTS_DIR"
+pm device motorola-hanoip
+# Downstream 4.14 kernel; it cannot run systemd, so use openrc.
+pm kernel downstream
+pm service_manager openrc
+# The dedicated SSH key (HANOIP_SSH_KEY) is created if missing and is the one installed in the image.
+if [ ! -f "$HANOIP_SSH_KEY" ]; then
+	run mkdir -p "$(dirname "$HANOIP_SSH_KEY")"
+	run ssh-keygen -q -t ed25519 -N '' -C hanoip -f "$HANOIP_SSH_KEY"
+fi
+pm ssh_keys True
+pm ssh_key_glob "$HANOIP_SSH_KEY.pub"
+# Same login name as in .env (HANOIP_USER), so scripts/hanoip-ssh gets in.
+pm user "$HANOIP_USER"
+echo "pmbootstrap configured."
