@@ -1,0 +1,52 @@
+#!/bin/sh
+# Builds the downstream kernel (Image.gz + DTBs) from the pristine cool585 sources, with this repo's
+# patches and config. Usage: scripts/build-kernel [kernel-tree]   (default: $KERNEL_DOWNSTREAM_DIR)
+# Re-running is safe: sources already downloaded and patches already applied are detected.
+set -eu
+. "$(dirname "$0")/env.sh"
+tree=${1:-$KERNEL_DOWNSTREAM_DIR}
+pkg=$HANOIP_ROOT/pmaports/device/downstream/linux-motorola-hanoip
+commit=$(sed -n 's/^_commit="\(.*\)"/\1/p' "$pkg/APKBUILD")
+url=https://github.com/cool585/android_kernel_motorola_sm6150/archive/$commit.tar.gz
+
+if [ ! -f "$tree/Makefile" ]; then
+	echo "Downloading cool585 kernel at $commit ..."
+	mkdir -p "$tree"
+	tmp=$tree/../.hanoip-kernel-$commit.tar.gz
+	[ -s "$tmp" ] || curl -fL --retry 3 -o "$tmp" "$url"
+	want=$(grep "linux-motorola-hanoip-$commit.tar.gz" "$pkg/APKBUILD" | tail -1 | cut -d' ' -f1)
+	have=$(sha512sum "$tmp" | cut -d' ' -f1)
+	[ "$want" = "$have" ] || echo "WARNING: tarball checksum differs from APKBUILD (GitHub may recompress archives); continuing." >&2
+	tar -xzf "$tmp" -C "$tree" --strip-components=1
+fi
+
+cd "$tree"
+for p in "$pkg"/0*.patch; do
+	if patch -p1 -N -s --dry-run < "$p" >/dev/null 2>&1; then
+		patch -p1 -N -s < "$p"; echo "applied  $(basename "$p")"
+	elif patch -p1 -R -s --dry-run < "$p" >/dev/null 2>&1; then
+		echo "present  $(basename "$p")"
+	else
+		echo "patch $(basename "$p") does not apply to this tree" >&2; exit 1
+	fi
+done
+
+mkdir -p .output
+cp "$pkg/config-motorola-hanoip.aarch64" .output/.config
+
+# Keep in sync with build() in the APKBUILD: clang >= 16 turns these warnings into errors on this tree.
+w="-Wno-error=incompatible-pointer-types -Wno-error=incompatible-function-pointer-types -Wno-error=int-conversion -Wno-error=implicit-function-declaration -Wno-error=implicit-int"
+export KBUILD_BUILD_USER=${KBUILD_BUILD_USER:-hanoip} KBUILD_BUILD_HOST=${KBUILD_BUILD_HOST:-hanoip}
+# DTC: the in-tree dtc built with a recent clang segfaults, so use the system one.
+mk() {
+	make O=.output ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang HOSTCC="clang $w" KCFLAGS="-Wno-error $w" \
+		DTC="${DTC:-$(command -v dtc)}" "$@"
+}
+mk olddefconfig
+mk -j"${JOBS:-$(nproc)}" Image.gz dtbs
+
+img=.output/arch/arm64/boot/Image.gz
+dtb=.output/arch/arm64/boot/dts/qcom/sdmmagpie-hanoi-base.dtb
+[ -s "$img" ] && [ -s "$dtb" ] || { echo "Build finished without $img or $dtb" >&2; exit 1; }
+[ "$(od -An -tx1 -N2 "$img" | tr -d ' ')" = 1f8b ] || { echo "$img is not gzip" >&2; exit 1; }
+echo "Kernel ready: $tree/$img ($(wc -c < "$img") bytes)"
