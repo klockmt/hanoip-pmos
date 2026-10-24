@@ -1,0 +1,5 @@
+#!/bin/sh
+# SSH into the device over the USB network, with the dedicated key from .env. E.g.: scripts/hanoip-ssh 'uname -a'
+. "$(dirname "$0")/env.sh"
+exec ssh -i "$HANOIP_SSH_KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=8 \
+	-o ServerAliveInterval=10 "$HANOIP_USER@$HANOIP_HOST" "$@"
