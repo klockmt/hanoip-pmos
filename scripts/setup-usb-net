@@ -1,0 +1,23 @@
+#!/bin/sh
+# Gives the PC an address on the device's USB network (172.16.42.2/24; the device is 172.16.42.1).
+# Usage: scripts/setup-usb-net [interface]   (default: HANOIP_USB_IFACE from .env, else auto-detect)
+# The interface only exists while the device is booted, so run it with the device up.
+set -eu
+. "$(dirname "$0")/env.sh"
+iface=${1:-${HANOIP_USB_IFACE:-}}
+if [ -z "$iface" ]; then
+	for n in /sys/class/net/*; do
+		d=$(readlink "$n/device/driver" 2>/dev/null || true)
+		[ "${d##*/}" = cdc_ncm ] && iface=${n##*/}
+	done
+fi
+[ -n "$iface" ] || { echo "No USB network interface (cdc_ncm) found: is the device booted and connected?" >&2; exit 1; }
+echo "interface: $iface"
+if command -v nmcli >/dev/null 2>&1; then
+	run nmcli con delete hanoip-usb >/dev/null 2>&1 || true
+	run nmcli con add type ethernet con-name hanoip-usb ifname "$iface" ipv4.method manual \
+		ipv4.addresses 172.16.42.2/24 ipv6.method link-local autoconnect yes
+	run nmcli con up hanoip-usb
+else
+	echo "No NetworkManager; run as root:  ip addr add 172.16.42.2/24 dev $iface && ip link set $iface up"
+fi
