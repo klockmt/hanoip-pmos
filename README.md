@@ -155,6 +155,8 @@ I want to be clear about what has and has not been run end to end.
 - The ramdisk must be **LZ4 legacy**; gzip or zstd leave the phone stuck on the Motorola logo.
 - The UFS has **4096-byte sectors**: the rootfs GPT must match, and the 4.14 loop driver needs patch `0001` to see its partitions.
 - Large continuous transfers over the USB network gadget bring it down; `scripts/push-firmware` limits itself to 1 MB/s.
+- **The A/B slot must be marked successful at every boot** (`qbootctl`, installed by the device package), or after ~7 reboots the bootloader invalidates the slot and switches to the other one. Recover with `fastboot set_active b`.
+- The bootloader rewrites every `console=` to `console=null`; patch `0004` turns that into the screen console, and `0005` draws it on the bootloader's framebuffer (the MSM fbdev emulation cannot work with this driver).
 - The kernel must not use `CONFIG_EFI_ZBOOT`, and `FW_LOADER_USER_HELPER_FALLBACK` must be off (otherwise every missing firmware file costs 60 s of boot).
 
 ## What is not in this repo
