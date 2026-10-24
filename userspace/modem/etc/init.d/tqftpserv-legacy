@@ -1,0 +1,8 @@
+#!/sbin/openrc-run
+# tqftpserv with a /lib/firmware fallback: Alpine's only finds files through remoteproc, which 4.14 lacks.
+supervisor=supervise-daemon
+command=/usr/local/bin/tqftpserv
+
+depend() {
+	need qrtr-ns
+}

@@ -1,0 +1,5 @@
+#!/sbin/openrc-run
+# The 4.14 kernel has no QRTR name server; qrtr-ns v1.0 is built separately.
+supervisor=supervise-daemon
+command=/usr/local/bin/qrtr-ns
+command_args="${command_args:--f}"
