@@ -1,0 +1,27 @@
+--- tqftpserv-1.3/translate.c	2026-10-15 05:16:13.000000000 -0300
++++ tqftpserv-1.3/translate.c	2026-10-24 10:52:42.453277104 -0300
+@@ -84,8 +84,10 @@
+ 
+ 	class_fd = open("/sys/class/remoteproc", O_RDONLY | O_DIRECTORY);
+ 	if (class_fd < 0) {
+-		warn("failed to open remoteproc class");
+-		return -1;
++		/* Downstream kernels use subsys, not remoteproc: look in FIRMWARE_BASE directly */
++		if (snprintf(path, sizeof(path), FIRMWARE_BASE "%s", file) >= (int)sizeof(path))
++			return -1;
++		return open_maybe_compressed(path);
+ 	}
+ 
+ 	class_dir = fdopendir(class_fd);
+--- tqftpserv-1.3/tqftpserv.c	2026-10-15 05:16:13.000000000 -0300
++++ tqftpserv-1.3/tqftpserv.c	2026-10-24 11:07:22.794182092 -0300
+@@ -937,6 +937,9 @@
+ 	int ret;
+ 	int fd;
+ 
++	/* Line-buffered log: stdout goes to a file through supervise-daemon */
++	setvbuf(stdout, NULL, _IOLBF, 0);
++
+ 	while ((opt = getopt(argc, argv, "dh")) != -1) {
+ 		switch (opt) {
+ 		case 'd':
