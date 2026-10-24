@@ -1,0 +1,12 @@
+#!/bin/sh
+# Reboots the device straight into the bootloader (fastboot) without using the buttons.
+# busybox/openrc reboot takes no argument; this uses the reboot(RESTART2, "bootloader") syscall.
+set -eu
+"$(dirname "$0")/hanoip-ssh" 'sudo python3 -c "import ctypes,os; os.sync(); ctypes.CDLL(None).syscall(142, 0xfee1dead, 672274793, 0xA1B2C3D4, b\"bootloader\")"' || true
+i=0
+until fastboot devices | grep -q .; do
+	i=$((i + 1))
+	[ $i -le 60 ] || { echo "fastboot did not show up within 120 s" >&2; exit 1; }
+	sleep 2
+done
+echo "Device in fastboot."
