@@ -18,7 +18,7 @@ export HANOIP_BATTERY_DIR=$bat HANOIP_USB_DIR=$usb HANOIP_CHARGE_STATE=$dir/stat
 step() {
 	echo "$1" > "$bat/capacity"
 	echo "$2" > "$bat/charging_enabled"
-	timeout 1 sh "$script" >/dev/null 2>&1 || true
+	timeout -s KILL 1 sh "$script" >/dev/null 2>&1 || true
 	got=$(cat "$bat/charging_enabled")
 	saved=$(cat "$dir/state" 2>/dev/null || echo none)
 	if [ "$got" != "$3" ] || [ "$saved" != "$4" ]; then
@@ -45,4 +45,9 @@ step 85 1 0 "0 1 0" # normal limit back after the unlocked charge
 # The count survives a restart (what a reboot does): the script resumes from the saved state.
 echo "2 1 0" > "$dir/state"
 step 59 0 1 "3 0 1"
+
+# Stopping the service (TERM) turns the charger back on, even while it is cut.
+echo 85 > "$bat/capacity"; echo 1 > "$bat/charging_enabled"
+timeout -s TERM 1 sh "$script" >/dev/null 2>&1 || true
+[ "$(cat "$bat/charging_enabled")" = 1 ] || { echo "FAIL: charger still cut after TERM" >&2; exit 1; }
 echo "charge limit: all steps pass"

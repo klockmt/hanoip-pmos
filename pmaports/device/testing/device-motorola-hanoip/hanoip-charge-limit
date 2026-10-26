@@ -10,6 +10,9 @@ state=${HANOIP_CHARGE_STATE:-/var/lib/hanoip/charge-limit}
 hi=${HANOIP_CHARGE_HI:-80}
 lo=${HANOIP_CHARGE_LO:-60}
 cycles=${HANOIP_CHARGE_CYCLES:-10}
+# Stopping or killing the limiter must not leave the charger cut: the phone would drain without charging.
+trap 'echo 1 > "$bat/charging_enabled"' EXIT
+trap 'exit 1' INT TERM
 
 mkdir -p "$(dirname "$state")"
 done_cycles=0 cut=0 unlock=0
