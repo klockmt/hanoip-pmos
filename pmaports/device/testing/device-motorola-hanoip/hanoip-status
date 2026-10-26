@@ -1,0 +1,20 @@
+#!/bin/sh
+# Phone health in one screen: latency and traffic of the default link, battery, RAM, root disk and CPU.
+# shortcut: traffic is the rate over 1 s on the default route, not the link capacity.
+dev=$(ip route show default | awk '{for(i=1;i<=NF;i++) if($i=="dev") {print $(i+1); exit}}')
+gw=$(ip route show default | awk '{for(i=1;i<=NF;i++) if($i=="via") {print $(i+1); exit}}')
+net() { cat /sys/class/net/$dev/statistics/$1 2>/dev/null || echo 0; }
+cpu() { read -r _ u n s i w q sq st _ < /proc/stat; echo "$((u+n+s+i+w+q+sq+st)) $((i+w))"; }
+
+lat=$(ping -c 3 -W 2 "$gw" 2>/dev/null | awk -F'= ' '/min\/avg/{split($2, a, "/"); print a[2]" ms"}')
+rx0=$(net rx_bytes); tx0=$(net tx_bytes); set -- $(cpu); t0=$1; id0=$2
+sleep 1
+rx1=$(net rx_bytes); tx1=$(net tx_bytes); set -- $(cpu); t1=$1; id1=$2
+
+echo "Latencia:  ${lat:-sem resposta} (gateway ${gw:-?})"
+echo "Rede:      $dev rx $(( (rx1-rx0)*8/1000 )) kb/s, tx $(( (tx1-tx0)*8/1000 )) kb/s"
+bat=/sys/class/power_supply/battery
+echo "Bateria:   $(cat $bat/capacity) % ($(cat $bat/status), carga $([ "$(cat $bat/charging_enabled)" = 1 ] && echo ligada || echo desligada))"
+awk '/MemTotal/{t=$2} /MemAvailable/{a=$2} END{printf "RAM:       %.0f %% usada (%.1f de %.1f GB)\n", (t-a)*100/t, (t-a)/1048576, t/1048576}' /proc/meminfo
+df -P / | awk 'NR==2{printf "ROM:       %s usada (%.1f de %.1f GB)\n", $5, $3/1048576, $2/1048576}'
+echo "CPU:       $(( ((t1-t0)-(id1-id0))*100/(t1-t0) )) %"

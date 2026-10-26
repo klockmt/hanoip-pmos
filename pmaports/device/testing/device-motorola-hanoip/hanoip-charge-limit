@@ -1,0 +1,18 @@
+#!/bin/sh
+# Keeps the battery between 60 % and 80 % to preserve its health: above HI the charger is cut
+# (the phone runs from the cable), and it comes back at LO. Between the two it keeps its state.
+# HANOIP_CHARGE_HI, HANOIP_CHARGE_LO and HANOIP_BATTERY_DIR override the limits and the sysfs
+# directory, for tests (scripts/test-charge-limit).
+bat=${HANOIP_BATTERY_DIR:-/sys/class/power_supply/battery}
+hi=${HANOIP_CHARGE_HI:-80}
+lo=${HANOIP_CHARGE_LO:-60}
+while :; do
+	cap=$(cat $bat/capacity)
+	on=$(cat $bat/charging_enabled)
+	if [ "$cap" -ge "$hi" ] && [ "$on" = 1 ]; then
+		echo 0 > $bat/charging_enabled
+	elif [ "$cap" -le "$lo" ] && [ "$on" = 0 ]; then
+		echo 1 > $bat/charging_enabled
+	fi
+	sleep 30
+done

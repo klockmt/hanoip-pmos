@@ -1,0 +1,30 @@
+#!/bin/sh
+# Checks hanoip-charge-limit's decisions against a fake battery directory (no hardware needed).
+# Each case runs one pass of the loop (the timeout stops it before the 30 s sleep ends).
+set -eu
+cd "$(dirname "$0")/.."
+script=pmaports/device/testing/device-motorola-hanoip/hanoip-charge-limit
+bat=$(mktemp -d)
+trap 'rm -rf "$bat"' EXIT
+
+# check <capacity> <charging_enabled before> <charging_enabled expected after>
+check() {
+	echo "$1" > "$bat/capacity"
+	echo "$2" > "$bat/charging_enabled"
+	HANOIP_BATTERY_DIR=$bat timeout 2 sh "$script" >/dev/null 2>&1 || true
+	got=$(cat "$bat/charging_enabled")
+	if [ "$got" != "$3" ]; then
+		echo "FAIL: capacity $1, charging $2 -> $got (expected $3)" >&2
+		exit 1
+	fi
+}
+
+check 100 1 0 # above 80: cut the charger
+check 81 1 0 # still above 80
+check 80 1 0 # 80 is the cut point
+check 79 1 1 # between the limits and on: keep charging until 80
+check 79 0 0 # between the limits and off: stay off until 60
+check 60 0 1 # 60 is the resume point
+check 40 0 1 # below 60: charge
+check 40 1 1 # below 60 and on: nothing to do
+echo "charge limit: all cases pass"

@@ -10,4 +10,5 @@ for svc in systemd-sysusers systemd-tmpfiles-setup systemd-tmpfiles-setup-dev \
 	done
 done
 rc-update del qbootctl default >/dev/null 2>&1 || true
+rc-update add hanoip-charge-limit default >/dev/null 2>&1 || true
 exit 0

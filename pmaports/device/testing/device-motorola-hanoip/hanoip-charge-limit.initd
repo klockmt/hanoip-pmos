@@ -1,0 +1,10 @@
+#!/sbin/openrc-run
+# Battery charge limit (60-80 %), see /usr/bin/hanoip-charge-limit.
+command=/usr/bin/hanoip-charge-limit
+command_background=true
+pidfile=/run/hanoip-charge-limit.pid
+
+stop_post() {
+	# Stopping the limiter must not leave the phone without charging.
+	echo 1 > /sys/class/power_supply/battery/charging_enabled
+}
