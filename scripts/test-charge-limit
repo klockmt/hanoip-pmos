@@ -9,7 +9,10 @@ dir=$(mktemp -d)
 trap 'rm -rf "$dir"' EXIT
 bat=$dir/bat
 mkdir "$bat"
-export HANOIP_BATTERY_DIR=$bat HANOIP_CHARGE_STATE=$dir/state HANOIP_CHARGE_CYCLES=3
+usb=$dir/usb
+mkdir "$usb"
+echo 1 > "$usb/present"
+export HANOIP_BATTERY_DIR=$bat HANOIP_USB_DIR=$usb HANOIP_CHARGE_STATE=$dir/state HANOIP_CHARGE_CYCLES=3
 
 # step <capacity> <charging_enabled now> <charging_enabled expected> <state expected>
 step() {
@@ -26,6 +29,9 @@ step() {
 
 step 80 1 1 none # 80 exactly: keep charging
 step 60 0 0 none # 60 exactly: stay off
+echo 0 > "$usb/present"
+step 85 1 1 none # no charger connected: nothing to cut
+echo 1 > "$usb/present"
 step 85 1 0 "0 1 0" # boot with the charger on above 80: cut, not a cycle yet
 step 59 0 1 "1 0 0" # resume below 60 completes the first cycle
 step 85 1 0 "1 1 0"

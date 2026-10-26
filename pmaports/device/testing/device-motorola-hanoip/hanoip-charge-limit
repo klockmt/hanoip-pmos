@@ -5,6 +5,7 @@
 # to 100 % once, and then the count starts again. The state is kept in STATE, so it survives
 # reboots. The HANOIP_* variables override the limits and paths, for tests (scripts/test-charge-limit).
 bat=${HANOIP_BATTERY_DIR:-/sys/class/power_supply/battery}
+usb=${HANOIP_USB_DIR:-/sys/class/power_supply/usb}
 state=${HANOIP_CHARGE_STATE:-/var/lib/hanoip/charge-limit}
 hi=${HANOIP_CHARGE_HI:-80}
 lo=${HANOIP_CHARGE_LO:-60}
@@ -23,7 +24,8 @@ while :; do
 	if [ "$unlock" = 1 ]; then
 		# The charge after the last cycle runs to full; then the count starts again.
 		if [ "$cap" -ge 100 ]; then done_cycles=0 cut=0 unlock=0; save; fi
-	elif [ "$cap" -gt "$hi" ] && [ "$on" = 1 ]; then
+	elif [ "$cap" -gt "$hi" ] && [ "$on" = 1 ] && [ "$(cat $usb/present)" = 1 ]; then
+		# Only a charger that is connected can be cut; without one the flag would count a cycle that never happened.
 		echo 0 > $bat/charging_enabled
 		cut=1; save
 	elif [ "$cap" -lt "$lo" ] && [ "$on" = 0 ]; then
