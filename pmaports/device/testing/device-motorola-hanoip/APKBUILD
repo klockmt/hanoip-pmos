@@ -12,7 +12,6 @@ options="!check !archcheck"
 depends="
 	android-tools
 	firmware-qcom-sm7150
-	libdrm-tests
 	mkbootimg-osm0sis
 	postmarketos-base
 	soc-qcom
@@ -28,7 +27,6 @@ source="
 	deviceinfo
 	hanoip-console.start
 	hanoip-qbootctl.start
-	hanoip-screen
 "
 
 build() {
@@ -39,7 +37,6 @@ package() {
 	devicepkg_package $startdir $pkgname
 	install -Dm755 "$srcdir/hanoip-console.start" "$pkgdir/etc/local.d/10-hanoip-console.start"
 	install -Dm755 "$srcdir/hanoip-qbootctl.start" "$pkgdir/etc/local.d/20-hanoip-qbootctl.start"
-	install -Dm755 "$srcdir/hanoip-screen" "$pkgdir/usr/local/bin/hanoip-screen"
 }
 
 kernel_downstream() {
@@ -55,6 +52,6 @@ kernel_mainline() {
 }
 
 sha512sums="
-3b430aa5d08d5111404033f1437d7b256a39fa10b46b66ab1d9557864bbe3f3114b43a449eae801e5a8242f0a1c83b2a1af143bff366f7c74307b5a0b03f12d5  deviceinfo
+708703849b9d961ac1b112e85f85e1c364bce1b848f527ff16517677c1847c55cd3d9569c31053f2e195459374881a7704e03f9c126af1ddb9ff453c5f531ebf  deviceinfo
 856a5b5efcee9a5b47d0671eacf09a9b7c0f88142ff1a705789c4a9503e1bcd7409f2d355731701b4fd2f96dcbc9061403aebff803210c849919e2274f1ea5b9  hanoip-console.start
 "
