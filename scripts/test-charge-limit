@@ -1,32 +1,42 @@
 #!/bin/sh
-# Checks hanoip-charge-limit's decisions against a fake battery directory (no hardware needed).
-# Each case runs one pass of the loop (the timeout stops it before the 30 s sleep ends).
+# Checks hanoip-charge-limit against a fake battery directory (no hardware needed). Each step runs
+# one pass of the loop (the timeout stops it before the 30 s sleep ends) with the given capacity and
+# charger state, and checks the charger state and the saved state afterwards ("cycles cut unlock").
 set -eu
 cd "$(dirname "$0")/.."
 script=pmaports/device/testing/device-motorola-hanoip/hanoip-charge-limit
-bat=$(mktemp -d)
-trap 'rm -rf "$bat"' EXIT
+dir=$(mktemp -d)
+trap 'rm -rf "$dir"' EXIT
+bat=$dir/bat
+mkdir "$bat"
+export HANOIP_BATTERY_DIR=$bat HANOIP_CHARGE_STATE=$dir/state HANOIP_CHARGE_CYCLES=3
 
-# check <capacity> <charging_enabled before> <charging_enabled expected after>
-check() {
+# step <capacity> <charging_enabled now> <charging_enabled expected> <state expected>
+step() {
 	echo "$1" > "$bat/capacity"
 	echo "$2" > "$bat/charging_enabled"
-	HANOIP_BATTERY_DIR=$bat timeout 2 sh "$script" >/dev/null 2>&1 || true
+	timeout 1 sh "$script" >/dev/null 2>&1 || true
 	got=$(cat "$bat/charging_enabled")
-	if [ "$got" != "$3" ]; then
-		echo "FAIL: capacity $1, charging $2 -> $got (expected $3)" >&2
+	saved=$(cat "$dir/state" 2>/dev/null || echo none)
+	if [ "$got" != "$3" ] || [ "$saved" != "$4" ]; then
+		echo "FAIL: capacity $1, charging $2: charging $got (expected $3), state '$saved' (expected '$4')" >&2
 		exit 1
 	fi
 }
 
-check 100 1 0 # above 80: cut the charger
-check 81 1 0 # first value above 80
-check 80 1 1 # 80 exactly: keep charging
-check 79 1 1 # between the limits and on: keep charging until 80
-check 100 0 0 # plugged in above 80 with the charger off: stays off
-check 61 0 0 # between the limits and off: stay off
-check 60 0 0 # 60 exactly: still off
-check 59 0 1 # first value below 60: charge
-check 40 0 1 # below 60: charge
-check 40 1 1 # below 60 and on: nothing to do
-echo "charge limit: all cases pass"
+step 80 1 1 none # 80 exactly: keep charging
+step 60 0 0 none # 60 exactly: stay off
+step 85 1 0 "0 1 0" # boot with the charger on above 80: cut, not a cycle yet
+step 59 0 1 "1 0 0" # resume below 60 completes the first cycle
+step 85 1 0 "1 1 0"
+step 59 0 1 "2 0 0"
+step 85 1 0 "2 1 0"
+step 59 0 1 "3 0 1" # third cycle: the next charge is unlocked
+step 90 1 1 "3 0 1" # unlocked: no cut above 80
+step 100 0 0 "0 0 0" # full: the count starts again
+step 85 1 0 "0 1 0" # normal limit back after the unlocked charge
+
+# The count survives a restart (what a reboot does): the script resumes from the saved state.
+echo "2 1 0" > "$dir/state"
+step 59 0 1 "3 0 1"
+echo "charge limit: all steps pass"

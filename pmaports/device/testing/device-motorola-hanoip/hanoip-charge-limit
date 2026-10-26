@@ -1,18 +1,37 @@
 #!/bin/sh
 # Keeps the battery between 60 % and 80 % to preserve its health: above HI the charger is cut
 # (the phone runs from the cable), and it comes back below LO. Between the two it keeps its state.
-# HANOIP_CHARGE_HI, HANOIP_CHARGE_LO and HANOIP_BATTERY_DIR override the limits and the sysfs
-# directory, for tests (scripts/test-charge-limit).
+# A cycle is a cut at HI followed by a resume below LO. After CYCLES cycles, the next charge runs
+# to 100 % once, and then the count starts again. The state is kept in STATE, so it survives
+# reboots. The HANOIP_* variables override the limits and paths, for tests (scripts/test-charge-limit).
 bat=${HANOIP_BATTERY_DIR:-/sys/class/power_supply/battery}
+state=${HANOIP_CHARGE_STATE:-/var/lib/hanoip/charge-limit}
 hi=${HANOIP_CHARGE_HI:-80}
 lo=${HANOIP_CHARGE_LO:-60}
+cycles=${HANOIP_CHARGE_CYCLES:-10}
+
+mkdir -p "$(dirname "$state")"
+done_cycles=0 cut=0 unlock=0
+[ -f "$state" ] && read -r done_cycles cut unlock < "$state"
+done_cycles=${done_cycles:-0} cut=${cut:-0} unlock=${unlock:-0}
+
+save() { echo "$done_cycles $cut $unlock" > "$state"; }
+
 while :; do
 	cap=$(cat $bat/capacity)
 	on=$(cat $bat/charging_enabled)
-	if [ "$cap" -gt "$hi" ] && [ "$on" = 1 ]; then
+	if [ "$unlock" = 1 ]; then
+		# The charge after the last cycle runs to full; then the count starts again.
+		if [ "$cap" -ge 100 ]; then done_cycles=0 cut=0 unlock=0; save; fi
+	elif [ "$cap" -gt "$hi" ] && [ "$on" = 1 ]; then
 		echo 0 > $bat/charging_enabled
+		cut=1; save
 	elif [ "$cap" -lt "$lo" ] && [ "$on" = 0 ]; then
 		echo 1 > $bat/charging_enabled
+		# A charger found off below 60 % without our cut (e.g. after a boot) is not a cycle.
+		if [ "$cut" = 1 ]; then done_cycles=$((done_cycles+1)); cut=0; fi
+		if [ "$done_cycles" -ge "$cycles" ]; then unlock=1; fi
+		save
 	fi
 	sleep 30
 done
