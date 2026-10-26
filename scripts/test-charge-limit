@@ -20,11 +20,13 @@ check() {
 }
 
 check 100 1 0 # above 80: cut the charger
-check 81 1 0 # still above 80
-check 80 1 0 # 80 is the cut point
+check 81 1 0 # first value above 80
+check 80 1 1 # 80 exactly: keep charging
 check 79 1 1 # between the limits and on: keep charging until 80
-check 79 0 0 # between the limits and off: stay off until 60
-check 60 0 1 # 60 is the resume point
+check 100 0 0 # plugged in above 80 with the charger off: stays off
+check 61 0 0 # between the limits and off: stay off
+check 60 0 0 # 60 exactly: still off
+check 59 0 1 # first value below 60: charge
 check 40 0 1 # below 60: charge
 check 40 1 1 # below 60 and on: nothing to do
 echo "charge limit: all cases pass"
