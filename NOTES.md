@@ -154,19 +154,25 @@ Active slot `b`. **Lineage was replaced by pmOS** (the user's choice on 24/10): 
 - When zeroing the in-use slot's `dtbo` for a test, restore the backup right afterwards, before `fastboot continue` or any reboot.
 - Report test results as they are, failures included.
 
-## Desligar e ligar a tela pelo SSH
+## Tela apagada (modo servidor)
 
-Use o comando `hanoip-screen` (instalado pelo pacote do device, em `/usr/local/bin`):
+A tela fica apagada desde o início do boot, e continua apagada depois de cada reboot. O kernel desliga as alimentações do painel (`vddio`, `lab` e `ibb`, do LCDB e do PM6150L) e o backlight, e o celular continua rodando, com SSH e Tailscale.
+
+Isso vem do parâmetro de boot `hanoip_splashfb.screen_off=1`, lido pelo driver do framebuffer (`patch 0005`). A imagem gerada por `scripts/mkbootimg-kernel` já traz esse parâmetro por padrão.
+
+Para acender a tela de novo, gere a imagem sem o parâmetro e grave o `boot_b`:
 
 ```sh
-ssh hanoip 'sudo hanoip-screen off'   # desliga o painel e o display
-ssh hanoip 'sudo hanoip-screen on'    # liga de volta
+KERNEL_CMDLINE="ignore_loglevel fbcon=font:SUN12x22" scripts/mkbootimg-kernel "" boot-screen-on.img
+HANOIP_HOST=<ip> scripts/flash-boot-ssh boot-screen-on.img
+ssh <host> 'sudo reboot'
 ```
 
-Ele define a propriedade `DPMS` do conector DSI do DRM (`off` = 3, `on` = 0) com `modetest`, o que desliga o display e o backlight juntos. O kernel continua escrevendo o log no buffer enquanto a tela está apagada.
+O mesmo vale para desligar: a tela volta a apagar só com uma imagem gerada com o parâmetro (o padrão) e um reboot. Não há comando para ligar ou desligar a tela com o sistema já rodando.
 
 Notas:
-- O `echo 4 > /sys/class/graphics/fb0/blank` não serve para isso: o driver do framebuffer só mexe no backlight, e na prática não apagou a tela (o hook de `fb_blank` ainda está no driver, mas não é o caminho certo).
-- O atributo `dpms` em `/sys/class/drm/card0-DSI-1/` é somente leitura neste kernel; o controle só funciona pela propriedade do conector, que é o que o `modetest` faz.
-- `actual_brightness` do backlight fica sempre em 0 neste driver.
-- O estado não persiste após reinício: a tela volta acesa no boot.
+- Não há controle em tempo de execução. O driver não consegue religar o painel depois de cortadas as alimentações, porque o pipeline DRM/DSI não está ativo neste kernel. A tela só volta com um reboot.
+- O hook `fb_blank` do driver só mexe no backlight, e não apaga a tela por completo. Não use `echo 4 > /sys/class/graphics/fb0/blank` como forma de desligar.
+- O atributo `dpms` em `/sys/class/drm/card0-DSI-1/` é somente leitura, e a propriedade DPMS do conector não tem efeito porque nenhum CRTC está ativo.
+- O log do kernel continua sendo escrito, mas ele não aparece na tela. Para acompanhar, use o SSH.
+- Se o celular não voltar pela rede depois de uma gravação ruim, a recuperação é pelo fastboot, regravando o backup do `boot_b` (o `flash-boot-ssh` guarda o backup antes de gravar).
