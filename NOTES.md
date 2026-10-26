@@ -156,14 +156,17 @@ Active slot `b`. **Lineage was replaced by pmOS** (the user's choice on 24/10): 
 
 ## Desligar e ligar a tela pelo SSH
 
-O driver `hanoip-splashfb` (patch `0005`) implementa `fb_blank`. Ao apagar o framebuffer, ele desliga o backlight do painel pelo mesmo caminho do `bl_power` (o painel continua alimentado, e o log segue sendo escrito no buffer).
+Use o comando `hanoip-screen` (instalado pelo pacote do device, em `/usr/local/bin`):
 
 ```sh
-ssh hanoip 'echo 4 | sudo tee /sys/class/graphics/fb0/blank'   # apaga a tela
-ssh hanoip 'echo 0 | sudo tee /sys/class/graphics/fb0/blank'   # acende a tela
+ssh hanoip 'sudo hanoip-screen off'   # desliga o painel e o display
+ssh hanoip 'sudo hanoip-screen on'    # liga de volta
 ```
 
-Limites:
-- A tela não fica totalmente sem consumo. O painel e o display continuam ligados; só o backlight é desligado. Desligar o painel por completo exigiria mandar o próprio painel para o sono via DSI, o que não está implementado.
-- `actual_brightness` do backlight fica sempre em 0 neste driver. Use `bl_power` e `brightness` para conferir o estado.
+Ele define a propriedade `DPMS` do conector DSI do DRM (`off` = 3, `on` = 0) com `modetest`, o que desliga o display e o backlight juntos. O kernel continua escrevendo o log no buffer enquanto a tela está apagada.
+
+Notas:
+- O `echo 4 > /sys/class/graphics/fb0/blank` não serve para isso: o driver do framebuffer só mexe no backlight, e na prática não apagou a tela (o hook de `fb_blank` ainda está no driver, mas não é o caminho certo).
+- O atributo `dpms` em `/sys/class/drm/card0-DSI-1/` é somente leitura neste kernel; o controle só funciona pela propriedade do conector, que é o que o `modetest` faz.
+- `actual_brightness` do backlight fica sempre em 0 neste driver.
 - O estado não persiste após reinício: a tela volta acesa no boot.

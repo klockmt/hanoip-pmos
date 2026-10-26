@@ -4,7 +4,7 @@
 pkgname=device-motorola-hanoip
 pkgdesc="Motorola Moto G (60)"
 pkgver=0
-pkgrel=3
+pkgrel=4
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -27,6 +27,7 @@ source="
 	deviceinfo
 	hanoip-console.start
 	hanoip-qbootctl.start
+	hanoip-screen
 "
 
 build() {
@@ -37,6 +38,7 @@ package() {
 	devicepkg_package $startdir $pkgname
 	install -Dm755 "$srcdir/hanoip-console.start" "$pkgdir/etc/local.d/10-hanoip-console.start"
 	install -Dm755 "$srcdir/hanoip-qbootctl.start" "$pkgdir/etc/local.d/20-hanoip-qbootctl.start"
+	install -Dm755 "$srcdir/hanoip-screen" "$pkgdir/usr/local/bin/hanoip-screen"
 }
 
 kernel_downstream() {
