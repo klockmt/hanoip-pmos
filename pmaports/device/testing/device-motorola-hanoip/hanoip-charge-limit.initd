@@ -1,10 +1,14 @@
 #!/sbin/openrc-run
 # Battery charge limit (60-80 %), see /usr/bin/hanoip-charge-limit.
 command=/usr/bin/hanoip-charge-limit
-command_background=true
-pidfile=/run/hanoip-charge-limit.pid
+# A SIGKILL skips the limiter's EXIT trap, so a crash would leave the cable suspended. supervise-daemon
+# starts it again; respawn_max=0 means no limit on restarts (15 in a row on the phone).
+supervisor=supervise-daemon
+respawn_delay=5
+respawn_max=0
 
 stop_post() {
-	# Stopping the limiter must not leave the phone without charging.
+	# Stopping the limiter must not leave the phone without charging or with the cable suspended.
 	echo 1 > /sys/class/power_supply/battery/charging_enabled
+	echo 0 > /sys/class/power_supply/battery/input_suspend
 }
