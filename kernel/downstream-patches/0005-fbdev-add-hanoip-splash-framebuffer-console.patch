@@ -31,7 +31,7 @@
  obj-$(CONFIG_FB_VIRTUAL)          += vfb.o
 --- /dev/null
 +++ b/drivers/video/fbdev/hanoip-splashfb.c
-@@ -0,0 +1,185 @@
+@@ -0,0 +1,252 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Framebuffer console for the Moto G60 (hanoip) on the buffer the bootloader leaves on screen.
@@ -54,6 +54,9 @@
 +#include <linux/module.h>
 +#include <linux/of.h>
 +#include <linux/pfn.h>
++#include <linux/of_platform.h>
++#include <linux/platform_device.h>
++#include <linux/regulator/consumer.h>
 +#include <linux/slab.h>
 +#include <linux/vmalloc.h>
 +#include <asm/cacheflush.h>
@@ -68,6 +71,10 @@
 +module_param(height, uint, 0444);
 +module_param(stride, uint, 0444);
 +module_param(swap_rb, bool, 0444);
++
++static bool screen_off;
++module_param(screen_off, bool, 0444);
++MODULE_PARM_DESC(screen_off, "cut the panel rails at boot so the screen stays dark");
 +
 +static u32 pseudo_palette[16];
 +static struct debugfs_blob_wrapper raw_blob;
@@ -217,3 +224,63 @@
 +}
 +/* fbmem and fbcon are up at subsys_initcall; run before the drivers so the log lands on the screen */
 +fs_initcall(hanoip_splashfb_init);
++
++/*
++ * The bootloader leaves the panel powered and lit. With screen_off=1 the rails the DSI display
++ * takes from the device tree are switched off once every driver has probed (late_initcall), and
++ * the backlight is powered down. Nothing brings the panel back up: the display pipeline is not
++ * running on this kernel, so the screen stays dark until the next boot.
++ */
++static const char * const hanoip_panel_rails[] = { "vddio", "lab", "ibb" };
++
++/*
++ * The panel supplies are named in the DSI display node of the device tree, but that node has no
++ * platform device of its own (the display is a component of msm_drm). A device that is only
++ * initialised, with that node as its of_node, is enough for the regulator framework to resolve
++ * "vddio-supply", "lab-supply" and "ibb-supply" from the device tree.
++ */
++static struct device hanoip_panel_dev;
++
++static int __init hanoip_splashfb_screen_off(void)
++{
++	struct backlight_device *bd;
++	struct device_node *np;
++	int i, rc = 0;
++
++	if (!screen_off)
++		return 0;
++
++	np = of_find_node_with_property(NULL, "vddio-supply");
++	if (!np) {
++		pr_err("hanoip-splashfb: DSI display node not found, screen not turned off\n");
++		return -ENODEV;
++	}
++	device_initialize(&hanoip_panel_dev);
++	dev_set_name(&hanoip_panel_dev, "hanoip-panel");
++	hanoip_panel_dev.of_node = np;
++
++	for (i = 0; i < ARRAY_SIZE(hanoip_panel_rails); i++) {
++		struct regulator *r = regulator_get(&hanoip_panel_dev, hanoip_panel_rails[i]);
++
++		if (IS_ERR(r)) {
++			pr_err("hanoip-splashfb: rail %s: %ld\n", hanoip_panel_rails[i], PTR_ERR(r));
++			rc = PTR_ERR(r);
++			continue;
++		}
++		regulator_force_disable(r);
++		regulator_put(r);
++		pr_info("hanoip-splashfb: panel rail %s off\n", hanoip_panel_rails[i]);
++	}
++
++	bd = backlight_device_get_by_type(BACKLIGHT_RAW);
++	if (bd) {
++		mutex_lock(&bd->ops_lock);
++		if (bd->ops) {
++			bd->props.power = FB_BLANK_POWERDOWN;
++			backlight_update_status(bd);
++		}
++		mutex_unlock(&bd->ops_lock);
++	}
++	return rc;
++}
++late_initcall(hanoip_splashfb_screen_off);
