@@ -17,7 +17,7 @@ rx1=$(net rx_bytes); tx1=$(net tx_bytes); set -- $(cpu); t1=$1; id1=$2
 bat=/sys/class/power_supply/battery
 status=$(cat $bat/status)
 cur=$(cat $bat/current_now); volt=$(cat $bat/voltage_now)
-if [ "$status" = Discharging ]; then
+if [ "$cur" -lt 0 ]; then
 	# Same figure btop uses when the battery has no power_now: |current| x voltage. Sysfs gives µA and µV.
 	watts=$(awk -v c=$cur -v v=$volt 'BEGIN{printf "%.2f W (bateria)", (c<0?-c:c)*v/1e12}')
 else
