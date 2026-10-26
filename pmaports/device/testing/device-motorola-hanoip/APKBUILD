@@ -12,6 +12,7 @@ options="!check !archcheck"
 depends="
 	android-tools
 	firmware-qcom-sm7150
+	libdrm-tests
 	mkbootimg-osm0sis
 	postmarketos-base
 	soc-qcom
