@@ -1,6 +1,7 @@
 #!/bin/sh
-# Keeps the battery between 60 % and 80 % to preserve its health: above HI the charger is cut
-# (the phone runs from the cable), and it comes back below LO. Between the two it keeps its state.
+# Keeps the battery between 60 % and 80 % to preserve its health: above HI the charger is cut and the
+# cable is suspended (input_suspend), so the phone runs from the battery; below LO both come back.
+# Between the two it keeps its state.
 # A cycle is a cut at HI followed by a resume below LO. After CYCLES cycles, the next charge runs
 # to 100 % once, and then the count starts again. The state is kept in STATE, so it survives
 # reboots. The HANOIP_* variables override the limits and paths, for tests (scripts/test-charge-limit).
@@ -10,8 +11,8 @@ state=${HANOIP_CHARGE_STATE:-/var/lib/hanoip/charge-limit}
 hi=${HANOIP_CHARGE_HI:-80}
 lo=${HANOIP_CHARGE_LO:-60}
 cycles=${HANOIP_CHARGE_CYCLES:-10}
-# Stopping or killing the limiter must not leave the charger cut: the phone would drain without charging.
-trap 'echo 1 > "$bat/charging_enabled"' EXIT
+# Stopping or killing the limiter must not leave the charger cut or the cable suspended: the phone would drain without charging.
+trap 'echo 1 > "$bat/charging_enabled"; echo 0 > "$bat/input_suspend"' EXIT
 trap 'exit 1' INT TERM
 
 mkdir -p "$(dirname "$state")"
@@ -30,8 +31,10 @@ while :; do
 	elif [ "$cap" -gt "$hi" ] && [ "$on" = 1 ] && [ "$(cat $usb/present)" = 1 ]; then
 		# Only a charger that is connected can be cut; without one the flag would count a cycle that never happened.
 		echo 0 > $bat/charging_enabled
+		echo 1 > $bat/input_suspend
 		cut=1; save
 	elif [ "$cap" -lt "$lo" ] && [ "$on" = 0 ]; then
+		echo 0 > $bat/input_suspend
 		echo 1 > $bat/charging_enabled
 		# A charger found off below 60 % without our cut (e.g. after a boot) is not a cycle.
 		if [ "$cut" = 1 ]; then done_cycles=$((done_cycles+1)); cut=0; fi

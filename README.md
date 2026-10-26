@@ -106,7 +106,7 @@ scripts/hanoip-ssh 'uname -r'
 
 The PC address is `172.16.42.2/24` on the phone's USB interface (`scripts/setup-usb-net` recreates it; it is a NetworkManager connection named `hanoip-usb`).
 
-On the phone, `hanoip-status` prints the latency to the gateway, the traffic on the default link, battery, RAM, root disk and CPU use. `hanoip-charge-limit` (an OpenRC service, on by default) keeps the battery between 60 % and 80 %: it cuts the charger above 80 % and turns it on again below 60 %. Stopping the service turns the charger back on. Check the decisions without hardware with `scripts/test-charge-limit`.
+On the phone, `hanoip-status` prints the latency to the gateway, the traffic on the default link, battery, RAM, root disk and CPU use. `hanoip-charge-limit` (an OpenRC service, on by default) keeps the battery between 60 % and 80 %: it cuts the charger and suspends the cable above 80 %, so the phone runs from the battery, and turns both back on below 60 %. Stopping the service turns the charger back on. Check the decisions without hardware with `scripts/test-charge-limit`.
 
 ### 8. Update only the kernel later
 
