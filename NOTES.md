@@ -153,3 +153,17 @@ Active slot `b`. **Lineage was replaced by pmOS** (the user's choice on 24/10): 
 - Before flashing or overwriting anything, inspect the target and compare with the backups (SHA256SUMS).
 - When zeroing the in-use slot's `dtbo` for a test, restore the backup right afterwards, before `fastboot continue` or any reboot.
 - Report test results as they are, failures included.
+
+## Desligar e ligar a tela pelo SSH
+
+O driver `hanoip-splashfb` (patch `0005`) implementa `fb_blank`. Ao apagar o framebuffer, ele desliga o backlight do painel pelo mesmo caminho do `bl_power` (o painel continua alimentado, e o log segue sendo escrito no buffer).
+
+```sh
+ssh hanoip 'echo 4 | sudo tee /sys/class/graphics/fb0/blank'   # apaga a tela
+ssh hanoip 'echo 0 | sudo tee /sys/class/graphics/fb0/blank'   # acende a tela
+```
+
+Limites:
+- A tela não fica totalmente sem consumo. O painel e o display continuam ligados; só o backlight é desligado. Desligar o painel por completo exigiria mandar o próprio painel para o sono via DSI, o que não está implementado.
+- `actual_brightness` do backlight fica sempre em 0 neste driver. Use `bl_power` e `brightness` para conferir o estado.
+- O estado não persiste após reinício: a tela volta acesa no boot.

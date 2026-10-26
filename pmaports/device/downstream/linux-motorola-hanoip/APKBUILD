@@ -7,7 +7,7 @@
 # Patches 0004 and 0005 (+ FRAMEBUFFER_CONSOLE and fonts) put the console on the screen.
 pkgname=linux-motorola-hanoip
 pkgver=4.14.357
-pkgrel=5
+pkgrel=6
 pkgdesc="Motorola Moto G (60) downstream kernel (cool585 Cybertron v18)"
 arch="aarch64"
 _carch="arm64"
@@ -62,5 +62,5 @@ d56517f53b84077a931aa2911bbc218fd1627cb6d1d6b18885ce43df7705df79fb67f8a766e451e8
 b403d53ba0a4eeb4dfcc8ab849ccce90d370fc18196d80e4bdf73ca031c49772bb3801b8f6c28be5993f3b74c82e1f3ad16b7dd53f112355afbba5a2e0847485  0002-clk-drop-duplicate-all_lists-for-debugfs.patch
 c8d71af7e443467e1800cb6fe3892c5aa44b1c4d841d80aa9e4cd99eab137a1abed6407e533548cab91cebf984d4994de8a49138db24f2b8829177e6314a2ca8  0003-icnss-send-host-cap-regdb-and-bdf-like-cnss-daemon.patch
 7e0ad0e509e5e2e0d143911e49aef0289952aea037d1aa5e9ed68d1ceb03fe336d9c3b7fa2db9b34ad0e5afd203055f86074b61ba552813e6b90b393c5cdec3c  0004-printk-map-console-null-to-tty0.patch
-833d56f2b96f594bb8a672b8fbea2c86b3eec2cb4df74f5049ea06ab2c7be07f10b727f4e0950ea84aa5798516916fc7ac0e9d36e08a2fd00ecdf859e080627c  0005-fbdev-add-hanoip-splash-framebuffer-console.patch
+1adb77b2b5125f20c1dc6cc0a20a16718a2f0414b2fafdf49e4846ca64424516a6d1a2b9b30599471920b97d98eb36418e7ddac99ce8b9b47f2f1eb1973dfb91  0005-fbdev-add-hanoip-splash-framebuffer-console.patch
 "

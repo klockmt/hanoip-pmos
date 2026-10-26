@@ -31,7 +31,7 @@
  obj-$(CONFIG_FB_VIRTUAL)          += vfb.o
 --- /dev/null
 +++ b/drivers/video/fbdev/hanoip-splashfb.c
-@@ -0,0 +1,162 @@
+@@ -0,0 +1,185 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Framebuffer console for the Moto G60 (hanoip) on the buffer the bootloader leaves on screen.
@@ -45,6 +45,7 @@
 + * It does not touch the display pipeline. Geometry and channel order are module parameters because the
 + * bootloader does not describe them (hanoip_splashfb.stride=... on the kernel command line).
 + */
++#include <linux/backlight.h>
 +#include <linux/debugfs.h>
 +#include <linux/fb.h>
 +#include <linux/init.h>
@@ -87,9 +88,31 @@
 +	return 0;
 +}
 +
++/*
++ * fb blank (echo 4 > /sys/class/graphics/fb0/blank) powers the panel's backlight down, the same
++ * path as the backlight's own bl_power attribute; unblank powers it back up. The display pipe
++ * itself is left running, so the kernel log keeps being written to the buffer.
++ */
++static int hanoip_fb_blank(int blank, struct fb_info *info)
++{
++	struct backlight_device *bd = backlight_device_get_by_type(BACKLIGHT_RAW);
++	int rc = -ENODEV;
++
++	if (!bd)
++		return -ENODEV;
++	mutex_lock(&bd->ops_lock);
++	if (bd->ops) {
++		bd->props.power = blank ? FB_BLANK_POWERDOWN : FB_BLANK_UNBLANK;
++		rc = backlight_update_status(bd);
++	}
++	mutex_unlock(&bd->ops_lock);
++	return rc;
++}
++
 +static struct fb_ops hanoip_fb_ops = {
 +	.owner		= THIS_MODULE,
 +	.fb_setcolreg	= hanoip_fb_setcolreg,
++	.fb_blank	= hanoip_fb_blank,
 +	.fb_fillrect	= cfb_fillrect,
 +	.fb_copyarea	= cfb_copyarea,
 +	.fb_imageblit	= cfb_imageblit,
