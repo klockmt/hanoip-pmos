@@ -8,7 +8,10 @@ ok() { echo "ok    $*"; }
 
 # 1. every script parses
 for f in scripts/*; do
-	sh -n "$f" 2>/dev/null || fail "syntax error in $f"
+	case $(head -1 "$f") in
+	*python3*) python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$f" 2>/dev/null || fail "syntax error in $f" ;;
+	*) sh -n "$f" 2>/dev/null || fail "syntax error in $f" ;;
+	esac
 done
 [ $bad -eq 0 ] && ok "all scripts parse"
 
