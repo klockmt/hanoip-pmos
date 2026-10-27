@@ -1,0 +1,11 @@
+#!/sbin/openrc-run
+# Telegram bot for the phone (/up and /status), see /usr/bin/hanoip-bot.
+command=/usr/bin/hanoip-bot
+# supervise-daemon restarts it after a crash, with no limit on restarts, like the charge limit.
+supervisor=supervise-daemon
+respawn_delay=5
+respawn_max=0
+
+depend() {
+	after networkmanager tailscale
+}

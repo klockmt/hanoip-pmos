@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+# Checks hanoip-bot's replies without the Telegram API: only the owner's private chat is answered,
+# the two commands are fixed, and the status output is cut to fit a Telegram message.
+import sys
+import importlib.machinery
+import importlib.util
+import os
+import stat
+import tempfile
+
+sys.dont_write_bytecode = True  # keep the package directory free of __pycache__
+here = os.path.dirname(os.path.abspath(__file__))
+path = os.path.join(here, "..", "pmaports", "device", "testing", "device-motorola-hanoip", "hanoip-bot")
+loader = importlib.machinery.SourceFileLoader("hanoip_bot", path)
+spec = importlib.util.spec_from_loader("hanoip_bot", loader)
+bot = importlib.util.module_from_spec(spec)
+loader.exec_module(bot)
+
+OWNER = 1234
+real_run_status = bot.run_status
+
+
+def msg(text, sender=OWNER, chat=OWNER):
+    return {"from": {"id": sender}, "chat": {"id": chat}, "text": text}
+
+
+def check(name, got, want):
+    if got != want:
+        raise SystemExit(f"FAIL {name}: got {got!r}, want {want!r}")
+
+
+def fake_status():
+    fake_status.calls += 1
+    return "status ok"
+
+
+fake_status.calls = 0
+bot.run_status = fake_status
+
+check("owner /up", bot.reply_for(msg("/up"), OWNER), "de pé")
+check("owner /status runs the status", bot.reply_for(msg("/status"), OWNER), "status ok")
+check("owner /status@bot", bot.reply_for(msg("/status@hanoip_bot"), OWNER), "status ok")
+check("stranger ignored", bot.reply_for(msg("/status", sender=99), OWNER), None)
+check("group chat ignored", bot.reply_for(msg("/status", chat=-100), OWNER), None)
+check("unknown text answered with help", bot.reply_for(msg("; rm -rf /"), OWNER), "comandos: /up, /status")
+check("unknown text does not run the status", fake_status.calls, 2)
+
+# The real runner, with a temporary command so the test does not depend on the phone.
+tmp = tempfile.mkdtemp()
+script = os.path.join(tmp, "status")
+with open(script, "w") as f:
+    f.write("#!/bin/sh\nhead -c 5000 /dev/zero | tr '\\0' a\n")
+os.chmod(script, os.stat(script).st_mode | stat.S_IEXEC)
+bot.STATUS = script
+check("long output is cut", len(real_run_status()), bot.MAX_TEXT)
+
+bot.STATUS = os.path.join(tmp, "missing")
+check("missing command is text, not a crash", real_run_status(), "erro ao rodar hanoip-status: FileNotFoundError")
+
+print("bot replies: all checks pass")

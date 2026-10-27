@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+# Telegram bot for the phone. It answers only the owner's private chat, with two fixed commands:
+# /up (the phone is alive) and /status (hanoip-status). Nothing from a message reaches a shell.
+# It uses long polling, so it only makes outgoing connections; the firewall stays closed to incoming ones.
+import json
+import os
+import subprocess
+import sys
+import time
+import urllib.parse
+import urllib.request
+
+ENV = os.environ.get("HANOIP_BOT_ENV", "/etc/hanoip/telegram.env")
+STATUS = os.environ.get("HANOIP_STATUS_CMD", "/usr/bin/hanoip-status")
+API = "https://api.telegram.org/bot{}/{}"
+MAX_TEXT = 4000  # Telegram refuses messages over 4096 characters
+
+
+def load_env(path):
+    conf = {}
+    with open(path) as f:
+        for line in f:
+            if "=" in line:
+                key, value = line.rstrip("\n").split("=", 1)
+                conf[key] = value
+    return conf
+
+
+def call(token, method, **params):
+    data = urllib.parse.urlencode(params).encode()
+    with urllib.request.urlopen(API.format(token, method), data=data, timeout=70) as r:
+        return json.load(r)["result"]
+
+
+def run_status():
+    try:
+        out = subprocess.run([STATUS], capture_output=True, text=True, timeout=30)
+        return (out.stdout or out.stderr or "sem saída")[:MAX_TEXT]
+    except Exception as e:  # keep the bot alive whatever the command does
+        return f"erro ao rodar hanoip-status: {type(e).__name__}"
+
+
+def reply_for(msg, owner):
+    """Returns the text to send, or None when the message must be ignored."""
+    if msg.get("from", {}).get("id") != owner or msg.get("chat", {}).get("id") != owner:
+        return None
+    words = msg.get("text", "").split()
+    command = words[0].split("@")[0] if words else ""  # accepts /status@botname
+    if command == "/up":
+        return "de pé"
+    if command == "/status":
+        return run_status()
+    return "comandos: /up, /status"
+
+
+def main():
+    conf = load_env(ENV)
+    token, owner = conf["TOKEN"], int(conf["OWNER_ID"])
+    offset = 0
+    while True:
+        try:
+            updates = call(token, "getUpdates", offset=offset, timeout=50)
+        except Exception as e:  # the network can be down for a while; never print the URL, it has the token
+            print(f"getUpdates failed: {type(e).__name__}", file=sys.stderr, flush=True)
+            time.sleep(10)
+            continue
+        for update in updates:
+            offset = update["update_id"] + 1
+            msg = update.get("message")
+            if not msg:
+                continue
+            text = reply_for(msg, owner)
+            if text is None:
+                continue
+            try:
+                call(token, "sendMessage", chat_id=owner, text=text)
+            except Exception as e:
+                print(f"sendMessage failed: {type(e).__name__}", file=sys.stderr, flush=True)
+
+
+if __name__ == "__main__":
+    main()
