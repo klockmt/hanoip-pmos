@@ -37,13 +37,41 @@ def fake_status():
 fake_status.calls = 0
 bot.run_status = fake_status
 
-check("owner /up", bot.reply_for(msg("/up"), OWNER), "de pé")
-check("owner /status runs the status", bot.reply_for(msg("/status"), OWNER), "status ok")
-check("owner /status@bot", bot.reply_for(msg("/status@hanoip_bot"), OWNER), "status ok")
-check("stranger ignored", bot.reply_for(msg("/status", sender=99), OWNER), None)
-check("group chat ignored", bot.reply_for(msg("/status", chat=-100), OWNER), None)
-check("unknown text answered with help", bot.reply_for(msg("; rm -rf /"), OWNER), "comandos: /up, /status")
+check("owner /up", bot.reply_for(msg("/up"), OWNER), ("de pé", None))
+check("owner /status runs the status", bot.reply_for(msg("/status"), OWNER), ("status ok", None))
+check("owner /status@bot", bot.reply_for(msg("/status@hanoip_bot"), OWNER), ("status ok", None))
+check("stranger ignored", bot.reply_for(msg("/status", sender=99), OWNER), (None, None))
+check("group chat ignored", bot.reply_for(msg("/status", chat=-100), OWNER), (None, None))
+check("stranger cannot start a watch", bot.reply_for(msg("/status -t=30 -g=1", sender=99), OWNER), (None, None))
+check("unknown text answered with help", bot.reply_for(msg("; rm -rf /"), OWNER), (bot.HELP, None))
 check("unknown text does not run the status", fake_status.calls, 2)
+
+# /status -t=MIN -g=MIN starts an automatic status; /stop ends it.
+text, watch = bot.reply_for(msg("/status -t=30 -g=1"), OWNER)
+check("watch request", watch, (30, 1))
+check("watch replies with the status now", text.endswith("status ok") and "a cada 1 min por 30 min" in text, True)
+check("/stop", bot.reply_for(msg("/stop"), OWNER), ("envio automático parado", "stop"))
+check("bad watch gives the usage and starts nothing", bot.reply_for(msg("/status -t=abc"), OWNER), (bot.USAGE, None))
+check("parse both", bot.parse_watch(["-g=5", "-t=60"]), (60, 5))
+check("parse defaults", bot.parse_watch(["-t=10"]), (10, 1))
+check("parse default time", bot.parse_watch(["-g=2"]), (30, 2))
+for bad in (["-t=0"], ["-g=0"], ["-g=61"], ["-t=1441"], ["-t=5", "-g=10"], ["-t=-1"], ["-t=1.5"], ["-t"],
+            ["-t=30", "-t=30"], ["-x=1"], ["-t=²"], ["-t=30;reboot"]):
+    check(f"parse rejects {bad}", bot.parse_watch(bad), None)
+
+# Schedule: /status -t=3 -g=1 at t=0 sends now (in the reply), then at 1, 2 and 3 minutes, the last marked.
+w = bot.start_watch(3, 1, 0)
+check("not due before the gap", bot.due(w, 59), (False, w, False))
+sent = []
+for now in range(0, 400, 10):
+    send_now, w, last = bot.due(w, now)
+    if send_now:
+        sent.append((now, last))
+check("sends at 1, 2 and 3 minutes, the last one at 3", sent, [(60, False), (120, False), (180, True)])
+check("nothing after the end", w, None)
+missed = bot.start_watch(10, 1, 0)
+send_now, missed, last = bot.due(missed, 300)  # offline for 5 minutes: one send, no burst
+check("missed sends are skipped", (send_now, missed[0], last), (True, 360, False))
 
 # The real runner, with a temporary command so the test does not depend on the phone.
 tmp = tempfile.mkdtemp()

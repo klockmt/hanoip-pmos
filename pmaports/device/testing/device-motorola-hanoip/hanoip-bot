@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-# Telegram bot for the phone. It answers only the owner's private chat, with two fixed commands:
-# /up (the phone is alive) and /status (hanoip-status). Nothing from a message reaches a shell.
+# Telegram bot for the phone. It answers only the owner's private chat, with fixed commands: /up (the
+# phone is alive), /status (hanoip-status), /status -t=MIN -g=MIN (hanoip-status every g minutes for t
+# minutes) and /stop (ends that). Nothing from a message reaches a shell; -t and -g must be numbers.
 # It uses long polling, so it only makes outgoing connections; the firewall stays closed to incoming ones.
 import json
 import os
@@ -14,6 +15,9 @@ ENV = os.environ.get("HANOIP_BOT_ENV", "/etc/hanoip/telegram.env")
 STATUS = os.environ.get("HANOIP_STATUS_CMD", "/usr/bin/hanoip-status")
 API = "https://api.telegram.org/bot{}/{}"
 MAX_TEXT = 4000  # Telegram refuses messages over 4096 characters
+HELP = "comandos: /up, /status, /status -t=30 -g=1, /stop"
+USAGE = "uso: /status -t=MIN -g=MIN (-g de 1 a 60, -t de g a 1440)"
+POLL_S = 50
 
 
 def load_env(path):
@@ -40,42 +44,95 @@ def run_status():
         return f"erro ao rodar hanoip-status: {type(e).__name__}"
 
 
-def reply_for(msg, owner):
-    """Returns the text to send, or None when the message must be ignored."""
-    if msg.get("from", {}).get("id") != owner or msg.get("chat", {}).get("id") != owner:
+def parse_watch(args):
+    """'-t=30 -g=1' -> (30, 1), in minutes; None when anything is off. A missing -t is 30, a missing -g is 1."""
+    opts = {}
+    for arg in args:
+        key, sep, value = arg.partition("=")
+        if key not in ("-t", "-g") or not sep or key in opts or not (value.isascii() and value.isdigit()):
+            return None
+        opts[key] = int(value)
+    t, g = opts.get("-t", 30), opts.get("-g", 1)
+    if not (1 <= g <= 60 and g <= t <= 1440):
         return None
+    return t, g
+
+
+def reply_for(msg, owner):
+    """Returns (text, watch): the text to send now (None ignores the message) and what to do with the
+    automatic status: None (nothing), "stop", or (minutes, gap in minutes) to start one."""
+    if msg.get("from", {}).get("id") != owner or msg.get("chat", {}).get("id") != owner:
+        return None, None
     words = msg.get("text", "").split()
     command = words[0].split("@")[0] if words else ""  # accepts /status@botname
     if command == "/up":
-        return "de pé"
+        return "de pé", None
+    if command == "/stop":
+        return "envio automático parado", "stop"
     if command == "/status":
-        return run_status()
-    return "comandos: /up, /status"
+        if len(words) == 1:
+            return run_status(), None
+        watch = parse_watch(words[1:])
+        if watch is None:
+            return USAGE, None
+        t, g = watch
+        return f"enviando /status a cada {g} min por {t} min (/stop para parar)\n\n" + run_status(), watch
+    return HELP, None
+
+
+def start_watch(minutes, gap_minutes, now):
+    """An automatic status as (next send, gap, end), in seconds of time.monotonic()."""
+    return now + gap_minutes * 60, gap_minutes * 60, now + minutes * 60
+
+
+def due(watch, now):
+    """Returns (send now, watch afterwards, last send). Sends missed while offline are skipped, not burst."""
+    if watch is None or now < watch[0]:
+        return False, watch, False
+    nxt, gap, end = watch
+    while nxt <= now:
+        nxt += gap
+    if nxt > end:
+        return True, None, True
+    return True, (nxt, gap, end), False
+
+
+def send(token, owner, text):
+    try:
+        call(token, "sendMessage", chat_id=owner, text=text)
+    except Exception as e:
+        print(f"sendMessage failed: {type(e).__name__}", file=sys.stderr, flush=True)
 
 
 def main():
     conf = load_env(ENV)
     token, owner = conf["TOKEN"], int(conf["OWNER_ID"])
     offset = 0
+    watch = None
     while True:
+        wait = POLL_S if watch is None else max(0, min(POLL_S, int(watch[0] - time.monotonic())))
         try:
-            updates = call(token, "getUpdates", offset=offset, timeout=50)
+            updates = call(token, "getUpdates", offset=offset, timeout=wait)
         except Exception as e:  # the network can be down for a while; never print the URL, it has the token
             print(f"getUpdates failed: {type(e).__name__}", file=sys.stderr, flush=True)
             time.sleep(10)
-            continue
+            updates = []
         for update in updates:
             offset = update["update_id"] + 1
             msg = update.get("message")
             if not msg:
                 continue
-            text = reply_for(msg, owner)
+            text, action = reply_for(msg, owner)
             if text is None:
                 continue
-            try:
-                call(token, "sendMessage", chat_id=owner, text=text)
-            except Exception as e:
-                print(f"sendMessage failed: {type(e).__name__}", file=sys.stderr, flush=True)
+            if action == "stop":
+                watch = None
+            elif action:
+                watch = start_watch(*action, time.monotonic())
+            send(token, owner, text)
+        now_due, watch, last = due(watch, time.monotonic())
+        if now_due:
+            send(token, owner, run_status() + ("\n\nfim do envio automático" if last else ""))
 
 
 if __name__ == "__main__":
