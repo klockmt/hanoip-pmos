@@ -1,0 +1,9 @@
+#!/bin/sh
+# Runs a command as root on the phone. The sudo password comes from .env (HANOIP_SUDO_PASSWORD) and goes over
+# the ssh stdin, so it is never in an argument list or a log; the command goes over as base64, so any quoting
+# works. The command cannot read stdin. E.g.: scripts/hanoip-sudo 'rc-service hanoip-charge-limit status'
+. "$(dirname "$0")/env.sh"
+[ -n "${HANOIP_SUDO_PASSWORD:-}" ] || { echo "HANOIP_SUDO_PASSWORD is not set in .env" >&2; exit 1; }
+[ $# -eq 1 ] || { echo "usage: $0 'command'" >&2; exit 2; }
+cmd=$(printf '%s' "$1" | base64 -w0)
+printf '%s\n' "$HANOIP_SUDO_PASSWORD" | "$(dirname "$0")/hanoip-ssh" "sudo -S -p '' sh -c 'echo $cmd | base64 -d | sh'"
