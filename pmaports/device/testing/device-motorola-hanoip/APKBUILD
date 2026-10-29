@@ -4,7 +4,7 @@
 pkgname=device-motorola-hanoip
 pkgdesc="Motorola Moto G (60)"
 pkgver=0
-pkgrel=10
+pkgrel=11
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -66,7 +66,7 @@ kernel_mainline() {
 }
 
 sha512sums="
-7ebddc03a4362c451689d75c5b70118898d9c24f356cc2cf8d9d67ed56ec9c6cc781d61a743eb001b9e9b936949f4552ac6aed1716007cb74ce16b54432433c5  hanoip-qgd
+5aaaa63dfed04c69731fe0c790e342cd4dfc99cdfbfcb0114567e44c71dfe2bc826d0dfefe19975793e403388282b8db2ffb762a065c2732cd32532e9a6e0a0f  hanoip-qgd
 088ef67651ebb1673a87184c690f25109e1f4693cf10c9c70d478e7f45c96ccaa6509f1191d9171e085fe6e8a9d74cdddfeb9275c504e3f9df19e1261713d3be  hanoip-qgd.initd
 956decb2012a5feeba30aef1c03594757bb0b450973787db1ddc4ef3a4824c05df134ebbc5e21c044d8b159434301ff015d6436a34c7cb18a8cf376be3506fe7  hanoip-bot
 d211b14464ad74fe9e79cdd1d4ecf59c8701dd5689bf5138d436cf47ebf4fb6f886d411f9ff08f13c4ada470bbccb1c42917628157f64c46d58f78d94e1669aa  hanoip-bot.initd

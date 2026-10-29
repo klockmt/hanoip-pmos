@@ -29,6 +29,10 @@ STATE = os.environ.get("HANOIP_QGD_STATE", "/run/hanoip-qgd.soc")
 REST_UA = 500000  # below this current the voltage is close enough to the OCV to correct the count
 REST_PULL = 0.02  # fraction of the gap to the OCV curve closed per sample batch (about a minute)
 GOOD_OCV_PULL = 0.5  # the PMIC measured a real rest voltage: trust it much more
+# The charger keeps reporting Full while the cable is suspended and the battery discharges, so Full
+# sets 100 % only while the battery is not really discharging. At Full on the cable the kernel sends
+# batches with no samples at all; those count as not discharging.
+FULL_MAX_DISCHARGE_UA = 100000
 BOOT_TRUST_S = 300  # the kernel's boot value is good only if we start soon after boot
 DEFAULT_RBAT_MOHM = 100
 
@@ -73,7 +77,7 @@ def step(soc, fifo, params, full, fcc_mah, rbat_mohm, lookup):
     elif ocv is not None and abs(i) < REST_UA:
         table = TABLE_SOC_OCV_CHARGE if i < 0 else TABLE_SOC_OCV_DISCHARGE
         soc += REST_PULL * (lookup(ocv, table) / 100.0 - soc)
-    if full:
+    if full and (i is None or i < FULL_MAX_DISCHARGE_UA):
         soc = 100.0
     return min(100.0, max(0.0, soc)), ocv
 

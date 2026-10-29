@@ -68,6 +68,16 @@ soc, _ = qgd.step(40.0, rest, {qgd.QG_GOOD_OCV_UV: 3800000}, False, 6174, 100, f
 check("strong pull on a measured rest OCV", near(soc, 50.0, 1e-3))
 soc, _ = qgd.step(73.0, heavy, {}, True, 6174, 100, flat_lookup(10))
 check("charger says full: 100 %", soc == 100.0)
+soc, _ = qgd.step(99.0, [(4.4e6, 0, 60000)], {}, True, 6174, 100, flat_lookup(100))
+check("full at rest on the cable: 100 %", soc == 100.0)
+# Regression (2026-10-29): with the cable suspended the charger still says Full while the battery
+# discharges; resetting to 100 % there froze the percentage and the charge limit never resumed.
+soc, _ = qgd.step(100.0, [(4.33e6, 300000, 300000)], {}, True, 6174, 100, flat_lookup(100))
+check("full but discharging: the count goes down", soc < 100.0)
+soc, _ = qgd.step(98.4, [], {}, True, 6174, 100, flat_lookup(100))
+check("full with no samples (the kernel stops sampling at Full on the cable): 100 %", soc == 100.0)
+soc, _ = qgd.step(50.0, [], {}, False, 6174, 100, flat_lookup(100))
+check("no samples and not full changes nothing", soc == 50.0)
 soc, _ = qgd.step(0.01, [(3.3e6, 3000000, 3600000)], {}, False, 6174, 100, flat_lookup(0))
 check("never below 0 %", soc == 0.0)
 
