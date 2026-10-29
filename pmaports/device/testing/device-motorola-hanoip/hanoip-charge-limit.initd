@@ -7,6 +7,11 @@ supervisor=supervise-daemon
 respawn_delay=5
 respawn_max=0
 
+depend() {
+	# Without hanoip-qgd the percentage stays at its boot value, so the limiter would never resume charging.
+	need hanoip-qgd
+}
+
 stop_post() {
 	# Stopping the limiter must not leave the phone without charging or with the cable suspended.
 	echo 1 > /sys/class/power_supply/battery/charging_enabled
