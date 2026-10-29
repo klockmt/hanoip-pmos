@@ -9,11 +9,11 @@ phone is marked **unverified**.
 
 | Question | Answer |
 |---|---|
-| Can the battery be bypassed? | **Probably, unverified.** The PMIC can keep the cable on and stop charging (`charging_enabled=0`, `input_suspend=0`), which is pass-through by design, but nobody measured it here. See section 1. |
-| Limit the charge to about 10 W? | Done in `hanoip-charge-limit` with `main/force_main_icl` (1.1 A). **Not run on the phone yet.** See section 2. |
-| Heat protection? | Done in `hanoip-thermal`: 40 °C pauses charging, 45 °C caps the CPU, 55 °C powers off. **Not run on the phone yet.** See section 3. |
+| Can the battery be bypassed? | **Yes, measured (2026-10-29).** With `charging_enabled=0` and `input_suspend=0` the battery current is 0 µA and the cable feeds the phone. See section 1. |
+| Limit the charge to about 10 W? | Done in `hanoip-charge-limit` with `main/force_main_icl` (1.1 A). The knob works on the phone; the 1.1 A figure itself was not seen biting. See section 2. |
+| Heat protection? | Done in `hanoip-thermal`: 40 °C pauses charging, 45 °C caps the CPU, 55 °C powers off. Pause, cap and alert ran on the phone with lowered thresholds; the power-off did not. See section 3. |
 | Discharge floor? | Already there: below 3.75 V the charge limit resumes charging. Heat does not override it. |
-| `powersave` and fewer cores for a DNS server? | Use `schedutil`, keep all cores. See section 5. |
+| `powersave` and fewer cores for a DNS server? | Use `schedutil` (applied), keep all cores. See section 5. |
 
 ## 1. Bypass (pass-through)
 
@@ -26,11 +26,16 @@ What the source says:
   input alone (`smb5_batt_set_prop`, `POWER_SUPPLY_PROP_CHARGING_ENABLED`).
 - `battery/input_suspend` votes 0 mA on `usb_icl_votable` and suspends DC (`smblib_set_prop_input_suspend`).
 - So `charging_enabled=0` with `input_suspend=0` is a charger with the input on and the charge off. On a
-  Qualcomm power path that is how phones with "bypass" or "idle mode" work in software. **Unverified** on this
-  board: the earlier commit `fc05145` saw the battery stay at 100 % on the cable after a cut, but the gauge
-  was frozen at the time, so it proves nothing.
+  Qualcomm power path that is how phones with "bypass" or "idle mode" work in software.
 
-Test to decide (needs root; stop the limiter first, or it cuts the cable again within 30 s):
+**Measured on 2026-10-29** (cable on, battery at 81 %, limiter stopped): with `charging_enabled=0` and
+`input_suspend=0`, `battery/current_now` read 0 µA on four samples 5 s apart, the status was "Not charging",
+and the cable supplied the phone (about 1 W at the cable, the phone's own draw). The battery voltage only
+relaxed (4.24 V falling slowly, no load on it). With `charging_enabled=1` the same cable gave 1.0 A at 8.5 V
+(about 9 W) and the battery took 1.5 A. So bypass works on this phone and the `charging_enabled` switch is
+enough. The limiter still uses the `input_suspend` cut described above; switching it to bypass is not done.
+
+The test, for repeating (needs root; stop the limiter first, or it cuts the cable again within 30 s):
 
 1. `rc-service hanoip-charge-limit stop`, then with the cable connected and the battery under 80 %:
    `echo 0 > /sys/class/power_supply/battery/charging_enabled` (leave `input_suspend` at 0).
@@ -41,7 +46,7 @@ Test to decide (needs root; stop the limiter first, or it cuts the cable again w
 4. `rc-service hanoip-charge-limit start` (stopping or starting it also restores `charging_enabled=1` and
    `input_suspend=0`).
 
-If it works, the cell can sit at one chosen level instead of cycling, which is the gentlest state for a phone
+Since it works, the cell can sit at one chosen level instead of cycling, which is the gentlest state for a phone
 that is always plugged in. The trade-off: the 10-cycle full-charge calibration in the limiter would be moot,
 and the gauge only learns on real discharge. That redesign is not done.
 
@@ -70,9 +75,18 @@ Nodes on this kernel (read on the phone):
 - It also beats the type limit. On a 0.5 A source it would raise the current, so it is only written when
   `usb/hw_current_max` is above the limit.
 
-1.1 A at the 9 V PD contract the phone negotiates is 9.9 W at the cable. **Unverified**: how the
-`smb1390`/`smb1355` parallel stage reacts. Measure after installing, with the cable charging:
-`usb/input_current_now` x `usb/voltage_now` should read about 10 W (`hanoip-status` shows it as "da tomada").
+The phone negotiates PD at about 8.5-9 V, so 1.1 A is about 9.4-9.9 W at the cable.
+
+**Measured on 2026-10-29**, the real `hanoip-charge-limit` running on the phone with the limit set to 0.7 A:
+the cable drew 0.69 A, 6.0 W, against 1.0 A, about 8.6 W, with no limit (the register reads back what was
+written, and 2000000 once released). So the knob works and `usb/input_current_now` x `usb/voltage_now` is the
+way to read it. The battery was at the top of the charge (4.45 V under charge, current already tapering), so
+the charge only drew 1.0 A even without a limit, and the 1.1 A cap did not change it (8.3-8.7 W against 8.5-9.1 W).
+Check it biting at 60-70 %, where the charge is not tapering and the unlimited cable should draw about 1.9 A.
+`smb1390`/`smb1355` stayed out of the way in these readings.
+
+`usb/input_current_now` also reads 0.3-0.8 A while the cable is suspended and the battery is supplying the
+phone (battery current negative), so it is not a measure of power drawn while `input_suspend=1`.
 
 The kernel-side alternative is the SMB5 thermal mitigation table, which needs a device tree change. In mainline,
 Casey Connolly's `qcom_smbx` series lets userspace stop the charge by writing 0 to `status`, and says current
@@ -100,6 +114,11 @@ Measured on the phone, idle: battery 28 °C, CPU 33-38 °C, charger die 30 °C (
 | 45 °C | CPU capped at 60 % of its top frequency |
 | 55 °C, two readings in a row | alert through the bot, then `poweroff` |
 
+On the phone, with the real scripts and the thresholds lowered to 25 °C (hot) and 26 °C (cap) against a 27 °C
+battery: the cap wrote 1382400 kHz (60 % of 2304000) on the big cluster, the charger and the cable were cut,
+the override was released, one Telegram-style alert line was produced, and when the flag went away charging
+came back with the 0.7 A limit applied again. The 55 °C power-off and the real bot alert did not run there.
+
 Each level lifts 3 °C under its threshold. The flag counts only while fresh (5 minutes), and under 3.75 V the
 charge comes first, so a hot reading cannot drain the battery into the PMIC data loss of 2026-10-28.
 The CPU die temperature is not used: the load is low, so the battery is the slow and critical sensor. Adding
@@ -125,8 +144,8 @@ performance schedutil`.
 - **`schedutil`** follows the scheduler's load and is the default governor on arm64
   ([Kconfig](https://tangled.org/tjh.dev/kernel/blob/v6.19/drivers/cpufreq/Kconfig)). At idle it drops to the
   lowest step and climbs on demand, so the idle heat and draw fall and DNS latency barely moves. This is the
-  change worth making: `echo schedutil > /sys/devices/system/cpu/cpu{0,6}/cpufreq/scaling_governor` at boot.
-  Not applied yet.
+  change worth making. Applied on the phone on 2026-10-29: the little cluster dropped to 1.0 GHz and the big one
+  to 300 MHz at idle. A boot script (`hanoip-cpufreq.start`) makes it stick.
 - Offlining cores is not worth it. The kernel's hotplug page covers only the mechanics; whether an offlined core
   saves power depends on the hardware, and idle cores already enter cpuidle states (`state0-2` exist here)
   ([hotplug](https://www.kernel.org/doc/html/v6.8/core-api/cpu_hotplug.html),
@@ -139,8 +158,7 @@ Tailscale DNS loop already in `NOTES.md`, not the CPU.
 
 ## Not verified
 
-- Bypass (section 1) and the 10 W figure (section 2) on the phone.
-- `hanoip-thermal` and the new charge-limit paths on the phone: only the fake-sysfs tests ran
-  (`scripts/test-thermal`, `scripts/test-charge-limit`).
-- The thresholds in section 3 and the SMB5 parallel-charger behaviour.
+- The 1.1 A cap biting during the constant-current part of the charge (section 2).
+- The 55 °C power-off and the real Telegram alert on the phone; the thresholds in section 3 are guesses.
+- The new scripts installed as a package: the live tests ran them from the repository, not from `pmbootstrap`.
 - The Moto G60 on any "bypass charging" list: no source found either way.
