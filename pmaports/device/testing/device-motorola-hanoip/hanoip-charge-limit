@@ -1,6 +1,7 @@
 #!/bin/sh
 # Keeps the battery between 60 % and 80 % to preserve its health: above HI the charger is cut and the
 # cable is suspended (input_suspend), so the phone runs from the battery; below LO both come back.
+# This also happens after the charger finished (Full), so the phone never sits at 100 % on the cable.
 # Between the two it keeps its state.
 # A cycle is a cut at HI followed by a resume below LO. After CYCLES cycles, the next charge runs
 # to 100 % once, and then the count starts again. The state is kept in STATE, so it survives
@@ -39,8 +40,10 @@ while :; do
 	elif [ "$unlock" = 1 ]; then
 		# The charge after the last cycle runs to full; then the count starts again.
 		if [ "$cap" -ge 100 ]; then done_cycles=0 cut=0 unlock=0; save; fi
-	elif [ "$cap" -gt "$hi" ] && [ "$on" = 1 ] && [ "$(cat $usb/present)" = 1 ]; then
-		# Only a charger that is connected can be cut; without one the flag would count a cycle that never happened.
+	elif [ "$cap" -gt "$hi" ] && [ "$(cat $bat/input_suspend)" = 0 ] && [ "$(cat $usb/present)" = 1 ]; then
+		# The cable powers the phone even after a finished charge (charging_enabled reads 0 at Full), so
+		# the test is the cable, not the charger. Without a cable there is nothing to cut, and the flag
+		# would count a cycle that never happened.
 		echo 0 > $bat/charging_enabled
 		echo 1 > $bat/input_suspend
 		cut=1; save

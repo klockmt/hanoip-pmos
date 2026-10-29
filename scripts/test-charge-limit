@@ -72,6 +72,14 @@ echo 4000000 > "$bat/voltage_now"
 echo "0 1 0" > "$dir/state"; echo 1 > "$bat/input_suspend"
 step 70 0 0 "0 1 0"
 
+# Full on the cable: the charger reads 0 after a finished charge, but the cable still has to go, or
+# the phone sits at 100 % on it instead of cycling between 60 and 80 %.
+echo "0 0 0" > "$dir/state"; echo 0 > "$bat/input_suspend"
+step 100 0 0 "0 1 0"
+[ "$(cat "$bat/input_suspend")" = 1 ] || { echo "FAIL: Full on the cable did not suspend the cable" >&2; exit 1; }
+# Already suspended above 80 %: no second cut.
+step 90 0 0 "0 1 0"
+
 # Stopping the service (TERM) turns the charger back on, even while it is cut.
 echo 85 > "$bat/capacity"; echo 1 > "$bat/charging_enabled"; touch "$gauge"
 timeout -s TERM 1 sh "$script" >/dev/null 2>&1 || true
