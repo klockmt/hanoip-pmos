@@ -1,0 +1,8 @@
+#!/bin/sh
+# The kernel default here is "performance", which holds every core at its top step even when idle.
+# schedutil follows the load: the idle phone drops to its lowest step and climbs on demand, which keeps
+# DNS latency about the same and cuts the idle heat and draw.
+for p in /sys/devices/system/cpu/cpu[0-9]*/cpufreq; do
+	echo schedutil > "$p/scaling_governor" 2>/dev/null || true
+done
+exit 0
