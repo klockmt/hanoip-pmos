@@ -35,6 +35,16 @@ GOOD_OCV_PULL = 0.5  # the PMIC measured a real rest voltage: trust it much more
 FULL_MAX_DISCHARGE_UA = 100000
 BOOT_TRUST_S = 300  # the kernel's boot value is good only if we start soon after boot
 DEFAULT_RBAT_MOHM = 100
+CUTOFF_UV = 3400000  # qcom,vbatt-cutoff-mv is not in this DT, so the driver uses its default
+
+
+def normalize(raw, full_raw, cutoff_raw):
+    """Profile SOC (0-10000, the cell's own scale) to the system scale the kernel reports, as its
+    boot code does: 0 at the cutoff voltage and 100 % at the float voltage (capped at 99 % raw)."""
+    full_raw = min(full_raw, 9900)
+    if full_raw <= cutoff_raw:
+        return raw
+    return min(10000, max(0, (raw - cutoff_raw) * 10000 // (full_raw - cutoff_raw)))
 
 
 def parse_kdata(buf):
@@ -123,10 +133,16 @@ def main():
     qg = os.open("/dev/qg", os.O_RDWR)
     profile = os.open("/dev/qg_battery", os.O_RDWR)
 
-    def lookup(ocv_uv, table):
-        buf = bytearray(BP.pack(0, int(ocv_uv), 0, 0, 0, int(read("temp", "250")), table))
+    def profile_soc(ocv_uv, table, temp):
+        buf = bytearray(BP.pack(0, int(ocv_uv), 0, 0, 0, temp, table))
         fcntl.ioctl(profile, BPIOCXSOC, buf)
         return BP.unpack(buf)[0]
+
+    def lookup(ocv_uv, table):
+        temp = int(read("temp", "250"))
+        full = profile_soc(int(read("voltage_max", "4450000", BMS)), TABLE_SOC_OCV_CHARGE, temp)
+        cutoff = profile_soc(CUTOFF_UV, TABLE_SOC_OCV_DISCHARGE, temp)
+        return normalize(profile_soc(ocv_uv, table, temp), full, cutoff)
 
     def fcc_mah():
         buf = bytearray(BP.pack(0, 0, 0, 0, 0, int(read("temp", "250")), TABLE_FCC))

@@ -81,6 +81,15 @@ check("no samples and not full changes nothing", soc == 50.0)
 soc, _ = qgd.step(0.01, [(3.3e6, 3000000, 3600000)], {}, False, 6174, 100, flat_lookup(0))
 check("never below 0 %", soc == 0.0)
 
+# Profile scale to system scale, like the kernel's boot code: the cell reads about 97 % at 4.4 V on
+# this profile, which the system calls 100 %.
+check("normalize: float voltage is 100 %", qgd.normalize(9900, 9900, 150) == 10000)
+check("normalize: cutoff is 0 %", qgd.normalize(150, 9900, 150) == 0)
+check("normalize: below cutoff stays 0 %", qgd.normalize(50, 9900, 150) == 0)
+check("normalize: full capped at 99 % raw", qgd.normalize(9900, 9950, 150) == 10000)
+check("normalize: midpoint", qgd.normalize(5025, 9900, 150) == 5000)
+check("normalize: broken profile passes through", qgd.normalize(4000, 100, 200) == 4000)
+
 # Where counting starts.
 lk = flat_lookup(55)
 check("restart resumes the saved value", qgd.initial_soc(37.5, 9999, 100, 4.2e6, 3000000, 100, lk) == 37.5)
