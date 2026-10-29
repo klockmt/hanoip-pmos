@@ -145,6 +145,7 @@ Active slot `b`. **Lineage was replaced by pmOS** (the user's choice on 24/10): 
 4. Server tuning: zram, passwordless `sudo` only if the user asks, whatever services the user wants to run.
 5. Repository: published on GitHub (private for now); update `STATUS.md` as the work progresses.
 6. Mainline (long term): v3 `vendor_boot` with our own DTB on slot `b` (the slot `a` tests do not count). Mainline Wi-Fi uses `ath10k`, which works on sweet/sunfish with this same chip.
+7. Battery cycle count (pending, the user asked to do it later): patch `qpnp-qg` so `bms/cycle_counts` accepts a write (8 bucket values, stored to SDAM with `qg_store_cycle_count`), then restore the buckets lost on 2026-10-28: `25 60 114 148 178 167 137 85` (average 114). Write them and reboot before the current charge session ends, or the kernel overwrites a bucket from RAM. Until then `hanoip-status` adds the offset in `/var/lib/hanoip/cycle-offset` (on the phone, not in the repo); delete that file once the buckets are restored.
 
 ## Working rules
 
