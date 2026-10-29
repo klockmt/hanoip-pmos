@@ -2,6 +2,8 @@
 # Telegram bot for the phone. It answers only the owner's private chat, with fixed commands: /up (the
 # phone is alive), /status (hanoip-status), /status -t=MIN -g=MIN (hanoip-status every g minutes for t
 # minutes) and /stop (ends that). Nothing from a message reaches a shell; -t and -g must be numbers.
+# `hanoip-bot --alert TEXT` sends TEXT to the owner once and exits; hanoip-thermal uses it (the text comes
+# from the phone's own scripts, never from a message).
 # It uses long polling, so it only makes outgoing connections; the firewall stays closed to incoming ones.
 import json
 import os
@@ -104,6 +106,11 @@ def send(token, owner, text):
         print(f"sendMessage failed: {type(e).__name__}", file=sys.stderr, flush=True)
 
 
+def alert(text):
+    conf = load_env(ENV)
+    send(conf["TOKEN"], int(conf["OWNER_ID"]), text[:MAX_TEXT])
+
+
 def main():
     conf = load_env(ENV)
     token, owner = conf["TOKEN"], int(conf["OWNER_ID"])
@@ -136,4 +143,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if sys.argv[1:2] == ["--alert"] and len(sys.argv) == 3:
+        alert(sys.argv[2])
+    else:
+        main()

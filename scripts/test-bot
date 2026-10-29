@@ -85,4 +85,14 @@ check("long output is cut", len(real_run_status()), bot.MAX_TEXT)
 bot.STATUS = os.path.join(tmp, "missing")
 check("missing command is text, not a crash", real_run_status(), "erro ao rodar hanoip-status: FileNotFoundError")
 
+# --alert sends one fixed text to the owner, cut to a Telegram message.
+env = os.path.join(tmp, "telegram.env")
+with open(env, "w") as f:
+    f.write("TOKEN=t\nOWNER_ID=1234\n")
+bot.ENV = env
+sent_to = []
+bot.send = lambda token, owner, text: sent_to.append((token, owner, text))
+bot.alert("a" * 5000)
+check("alert goes to the owner, cut", sent_to, [("t", 1234, "a" * bot.MAX_TEXT)])
+
 print("bot replies: all checks pass")
