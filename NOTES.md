@@ -192,3 +192,15 @@ What that caused (2026-10-26 to 2026-10-28): `capacity` read 100 % for days whil
 - `scripts/test-qgd` checks the arithmetic and the struct layout (412 and 144 bytes) without the phone.
 
 The charge limit `need`s `hanoip-qgd`. Cycle counts are not writable through sysfs, so the old count (114) cannot be restored; the counter starts again from 0.
+
+Found on 2026-10-29, before turning the charge limit back on:
+- With the cable suspended (`input_suspend=1`) the charger keeps reporting `Full` while the battery discharges, and at `Full` on the cable the kernel sends batches with no samples. `Full` therefore sets 100 % only when the batch shows no discharge (under 100 mA) or has no samples; otherwise the percentage froze at 100 % again. A 5-minute suspended test then fell 0.62 %, and a 3-minute one 0.25 %.
+- The profile table is the cell's own scale (98.5 % at the 4.42 V rest voltage of a full battery). The kernel's boot code maps the cutoff (3.4 V, the driver default, as `qcom,vbatt-cutoff-mv` is not in the DT) to 0 % and the float voltage (`bms/voltage_max`, 4.45 V) to 100 %, capped at 99 % raw. The OCV pull uses the same normalization.
+- `hanoip-qgd` writes about every 62 s, but one gap of 288 s showed up right after the cable came back.
+- The charge limit no longer trusts the percentage alone: if `/run/hanoip-qgd.soc` is older than 15 minutes, or the battery is under 3.75 V (about 20 %), it resumes charging and makes no cut. Its old state `0 1 0` (a cut from before the battery died) was reset to `0 0 0`.
+
+## Tailscale DNS loop and a full conntrack table (2026-10-29)
+
+`tailscaled` had rewritten `/etc/resolv.conf` to its own MagicDNS (`100.100.100.100`, `fd7a:115c:a1e0::53`), and failed to keep the original (`resolvconf: signature mismatch`). Its own lookups then went through `tailscale0` back to itself and kept being reset: about 7,000 DNS connections in `TIME_WAIT`, more than 2,000 packets a second on `tailscale0`, a load average of 3-4, and a full conntrack table (65,536 entries) that dropped new connections, SSH included (`nf_conntrack: table full, dropping packet`).
+
+The phone does not need MagicDNS, so: `tailscale set --accept-dns=false` (kept in the Tailscale state), then `resolvconf -u`, because Tailscale did not restore the file and DNS failed until then. `resolv.conf` now points at the router again; the load went to 0.4 and the table started draining. Undo with `tailscale set --accept-dns=true`.
