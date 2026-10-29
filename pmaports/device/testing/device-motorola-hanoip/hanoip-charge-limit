@@ -6,19 +6,24 @@
 # A cycle is a cut at HI followed by a resume below LO. After CYCLES cycles, the next charge runs
 # to 100 % once, and then the count starts again. The state is kept in STATE, so it survives
 # reboots. The HANOIP_* variables override the limits and paths, for tests (scripts/test-charge-limit).
+# While the cable charges, the input current is held at ICL (1.1 A at 9 V is about 10 W) with the override
+# main/force_main_icl. That override beats every other ICL vote, input_suspend included, so it is released
+# before each cut, and the kernel drops it on its own when the cable is unplugged.
 # Safety first: the percentage once froze at 100 % and the phone drained on battery until it died, so
 # a gauge that stops updating (hanoip-qgd) or a battery below FLOOR turns charging back on and blocks cuts.
 bat=${HANOIP_BATTERY_DIR:-/sys/class/power_supply/battery}
 usb=${HANOIP_USB_DIR:-/sys/class/power_supply/usb}
 state=${HANOIP_CHARGE_STATE:-/var/lib/hanoip/charge-limit}
+main=${HANOIP_MAIN_DIR:-/sys/class/power_supply/main}
 gauge=${HANOIP_QGD_STATE:-/run/hanoip-qgd.soc}
+icl=${HANOIP_CHARGE_ICL_UA:-1100000}
 hi=${HANOIP_CHARGE_HI:-80}
 lo=${HANOIP_CHARGE_LO:-60}
 cycles=${HANOIP_CHARGE_CYCLES:-10}
 floor=${HANOIP_CHARGE_FLOOR_UV:-3750000} # about 20 % on this battery's profile; 60 % is about 3.95 V
 stale_s=900 # hanoip-qgd writes about once a minute, with gaps of up to 5 minutes seen after the cable returns
 # Stopping or killing the limiter must not leave the charger cut or the cable suspended: the phone would drain without charging.
-trap 'echo 1 > "$bat/charging_enabled"; echo 0 > "$bat/input_suspend"' EXIT
+trap 'echo -1 > "$main/force_main_icl"; echo 1 > "$bat/charging_enabled"; echo 0 > "$bat/input_suspend"' EXIT
 trap 'exit 1' INT TERM
 
 mkdir -p "$(dirname "$state")"
@@ -28,12 +33,21 @@ done_cycles=${done_cycles:-0} cut=${cut:-0} unlock=${unlock:-0}
 
 save() { echo "$done_cycles $cut $unlock" > "$state"; }
 resume() { echo 0 > $bat/input_suspend; echo 1 > $bat/charging_enabled; }
-gauge_fresh() { [ $(( $(date +%s) - $(stat -c %Y "$gauge" 2>/dev/null || echo 0) )) -le "$stale_s" ]; }
+cutoff() { echo -1 > $main/force_main_icl; echo 0 > $bat/charging_enabled; echo 1 > $bat/input_suspend; }
+fresh() { [ $(( $(date +%s) - $(stat -c %Y "$1" 2>/dev/null || echo 0) )) -le "$2" ]; }
+gauge_fresh() { fresh "$gauge" "$stale_s"; }
+# Holds the input current at ICL, or lower when the source offers less (a PC port, for example): the override
+# would otherwise raise the limit above what the source gives.
+throttle() {
+	hw=$(cat $usb/hw_current_max 2>/dev/null) || return
+	if [ "$hw" -gt "$icl" ]; then echo "$icl" > $main/force_main_icl; else echo -1 > $main/force_main_icl; fi
+}
 
 while :; do
 	cap=$(cat $bat/capacity)
 	on=$(cat $bat/charging_enabled)
-	if ! gauge_fresh || [ "$(cat $bat/voltage_now)" -lt "$floor" ]; then
+	volt=$(cat $bat/voltage_now)
+	if ! gauge_fresh || [ "$volt" -lt "$floor" ]; then
 		if [ "$on" = 0 ] || [ "$(cat $bat/input_suspend)" = 1 ]; then resume; fi
 		# Not a cycle: the battery did not go from 80 to 60 % under our cut.
 		if [ "$cut" = 1 ]; then cut=0; save; fi
@@ -44,8 +58,7 @@ while :; do
 		# The cable powers the phone even after a finished charge (charging_enabled reads 0 at Full), so
 		# the test is the cable, not the charger. Without a cable there is nothing to cut, and the flag
 		# would count a cycle that never happened.
-		echo 0 > $bat/charging_enabled
-		echo 1 > $bat/input_suspend
+		cutoff
 		cut=1; save
 	elif [ "$cap" -lt "$lo" ] && [ "$on" = 0 ]; then
 		resume
@@ -54,5 +67,6 @@ while :; do
 		if [ "$done_cycles" -ge "$cycles" ]; then unlock=1; fi
 		save
 	fi
+	if [ "$(cat $usb/present)" = 1 ] && [ "$(cat $bat/input_suspend)" = 0 ]; then throttle; else echo -1 > $main/force_main_icl; fi
 	sleep 30
 done

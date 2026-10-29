@@ -13,10 +13,13 @@ usb=$dir/usb
 mkdir "$usb"
 echo 1 > "$usb/present"
 echo 0 > "$bat/input_suspend"
+main=$dir/main
+mkdir "$main"
+echo 2210000 > "$usb/hw_current_max"
 echo 4000000 > "$bat/voltage_now"
 gauge=$dir/qgd.soc
 export HANOIP_BATTERY_DIR=$bat HANOIP_USB_DIR=$usb HANOIP_CHARGE_STATE=$dir/state HANOIP_CHARGE_CYCLES=3
-export HANOIP_QGD_STATE=$gauge
+export HANOIP_QGD_STATE=$gauge HANOIP_MAIN_DIR=$main
 
 # step <capacity> <charging_enabled now> <charging_enabled expected> <state expected>
 # The gauge counts as just updated, unless stale=1 (then its file is missing).
@@ -80,8 +83,18 @@ step 100 0 0 "0 1 0"
 # Already suspended above 80 %: no second cut.
 step 90 0 0 "0 1 0"
 
+# The input current is held at 1.1 A while the cable charges, and released before every cut: the override
+# beats the input_suspend vote, so a cut with the override still on would not stop the cable.
+icl_is() { [ "$(cat "$main/force_main_icl")" = "$1" ] || { echo "FAIL: $2: force_main_icl is $(cat "$main/force_main_icl"), expected $1" >&2; exit 1; }; }
+echo 0 > "$bat/input_suspend"; echo "0 0 0" > "$dir/state"
+step 70 1 1 "0 0 0"; icl_is 1100000 "charging on the cable"
+step 85 1 0 "0 1 0"; icl_is -1 "cut above 80 %"
+echo 0 > "$bat/input_suspend"; echo 500000 > "$usb/hw_current_max"
+step 70 1 1 "0 1 0"; icl_is -1 "a 0.5 A source is not raised to 1.1 A"
+echo 2210000 > "$usb/hw_current_max"
+
 # Stopping the service (TERM) turns the charger back on, even while it is cut.
 echo 85 > "$bat/capacity"; echo 1 > "$bat/charging_enabled"; touch "$gauge"
 timeout -s TERM 1 sh "$script" >/dev/null 2>&1 || true
-[ "$(cat "$bat/charging_enabled")" = 1 ] && [ "$(cat "$bat/input_suspend")" = 0 ] || { echo "FAIL: charger still cut or cable suspended after TERM" >&2; exit 1; }
+[ "$(cat "$bat/charging_enabled")" = 1 ] && [ "$(cat "$bat/input_suspend")" = 0 ] && [ "$(cat "$main/force_main_icl")" = -1 ] || { echo "FAIL: charger still cut or cable suspended after TERM" >&2; exit 1; }
 echo "charge limit: all steps pass"
