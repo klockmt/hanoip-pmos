@@ -1,0 +1,14 @@
+#!/sbin/openrc-run
+# Battery heat protection, see /usr/bin/hanoip-thermal.
+command=/usr/bin/hanoip-thermal
+supervisor=supervise-daemon
+respawn_delay=5
+respawn_max=0
+
+stop_post() {
+	# Stopping the service must not leave the charge paused or the CPU capped.
+	rm -f /run/hanoip-thermal.hot
+	for p in /sys/devices/system/cpu/cpu[0-9]*/cpufreq; do
+		cat "$p/cpuinfo_max_freq" > "$p/scaling_max_freq"
+	done
+}

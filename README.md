@@ -106,7 +106,7 @@ scripts/hanoip-ssh 'uname -r'
 
 The PC address is `172.16.42.2/24` on the phone's USB interface (`scripts/setup-usb-net` recreates it; it is a NetworkManager connection named `hanoip-usb`).
 
-On the phone, `hanoip-status` prints the latency to the gateway, the traffic on the default link, battery, RAM, root disk and CPU use. `hanoip-charge-limit` (an OpenRC service, on by default) keeps the battery between 60 % and 80 %: it cuts the charger and suspends the cable above 80 %, so the phone runs from the battery, and turns both back on below 60 %. Stopping the service turns the charger back on. Check the decisions without hardware with `scripts/test-charge-limit`.
+On the phone, `hanoip-status` prints the latency to the gateway, the traffic on the default link, battery, RAM, root disk and CPU use. `hanoip-charge-limit` (an OpenRC service, on by default) keeps the battery between 60 % and 80 %: it cuts the charger and suspends the cable above 80 %, so the phone runs from the battery, and turns both back on below 60 %. Stopping the service turns the charger back on. While the cable charges it holds the input near 10 W (`main/force_main_icl`, 1.1 A). `hanoip-thermal` (also on by default) watches the battery temperature: from 40 °C it pauses charging, from 45 °C it also caps the CPU at 60 % of its top frequency, and at 55 °C it tells the owner on Telegram and powers off. Check the decisions without hardware with `scripts/test-charge-limit` and `scripts/test-thermal`; neither the 10 W limit nor the heat protection has run on the phone yet.
 
 ### 8. Update only the kernel later
 

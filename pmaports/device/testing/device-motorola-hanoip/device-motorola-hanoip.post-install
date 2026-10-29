@@ -12,5 +12,6 @@ done
 rc-update del qbootctl default >/dev/null 2>&1 || true
 rc-update add hanoip-qgd default >/dev/null 2>&1 || true
 rc-update add hanoip-charge-limit default >/dev/null 2>&1 || true
+rc-update add hanoip-thermal default >/dev/null 2>&1 || true
 rc-update add hanoip-bot default >/dev/null 2>&1 || true
 exit 0

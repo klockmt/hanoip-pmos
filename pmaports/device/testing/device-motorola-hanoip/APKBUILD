@@ -4,7 +4,7 @@
 pkgname=device-motorola-hanoip
 pkgdesc="Motorola Moto G (60)"
 pkgver=0
-pkgrel=14
+pkgrel=15
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -34,6 +34,8 @@ source="
 	hanoip-qgd
 	hanoip-qgd.initd
 	hanoip-status
+	hanoip-thermal
+	hanoip-thermal.initd
 "
 
 build() {
@@ -51,6 +53,8 @@ package() {
 	install -Dm755 "$srcdir/hanoip-qgd" "$pkgdir/usr/bin/hanoip-qgd"
 	install -Dm755 "$srcdir/hanoip-qgd.initd" "$pkgdir/etc/init.d/hanoip-qgd"
 	install -Dm755 "$srcdir/hanoip-status" "$pkgdir/usr/bin/hanoip-status"
+	install -Dm755 "$srcdir/hanoip-thermal" "$pkgdir/usr/bin/hanoip-thermal"
+	install -Dm755 "$srcdir/hanoip-thermal.initd" "$pkgdir/etc/init.d/hanoip-thermal"
 }
 
 kernel_downstream() {
@@ -72,8 +76,10 @@ bc1e9d1cf3f1ae058a4d876ce7af856cdc41bfaf992d02273dc4dca141d29f799c91d7a5a9c24f4c
 d211b14464ad74fe9e79cdd1d4ecf59c8701dd5689bf5138d436cf47ebf4fb6f886d411f9ff08f13c4ada470bbccb1c42917628157f64c46d58f78d94e1669aa  hanoip-bot.initd
 708703849b9d961ac1b112e85f85e1c364bce1b848f527ff16517677c1847c55cd3d9569c31053f2e195459374881a7704e03f9c126af1ddb9ff453c5f531ebf  deviceinfo
 856a5b5efcee9a5b47d0671eacf09a9b7c0f88142ff1a705789c4a9503e1bcd7409f2d355731701b4fd2f96dcbc9061403aebff803210c849919e2274f1ea5b9  hanoip-console.start
-e977e8508fc4d7baf64c755995034221376e4d951f1d9c4d177c0fb8b4cdd1055ce4f2e8466279878aeecfbd2d46bb997009bfed1df044e20e8f0b44ac283453  hanoip-charge-limit
+afe7901053f32ee961f768cfca643ca639ee25c2692dd869854757e25ac0f7be73ba5e9342fc5cb481f0c77af10b47fbe148941947db2a2c24dca77f48a265f9  hanoip-charge-limit
 1ca2a28d6113513dcbf30639fe8de935cea1d49bc3482cf25e3db769af75aad472af58334abae6c142fbd4238238ad1c4e6569e10e52fc0a15c07b8c305b750a  hanoip-charge-limit.initd
 f08301d2d0b6d4e2488fc257d627a99f84c69c6af387f07aa343d64f25e3328c109d8a3a09f2b9a7b4c0d1c9a9914f8a0cf60e6ded8d43ac2b4c772ee009fad2  hanoip-qbootctl.start
 af3dec436edf7762305d6495892bab9a31418bb318f0a237570c2525967d46140d557768355239b34eb829658a62f08ad611b07f2568fd302567caaa32a650b9  hanoip-status
+6d9367494b27aca76b2a68f82d06f6b11d2fe3c8ba3a28cfee4391d216ad730af0071d3229a375f7a823bf2bee82bdd9bf650616974fc89f38fd2f9dab66e1ef  hanoip-thermal
+e2718a5060419afccb775e70f07e91cd28df068b59e7712c9d1caa490869726f24655d9e22dc1b8c7dceee18b2671741980e65b7a8d778a2eb78c88154b01a9c  hanoip-thermal.initd
 "

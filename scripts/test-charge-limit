@@ -19,7 +19,7 @@ echo 2210000 > "$usb/hw_current_max"
 echo 4000000 > "$bat/voltage_now"
 gauge=$dir/qgd.soc
 export HANOIP_BATTERY_DIR=$bat HANOIP_USB_DIR=$usb HANOIP_CHARGE_STATE=$dir/state HANOIP_CHARGE_CYCLES=3
-export HANOIP_QGD_STATE=$gauge HANOIP_MAIN_DIR=$main
+export HANOIP_QGD_STATE=$gauge HANOIP_MAIN_DIR=$main HANOIP_THERMAL_FLAG=$dir/hot
 
 # step <capacity> <charging_enabled now> <charging_enabled expected> <state expected>
 # The gauge counts as just updated, unless stale=1 (then its file is missing).
@@ -92,6 +92,22 @@ step 85 1 0 "0 1 0"; icl_is -1 "cut above 80 %"
 echo 0 > "$bat/input_suspend"; echo 500000 > "$usb/hw_current_max"
 step 70 1 1 "0 1 0"; icl_is -1 "a 0.5 A source is not raised to 1.1 A"
 echo 2210000 > "$usb/hw_current_max"
+
+# Too warm: the charger and the cable are cut, the cycle state is untouched, and the cut is lifted once the
+# flag is gone. A limit cut stays in place when it cools down. A stale flag (hanoip-thermal died) and a
+# battery under the floor do not hold the charge back.
+echo 0 > "$bat/input_suspend"; echo "0 0 0" > "$dir/state"; rm -f "$dir/state.heat"
+touch "$dir/hot"
+step 70 1 0 "0 0 0"; icl_is -1 "hot"
+[ "$(cat "$bat/input_suspend")" = 1 ] || { echo "FAIL: hot did not suspend the cable" >&2; exit 1; }
+rm "$dir/hot"
+step 70 0 1 "0 0 0"; icl_is 1100000 "cooled down"
+echo "0 1 0" > "$dir/state"; touch "$dir/hot"; step 70 0 0 "0 1 0"; rm "$dir/hot"
+step 70 0 0 "0 1 0" # cooled down under a limit cut: still cut
+echo 0 > "$bat/input_suspend"; echo "0 0 0" > "$dir/state"; rm -f "$dir/state.heat"
+touch -d '10 minutes ago' "$dir/hot"; step 70 1 1 "0 0 0"; rm "$dir/hot"
+touch "$dir/hot"; echo 3700000 > "$bat/voltage_now"; step 70 1 1 "0 0 0"; rm "$dir/hot"
+echo 4000000 > "$bat/voltage_now"
 
 # Stopping the service (TERM) turns the charger back on, even while it is cut.
 echo 85 > "$bat/capacity"; echo 1 > "$bat/charging_enabled"; touch "$gauge"

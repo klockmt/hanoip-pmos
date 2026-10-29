@@ -1,0 +1,78 @@
+#!/bin/sh
+# Protects the battery from heat, with the battery temperature (the kernel has no trip point for it and the
+# CPU ones sit at 115-125 °C). Levels, with HYST of hysteresis:
+#   1  HOT (40 °C): touches the flag hanoip-charge-limit reads, so charging pauses.
+#   2  CAP (45 °C): also caps the CPU at CAP_PCT % of its top frequency.
+#   3  OFF (55 °C): tells the owner on Telegram and powers off, after two readings in a row.
+# The level and the strike count are kept in STATE (/run), so a restart of the service keeps them.
+# The HANOIP_* variables override the limits and paths, for tests (scripts/test-thermal).
+# shortcut: the cap is a percentage of the top frequency and the kernel rounds it to a table entry; upgrade to
+# a table of frequencies if a coarse step ever matters.
+bat=${HANOIP_BATTERY_DIR:-/sys/class/power_supply/battery}
+cpu=${HANOIP_CPU_DIR:-/sys/devices/system/cpu}
+flag=${HANOIP_THERMAL_FLAG:-/run/hanoip-thermal.hot}
+state=${HANOIP_THERMAL_STATE:-/run/hanoip-thermal.state}
+alert=${HANOIP_ALERT_CMD:-timeout 20 /usr/bin/hanoip-bot --alert}
+poweroff=${HANOIP_POWEROFF_CMD:-poweroff}
+hot=${HANOIP_HOT_DC:-400} # tenths of a degree, like battery/temp
+cap=${HANOIP_CAP_DC:-450}
+off=${HANOIP_OFF_DC:-550}
+hyst=${HANOIP_HYST_DC:-30}
+cap_pct=${HANOIP_CAP_PCT:-60}
+interval=${HANOIP_THERMAL_INTERVAL:-30}
+
+lvl=0 strikes=0
+[ -f "$state" ] && read -r lvl strikes < "$state"
+lvl=${lvl:-0} strikes=${strikes:-0}
+
+# Writes the CPU cap in percent of each policy's top frequency (100 lifts it).
+set_cap() {
+	for p in "$cpu"/cpu[0-9]*/cpufreq; do
+		[ -r "$p/cpuinfo_max_freq" ] || continue
+		echo $(( $(cat "$p/cpuinfo_max_freq") * $1 / 100 )) > "$p/scaling_max_freq"
+	done
+}
+# Level for temperature $1, holding the current level $2 until the temperature is HYST under its threshold.
+level_for() {
+	l=0
+	if [ "$1" -ge "$off" ]; then l=3; elif [ "$1" -ge "$cap" ]; then l=2; elif [ "$1" -ge "$hot" ]; then l=1; fi
+	if [ "$l" -lt "$2" ]; then
+		case $2 in 3) th=$off;; 2) th=$cap;; *) th=$hot;; esac
+		[ "$1" -gt $((th - hyst)) ] && l=$2
+	fi
+	echo "$l"
+}
+say() { $alert "$1" || true; }
+
+while :; do
+	t=$(cat "$bat/temp" 2>/dev/null)
+	# An unreadable or absurd reading is skipped, not acted on (-30 to 100 °C).
+	case $t in ''|*[!0-9-]*) t= ;; esac
+	if [ -n "$t" ] && [ "$t" -gt -300 ] && [ "$t" -lt 1000 ]; then
+		new=$(level_for "$t" "$lvl")
+		if [ "$new" -ge 1 ]; then touch "$flag"; else rm -f "$flag"; fi
+		if [ "$new" -ge 2 ]; then set_cap "$cap_pct"; else set_cap 100; fi
+		if [ "$new" != "$lvl" ]; then
+			case $new in
+			3) ;;
+			2) say "bateria a $((t / 10)) °C: CPU limitada a ${cap_pct} % e carga pausada" ;;
+			1) say "bateria a $((t / 10)) °C: carga pausada" ;;
+			0) say "bateria a $((t / 10)) °C: temperatura normal" ;;
+			esac
+		fi
+		if [ "$new" = 3 ]; then
+			strikes=$((strikes + 1))
+			if [ "$strikes" -ge 2 ]; then
+				echo "$new 0" > "$state"
+				say "bateria a $((t / 10)) °C: desligando o telefone"
+				$poweroff
+				exit 0
+			fi
+		else
+			strikes=0
+		fi
+		lvl=$new
+		echo "$lvl $strikes" > "$state"
+	fi
+	sleep "$interval"
+done

@@ -1,0 +1,55 @@
+#!/bin/sh
+# Checks hanoip-thermal against a fake battery and CPU (no hardware needed). Each step runs one pass of the
+# loop (the timeout stops it before the sleep ends) at the given battery temperature, in tenths of a degree,
+# and checks the flag hanoip-charge-limit reads, the CPU cap, the power-off and the alerts.
+set -eu
+cd "$(dirname "$0")/.."
+script=pmaports/device/testing/device-motorola-hanoip/hanoip-thermal
+dir=$(mktemp -d)
+trap 'rm -rf "$dir"' EXIT
+mkdir -p "$dir/bat" "$dir/cpu/cpu0/cpufreq" "$dir/cpu/cpu1/cpufreq" "$dir/cpu/cpu6/cpufreq"
+echo 1804800 > "$dir/cpu/cpu0/cpufreq/cpuinfo_max_freq"
+echo 1804800 > "$dir/cpu/cpu1/cpufreq/cpuinfo_max_freq"
+echo 2304000 > "$dir/cpu/cpu6/cpufreq/cpuinfo_max_freq"
+printf '#!/bin/sh\necho "$1" >> "%s/alerts"\n' "$dir" > "$dir/alert-cmd"
+printf '#!/bin/sh\necho off >> "%s/poweroff"\n' "$dir" > "$dir/poweroff-cmd"
+chmod +x "$dir/alert-cmd" "$dir/poweroff-cmd"
+export HANOIP_BATTERY_DIR=$dir/bat HANOIP_CPU_DIR=$dir/cpu HANOIP_THERMAL_FLAG=$dir/hot
+export HANOIP_THERMAL_STATE=$dir/state HANOIP_ALERT_CMD=$dir/alert-cmd HANOIP_POWEROFF_CMD=$dir/poweroff-cmd
+
+fail() { echo "FAIL: $*" >&2; exit 1; }
+# step <temp> <flag 0|1> <cpu0 cap> <alerts so far> <power-offs so far>
+step() {
+	echo "$1" > "$dir/bat/temp"
+	timeout -s KILL 1 sh "$script" >/dev/null 2>&1 || true
+	[ -e "$dir/hot" ] && got=1 || got=0
+	[ "$got" = "$2" ] || fail "temp $1: flag $got, expected $2"
+	[ "$(cat "$dir/cpu/cpu0/cpufreq/scaling_max_freq")" = "$3" ] || fail "temp $1: cpu0 cap $(cat "$dir/cpu/cpu0/cpufreq/scaling_max_freq"), expected $3"
+	[ "$(cat "$dir/alerts" 2>/dev/null | wc -l)" = "$4" ] || fail "temp $1: $(cat "$dir/alerts" 2>/dev/null | wc -l) alerts, expected $4"
+	[ "$(cat "$dir/poweroff" 2>/dev/null | wc -l)" = "$5" ] || fail "temp $1: power-offs $(cat "$dir/poweroff" 2>/dev/null | wc -l), expected $5"
+}
+
+step 285 0 1804800 0 0 # normal
+step 399 0 1804800 0 0 # just under HOT
+step 400 1 1804800 1 0 # HOT: charging pauses, one alert
+step 400 1 1804800 1 0 # still hot: no second alert
+step 450 1 1082880 2 0 # CAP: 60 % of the top frequency
+[ "$(cat "$dir/cpu/cpu6/cpufreq/scaling_max_freq")" = 1382400 ] || fail "cpu6 not capped to 60 %"
+[ "$(cat "$dir/cpu/cpu1/cpufreq/scaling_max_freq")" = 1082880 ] || fail "cpu1 (same cluster) not capped"
+step 430 1 1082880 2 0 # under CAP but inside the hysteresis: the cap holds
+step 419 1 1804800 3 0 # 3 °C under CAP: the cap lifts, the charge stays paused
+step 380 1 1804800 3 0 # inside the HOT hysteresis: still paused
+step 369 0 1804800 4 0 # 3 °C under HOT: charging back
+# Power off needs two readings in a row.
+step 550 1 1082880 4 0
+step 500 1 1082880 5 0 # dipped under OFF (still above CAP): the strike count starts again
+step 550 1 1082880 5 0
+step 550 1 1082880 6 1 # second in a row: alert and power off
+# Readings that make no sense are ignored.
+rm -f "$dir/state" "$dir/alerts" "$dir/poweroff" "$dir/hot"
+for bad in "" abc -5000 99999; do
+	echo "$bad" > "$dir/bat/temp"
+	timeout -s KILL 1 sh "$script" >/dev/null 2>&1 || true
+	[ ! -e "$dir/hot" ] && [ ! -e "$dir/poweroff" ] || fail "reading '$bad' acted"
+done
+echo "thermal: all steps pass"
