@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+# Checks hanoip-qgd's arithmetic and struct layout without the phone: the coulomb count, the OCV
+# corrections, the full-battery reset, where it starts counting from, and the data it writes back.
+import importlib.machinery
+import importlib.util
+import os
+import sys
+
+sys.dont_write_bytecode = True  # keep the package directory free of __pycache__
+here = os.path.dirname(os.path.abspath(__file__))
+path = os.path.join(here, "..", "pmaports", "device", "testing", "device-motorola-hanoip", "hanoip-qgd")
+loader = importlib.machinery.SourceFileLoader("hanoip_qgd", path)
+spec = importlib.util.spec_from_loader("hanoip_qgd", loader)
+qgd = importlib.util.module_from_spec(spec)
+loader.exec_module(qgd)
+
+
+def check(name, ok):
+    if not ok:
+        raise SystemExit(f"FAIL {name}")
+
+
+def near(a, b, tol=1e-6):
+    return abs(a - b) <= tol
+
+
+def flat_lookup(soc_pct):
+    """A profile that answers the same SOC (0-10000) for any voltage."""
+    return lambda ocv_uv, table: soc_pct * 100
+
+
+# Layout of the kernel structs (include/uapi/linux/qg.h): 412 and 144 bytes on arm64.
+check("kdata size", qgd.KDATA.size == 412)
+check("udata size", qgd.UDATA.size == 144)
+check("battery_params size", qgd.BP.size == 28)
+check("BPIOCXSOC number", qgd.BPIOCXSOC == 0xC01C4201)
+
+# A real batch from the phone while charging at about 3 A: 5 blocks of 128 samples x 98 ms.
+fields = [28, 136118500, 2]
+fields += [4195789, (-2865907) & 0xFFFFFFFF, 128, 98, 4195595, (-2861025) & 0xFFFFFFFF, 128, 98]
+fields += [0] * (4 * (qgd.MAX_FIFO - 2))
+params = [(0, False)] * qgd.QG_MAX
+params[qgd.QG_ESR] = (106, True)
+fields += [x for p in params for x in p]
+fifo, got = qgd.parse_kdata(qgd.KDATA.pack(*fields))
+check("parse: two samples", len(fifo) == 2)
+check("parse: negative current while charging", fifo[0] == (4195789, -2865907, 12544))
+check("parse: only valid params", got == {qgd.QG_ESR: 106})
+
+# Coulomb count: 2.865907 A for 12.544 s is 9.986 mAh, 0.1617 % of 6174 mAh, and charging raises the SOC.
+check("charge raises SOC", near(qgd.coulomb_delta([(4.2e6, -2865907, 12544)], 6174), 0.16174, 1e-4))
+check("discharge lowers SOC", qgd.coulomb_delta([(3.8e6, 200000, 60000)], 6174) < 0)
+check("one hour at 617.4 mA is 10 %", near(qgd.coulomb_delta([(3.8e6, 617400, 3600000)], 6174), -10.0, 1e-9))
+
+# OCV estimate: V + I x R, with I in uA and R in mOhm.
+ocv, i = qgd.ocv_estimate([(3800000, 200000, 1000)], 100)
+check("ocv under discharge", near(ocv, 3820000) and i == 200000)
+check("no samples, no ocv", qgd.ocv_estimate([], 100) == (None, None))
+
+# Corrections.
+heavy = [(4.2e6, -3000000, 1)]  # charging hard: the voltage says nothing, only the count moves
+soc, _ = qgd.step(40.0, heavy, {}, False, 6174, 100, flat_lookup(90))
+check("no pull under heavy current", soc > 40.0 and soc < 40.01)
+rest = [(3.8e6, 150000, 1)]
+soc, _ = qgd.step(40.0, rest, {}, False, 6174, 100, flat_lookup(50))
+check("slow pull toward the OCV curve at rest", near(soc, 40.0 + 0.02 * 10.0, 1e-3))
+soc, _ = qgd.step(40.0, rest, {qgd.QG_GOOD_OCV_UV: 3800000}, False, 6174, 100, flat_lookup(60))
+check("strong pull on a measured rest OCV", near(soc, 50.0, 1e-3))
+soc, _ = qgd.step(73.0, heavy, {}, True, 6174, 100, flat_lookup(10))
+check("charger says full: 100 %", soc == 100.0)
+soc, _ = qgd.step(0.01, [(3.3e6, 3000000, 3600000)], {}, False, 6174, 100, flat_lookup(0))
+check("never below 0 %", soc == 0.0)
+
+# Where counting starts.
+lk = flat_lookup(55)
+check("restart resumes the saved value", qgd.initial_soc(37.5, 9999, 100, 4.2e6, 3000000, 100, lk) == 37.5)
+check("early start trusts the kernel's boot value", qgd.initial_soc(None, 60, 4321, 4.2e6, 0, 100, lk) == 43.21)
+check("late start estimates from the voltage", qgd.initial_soc(None, 3600, 100, 4.2e6, 3000000, 100, lk) == 55.0)
+
+# What goes back to the kernel: SYS_SOC, CC_SOC and BATT_SOC in 0-10000, OCV and RBAT.
+u = qgd.UDATA.unpack(qgd.pack_udata(42.37, 3812345.6, 106))
+val = {k: u[2 * k] for k in range(qgd.QG_MAX) if u[2 * k + 1]}
+check("udata values", val == {qgd.QG_SYS_SOC: 4237, qgd.QG_CC_SOC: 4237, qgd.QG_BATT_SOC: 4237,
+                              qgd.QG_OCV_UV: 3812345, qgd.QG_RBAT_MOHM: 106})
+print("qgd: all checks pass")

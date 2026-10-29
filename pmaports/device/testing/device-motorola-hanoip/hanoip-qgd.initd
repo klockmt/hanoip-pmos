@@ -1,0 +1,7 @@
+#!/sbin/openrc-run
+# Battery percentage for the QG fuel gauge, see /usr/bin/hanoip-qgd.
+command=/usr/bin/hanoip-qgd
+# supervise-daemon restarts it after a crash; it resumes from /run/hanoip-qgd.soc.
+supervisor=supervise-daemon
+respawn_delay=5
+respawn_max=0
