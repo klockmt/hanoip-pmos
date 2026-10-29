@@ -25,10 +25,14 @@ else
 	watts=$(awk -v c=$(cat /sys/class/power_supply/usb/input_current_now) -v v=$(cat /sys/class/power_supply/usb/voltage_now) 'BEGIN{printf "%.2f W (da tomada)", c*v/1e12}')
 fi
 cpumax=$(for z in /sys/class/thermal/thermal_zone*; do read -r t < $z/type; case $t in cpu-*-usr) cat $z/temp;; esac; done | sort -n | tail -1 | awk '{printf "%.1f", $1/1000}')
+# Cycles counted before the PMIC lost its saved data (a drained battery clears it), kept per phone outside the repo.
+cycles=$(cat $bat/cycle_count)
+offset=$(cat /var/lib/hanoip/cycle-offset 2>/dev/null)
+if [ "${offset:-0}" -gt 0 ] 2>/dev/null; then cycles="$((offset + cycles)) ($offset + $cycles)"; fi
 
 echo "Latencia:  ${lat:-sem resposta} (gateway ${gw:-?})"
 echo "Rede:      $dev rx $(( (rx1-rx0)*8/1000 )) kbit/s, tx $(( (tx1-tx0)*8/1000 )) kbit/s"
-echo "Bateria:   $(cat $bat/capacity) % ($status), $(cat $bat/cycle_count) ciclos, $(awk '{printf "%.1f", $1/10}' $bat/temp) °C"
+echo "Bateria:   $(cat $bat/capacity) % ($status), $cycles ciclos, $(awk '{printf "%.1f", $1/10}' $bat/temp) °C"
 echo "Consumo:   $watts"
 awk '/MemTotal/{t=$2} /MemAvailable/{a=$2} END{printf "RAM:       %.0f %% usada (%.1f de %.1f GB)\n", (t-a)*100/t, (t-a)/1048576, t/1048576}' /proc/meminfo
 df -P / | awk 'NR==2{printf "ROM:       %s usada (%.1f de %.1f GB)\n", $5, $3/1048576, $2/1048576}'
