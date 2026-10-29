@@ -1,13 +1,14 @@
 # hanoip-mainline
 
-postmarketOS port for the **Moto G60 (hanoip, XT2135-1)**: a working downstream-kernel (4.14) build and a mainline-kernel effort. Reply to the user in Portuguese.
+postmarketOS port for the **Moto G60 (hanoip, XT2135-1)**: a working downstream-kernel (4.14) build and a mainline-kernel effort.
+
+The rules (commits, personal data, flashing, SSH and security, tests for bugs) are in `AGENTS.md`. This file is the detailed record of the device, the pitfalls and the investigations.
 
 ## Device
 
 - SoC SM7150 (`qcom,sdmmagpie`, soc_id 365). `ro.board.platform=sm6150` is Motorola's platform name, not the SoC.
 - 4 GB RAM, 128 GB UFS, A/B, unlocked bootloader, boot image header v3, Android 12 with KernelSU.
 - Verified facts: `docs/device-info/SUMMARY.md`. Read it before touching device info.
-- **Never** put an IMEI, serial number or MAC address in any repo file (this one included). The repo is public.
 - Partition backups (boot, vendor_boot, dtbo, vbmeta, persist, modemst, fsg, misc, abl + SHA256SUMS): `$HANOIP_BACKUP_DIR/`. They stay out of the repo on purpose.
 - Collection of 2026-10-23 (`scripts/coletar-g60.sh`, already fixed for A/B): `$HANOIP_COLLECTION_DIR/` with identity, kernel (config, dmesg, iomem), slot `b` partitions, `/vendor` firmware (102 MB, proprietary) and the device tree. It contains serial/MAC/IMEI and firmware: **never copy it into the repo**. `.gitignore` covers `*.img` and the collection folders.
 - `docs/device-info/android-runtime.txt`, `running.dts` and `running.dtb` are **sanitized** (MACs became `00:00:00:00:00:00`, the serial became `X`); sanitize again before committing if you regenerate them.
@@ -21,8 +22,6 @@ postmarketOS port for the **Moto G60 (hanoip, XT2135-1)**: a working downstream-
 - `pmaports/`: versioned copy of the `device-motorola-hanoip` and `linux-motorola-hanoip` packages (the live copy is in `$PMAPORTS_DIR`).
 - `userspace/modem/`: `qrtr-ns`, `pd-mapper` and `tqftpserv` for the 4.14 kernel, plus the modem/Wi-Fi openrc and udev files.
 - `scripts/`: the replication steps documented in `README.md` (`check-host`, `backup-partitions`, `build-kernel`, `setup-pmaports`, `pmb`, `configure-pmbootstrap`, `build-image`, `flash-rootfs`, `flash-boot`, `setup-usb-net`, `hanoip-ssh`, `reboot-bootloader`, `mkbootimg-kernel`), `check-repo` (**run it before every commit and push**), `flash-boot-ssh` (writes boot over the LAN when the phone is on the Ethernet hub and has no USB link to the PC), `setup-console`, `update-apkbuild-sums` (recompute the APKBUILD checksums), the Wi-Fi investigation helpers (`push-firmware`, `mount-vendor`) and `coletar-g60.sh` (runs in Termux on Android). They read `.env`; the ones that change something accept `DRY_RUN=1`. `README.md` says exactly which were run end to end and which only in dry-run, so keep it honest when you change them.
-- **Local paths and personal data live in `.env`** (not in git; template in `.env.example`). In docs and scripts use the variables (`$HANOIP_BACKUP_DIR`, `$HANOIP_COLLECTION_DIR`, `$PMAPORTS_DIR`, `$KERNEL_DOWNSTREAM_DIR`, ...), never the real path or the user name. To resolve a variable, read `.env`.
-- Commits: small and per topic, in English (`type(scope): summary` + a body explaining why).
 
 ## pmOS tools (outside the repo)
 
@@ -146,14 +145,6 @@ Active slot `b`. **Lineage was replaced by pmOS** (the user's choice on 24/10): 
 5. Repository: published on GitHub (private for now); update `STATUS.md` as the work progresses.
 6. Mainline (long term): v3 `vendor_boot` with our own DTB on slot `b` (the slot `a` tests do not count). Mainline Wi-Fi uses `ath10k`, which works on sweet/sunfish with this same chip.
 7. Battery cycle count (pending, the user asked to do it later): patch `qpnp-qg` so `bms/cycle_counts` accepts a write (8 bucket values, stored to SDAM with `qg_store_cycle_count`), then restore the buckets lost on 2026-10-28: `25 60 114 148 178 167 137 85` (average 114). Write them and reboot before the current charge session ends, or the kernel overwrites a bucket from RAM. Until then `hanoip-status` adds the offset in `/var/lib/hanoip/cycle-offset` (on the phone, not in the repo); delete that file once the buckets are restored.
-
-## Working rules
-
-- Do not flash partitions beyond what the user asked for, and never wipe or factory reset, unless the user asks.
-- **Allowed without asking (the user authorized it on 2026-10-24):** `fastboot set_active b` and `fastboot reboot`, to recover the A/B slot when the bootloader made slot `b` unbootable (see "A/B retry counter"). Check the slot flags first and say what was done.
-- Before flashing or overwriting anything, inspect the target and compare with the backups (SHA256SUMS).
-- When zeroing the in-use slot's `dtbo` for a test, restore the backup right afterwards, before `fastboot continue` or any reboot.
-- Report test results as they are, failures included.
 
 ## Tela apagada (modo servidor)
 
