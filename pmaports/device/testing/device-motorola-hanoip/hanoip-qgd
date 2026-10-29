@@ -166,7 +166,9 @@ def main():
         fifo, params = parse_kdata(os.read(qg, KDATA.size))  # blocks until the next batch, about a minute
         if QG_ESR in params and 10 <= params[QG_ESR] <= 1000:
             rbat = params[QG_ESR]
-        soc, ocv = step(soc, fifo, params, read("status") == "Full", fcc_mah(), rbat, lookup)
+        # A suspended cable means the phone runs from the battery, whatever the charger's status says.
+        full = read("status") == "Full" and read("input_suspend") != "1"
+        soc, ocv = step(soc, fifo, params, full, fcc_mah(), rbat, lookup)
         os.write(qg, pack_udata(soc, ocv, rbat))
         with open(STATE, "w") as f:
             f.write(f"{soc:.4f}\n")
