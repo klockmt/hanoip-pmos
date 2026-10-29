@@ -176,3 +176,18 @@ Notas:
 - O atributo `dpms` em `/sys/class/drm/card0-DSI-1/` é somente leitura, e a propriedade DPMS do conector não tem efeito porque nenhum CRTC está ativo.
 - O log do kernel continua sendo escrito, mas ele não aparece na tela. Para acompanhar, use o SSH.
 - Se o celular não voltar pela rede depois de uma gravação ruim, a recuperação é pelo fastboot, regravando o backup do `boot_b` (o `flash-boot-ssh` guarda o backup antes de gravar).
+
+## Battery percentage: the QG fuel gauge needs a userspace daemon (2026-10-28)
+
+The PM6150 fuel gauge driver (`qpnp-qg`) does not compute the state of charge after boot. At boot it sets it once, from the value saved in the PMIC (SDAM) when that is recent, or from the power-on OCV looked up in the battery profile. After that it only hands voltage and current samples to userspace through `/dev/qg`, about once a minute, and waits for userspace to write the state of charge back. On Android a proprietary daemon does it. Without one, `capacity` never moves.
+
+What that caused (2026-10-26 to 2026-10-28): `capacity` read 100 % for days while the battery drained (3.69 V under load). The charge limit waited for 60 % that never came, the phone ran on battery until it died, the PMIC lost SDAM (learned capacity and the cycle counter went back to design values and 0), and after the next boot `capacity` stayed at 1 % while charging at 3 A.
+
+`hanoip-qgd` (device package, OpenRC, on by default) is the replacement:
+- It reads `struct qg_kernel_data` from `/dev/qg` and counts the charge in the samples (µA × count × interval ms / 3.6e9 = mAh), over the profile's FCC (6174 mAh at 25 °C, from `BPIOCXFCC` on `/dev/qg_battery`), scaled by the learned `charge_full`.
+- Below 0.5 A it pulls the count toward the profile's SOC-OCV table (`BPIOCXSOC`, OCV ≈ V + I × ESR), 2 % of the gap per batch; a PMIC rest measurement (`QG_GOOD_OCV_UV`) pulls 50 %. A `Full` charger status sets 100 %.
+- It writes `QG_SYS_SOC`, `QG_CC_SOC` and `QG_BATT_SOC` (0-10000) back. The kernel ramps `capacity` toward it 1 % at a time and saves it to SDAM, so the next boot starts from it.
+- Where it starts: the value in `/run/hanoip-qgd.soc` after a restart, the kernel's boot value if it starts within 5 minutes of boot, otherwise an OCV estimate (rough while charging: it read 51 % when the charge since boot gave 29 %).
+- `scripts/test-qgd` checks the arithmetic and the struct layout (412 and 144 bytes) without the phone.
+
+The charge limit `need`s `hanoip-qgd`. Cycle counts are not writable through sysfs, so the old count (114) cannot be restored; the counter starts again from 0.
