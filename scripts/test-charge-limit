@@ -13,12 +13,17 @@ usb=$dir/usb
 mkdir "$usb"
 echo 1 > "$usb/present"
 echo 0 > "$bat/input_suspend"
+echo 4000000 > "$bat/voltage_now"
+gauge=$dir/qgd.soc
 export HANOIP_BATTERY_DIR=$bat HANOIP_USB_DIR=$usb HANOIP_CHARGE_STATE=$dir/state HANOIP_CHARGE_CYCLES=3
+export HANOIP_QGD_STATE=$gauge
 
 # step <capacity> <charging_enabled now> <charging_enabled expected> <state expected>
+# The gauge counts as just updated, unless stale=1 (then its file is missing).
 step() {
 	echo "$1" > "$bat/capacity"
 	echo "$2" > "$bat/charging_enabled"
+	if [ "${stale:-0}" = 1 ]; then rm -f "$gauge"; else touch "$gauge"; fi
 	timeout -s KILL 1 sh "$script" >/dev/null 2>&1 || true
 	got=$(cat "$bat/charging_enabled")
 	saved=$(cat "$dir/state" 2>/dev/null || echo none)
@@ -52,8 +57,23 @@ step 85 1 0 "0 1 0" # normal limit back after the unlocked charge
 echo "2 1 0" > "$dir/state"
 step 59 0 1 "3 0 1"
 
+# Safety: a gauge that stopped updating resumes charging under a cut, clears the cut without counting
+# a cycle, and blocks new cuts (regression of 2026-10-26: the percentage froze and the battery drained).
+echo "0 1 0" > "$dir/state"; echo 1 > "$bat/input_suspend"
+stale=1
+step 70 0 1 "0 0 0"
+step 85 1 1 "0 0 0"
+stale=0
+# A low battery voltage under a cut resumes charging whatever the percentage says.
+echo "0 1 0" > "$dir/state"; echo 1 > "$bat/input_suspend"; echo 3700000 > "$bat/voltage_now"
+step 70 0 1 "0 0 0"
+echo 4000000 > "$bat/voltage_now"
+# A fresh gauge and a normal voltage keep the cut between the limits.
+echo "0 1 0" > "$dir/state"; echo 1 > "$bat/input_suspend"
+step 70 0 0 "0 1 0"
+
 # Stopping the service (TERM) turns the charger back on, even while it is cut.
-echo 85 > "$bat/capacity"; echo 1 > "$bat/charging_enabled"
+echo 85 > "$bat/capacity"; echo 1 > "$bat/charging_enabled"; touch "$gauge"
 timeout -s TERM 1 sh "$script" >/dev/null 2>&1 || true
 [ "$(cat "$bat/charging_enabled")" = 1 ] && [ "$(cat "$bat/input_suspend")" = 0 ] || { echo "FAIL: charger still cut or cable suspended after TERM" >&2; exit 1; }
 echo "charge limit: all steps pass"

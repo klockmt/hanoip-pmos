@@ -5,12 +5,17 @@
 # A cycle is a cut at HI followed by a resume below LO. After CYCLES cycles, the next charge runs
 # to 100 % once, and then the count starts again. The state is kept in STATE, so it survives
 # reboots. The HANOIP_* variables override the limits and paths, for tests (scripts/test-charge-limit).
+# Safety first: the percentage once froze at 100 % and the phone drained on battery until it died, so
+# a gauge that stops updating (hanoip-qgd) or a battery below FLOOR turns charging back on and blocks cuts.
 bat=${HANOIP_BATTERY_DIR:-/sys/class/power_supply/battery}
 usb=${HANOIP_USB_DIR:-/sys/class/power_supply/usb}
 state=${HANOIP_CHARGE_STATE:-/var/lib/hanoip/charge-limit}
+gauge=${HANOIP_QGD_STATE:-/run/hanoip-qgd.soc}
 hi=${HANOIP_CHARGE_HI:-80}
 lo=${HANOIP_CHARGE_LO:-60}
 cycles=${HANOIP_CHARGE_CYCLES:-10}
+floor=${HANOIP_CHARGE_FLOOR_UV:-3750000} # about 20 % on this battery's profile; 60 % is about 3.95 V
+stale_s=900 # hanoip-qgd writes about once a minute, with gaps of up to 5 minutes seen after the cable returns
 # Stopping or killing the limiter must not leave the charger cut or the cable suspended: the phone would drain without charging.
 trap 'echo 1 > "$bat/charging_enabled"; echo 0 > "$bat/input_suspend"' EXIT
 trap 'exit 1' INT TERM
@@ -21,11 +26,17 @@ done_cycles=0 cut=0 unlock=0
 done_cycles=${done_cycles:-0} cut=${cut:-0} unlock=${unlock:-0}
 
 save() { echo "$done_cycles $cut $unlock" > "$state"; }
+resume() { echo 0 > $bat/input_suspend; echo 1 > $bat/charging_enabled; }
+gauge_fresh() { [ $(( $(date +%s) - $(stat -c %Y "$gauge" 2>/dev/null || echo 0) )) -le "$stale_s" ]; }
 
 while :; do
 	cap=$(cat $bat/capacity)
 	on=$(cat $bat/charging_enabled)
-	if [ "$unlock" = 1 ]; then
+	if ! gauge_fresh || [ "$(cat $bat/voltage_now)" -lt "$floor" ]; then
+		if [ "$on" = 0 ] || [ "$(cat $bat/input_suspend)" = 1 ]; then resume; fi
+		# Not a cycle: the battery did not go from 80 to 60 % under our cut.
+		if [ "$cut" = 1 ]; then cut=0; save; fi
+	elif [ "$unlock" = 1 ]; then
 		# The charge after the last cycle runs to full; then the count starts again.
 		if [ "$cap" -ge 100 ]; then done_cycles=0 cut=0 unlock=0; save; fi
 	elif [ "$cap" -gt "$hi" ] && [ "$on" = 1 ] && [ "$(cat $usb/present)" = 1 ]; then
@@ -34,8 +45,7 @@ while :; do
 		echo 1 > $bat/input_suspend
 		cut=1; save
 	elif [ "$cap" -lt "$lo" ] && [ "$on" = 0 ]; then
-		echo 0 > $bat/input_suspend
-		echo 1 > $bat/charging_enabled
+		resume
 		# A charger found off below 60 % without our cut (e.g. after a boot) is not a cycle.
 		if [ "$cut" = 1 ]; then done_cycles=$((done_cycles+1)); cut=0; fi
 		if [ "$done_cycles" -ge "$cycles" ]; then unlock=1; fi
