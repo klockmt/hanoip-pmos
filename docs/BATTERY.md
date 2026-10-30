@@ -33,7 +33,7 @@ What the source says:
 and the cable supplied the phone (about 1 W at the cable, the phone's own draw). The battery voltage only
 relaxed (4.24 V falling slowly, no load on it). With `charging_enabled=1` the same cable gave 1.0 A at 8.5 V
 (about 9 W) and the battery took 1.5 A. So bypass works on this phone and the `charging_enabled` switch is
-enough. The limiter still uses the `input_suspend` cut described above; switching it to bypass is not done.
+enough. `hanoip-charge-limit` now uses it (see below).
 
 The test, for repeating (needs root; stop the limiter first, or it cuts the cable again within 30 s):
 
@@ -46,9 +46,19 @@ The test, for repeating (needs root; stop the limiter first, or it cuts the cabl
 4. `rc-service hanoip-charge-limit start` (stopping or starting it also restores `charging_enabled=1` and
    `input_suspend=0`).
 
-Since it works, the cell can sit at one chosen level instead of cycling, which is the gentlest state for a phone
-that is always plugged in. The trade-off: the 10-cycle full-charge calibration in the limiter would be moot,
-and the gauge only learns on real discharge. That redesign is not done.
+**Limiter, as built.** At 81-82 % with the cable on it sets `charging_enabled=0` and keeps the input on (hold).
+Above 82 % (the end of a full charge, for example) it first suspends the cable so the phone drains the battery
+into that band, then holds. Below 60 % charging comes back. The 10-cycle full-charge calibration stays, but a
+cycle now only happens when the cable was out or the load really sat on the battery.
+
+Run live on the phone (the real script, 7 minutes): the charge ran at 9.26 W at the cable with the 1.1 A cap
+(battery 1.6 A), and at 81 % it stopped by itself: battery current 0, status "Not charging", the cable feeding the
+phone at 0.75-1.2 W, the battery voltage relaxing from 4.25 to 4.22 V and the battery temperature falling from
+31 to 30 °C. Two things came out of it, both handled and tested:
+
+- `hanoip-qgd` writes nothing while the battery does not move (the kernel sends no samples): the file stood
+  still for 7 minutes. The staleness guard (15 minutes) now ignores that while holding on the cable.
+- The charger can keep saying Full after a finished charge, so `hanoip-qgd` counts Full only from 4.30 V.
 
 The Fairphone forum thread on idle mode proposes the same `charging_enabled` test and warns that some
 phones do not support it ([thread](https://forum.fairphone.com/t/help-wanted-battery-idle-mode-with-root-but-without-acc/93545)),

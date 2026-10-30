@@ -34,9 +34,9 @@ step() {
 		echo "FAIL: capacity $1, charging $2: charging $got (expected $3), state '$saved' (expected '$4')" >&2
 		exit 1
 	fi
-	# A change of the charger state also sets input_suspend: 1 when cut, 0 when resumed.
-	if [ "$got" != "$2" ] && [ "$(cat "$bat/input_suspend")" != "$((1-got))" ]; then
-		echo "FAIL: capacity $1: input_suspend not set with charging $got" >&2
+	# Turning the charger back on also clears input_suspend. (A cut sets it only when it drains: see hold().)
+	if [ "$got" != "$2" ] && [ "$got" = 1 ] && [ "$(cat "$bat/input_suspend")" != 0 ]; then
+		echo "FAIL: capacity $1: input_suspend not cleared with charging $got" >&2
 		exit 1
 	fi
 }
@@ -108,6 +108,32 @@ echo 0 > "$bat/input_suspend"; echo "0 0 0" > "$dir/state"; rm -f "$dir/state.he
 touch -d '10 minutes ago' "$dir/hot"; step 70 1 1 "0 0 0"; rm "$dir/hot"
 touch "$dir/hot"; echo 3700000 > "$bat/voltage_now"; step 70 1 1 "0 0 0"; rm "$dir/hot"
 echo 4000000 > "$bat/voltage_now"
+
+# Bypass: at the limit the charger is stopped but the cable stays on, so it feeds the phone and the battery
+# keeps its level (measured 2026-10-29: 0 uA with charging_enabled=0 and input_suspend=0). Within SLACK
+# (2 %) above HI it holds right away. Further above (a finished charge, for example) the cable is suspended
+# to drain the battery down to that band first, and then the hold starts.
+hold() { [ "$(cat "$bat/input_suspend")" = "$1" ] || { echo "FAIL: $2: input_suspend is $(cat "$bat/input_suspend"), expected $1" >&2; exit 1; }; }
+echo 0 > "$bat/input_suspend"; echo "0 0 0" > "$dir/state"
+step 81 1 0 "0 1 0"; hold 0 "81 % holds on the cable"; icl_is -1 "hold releases the input limit"
+step 82 0 0 "0 1 0"; hold 0 "already holding"
+step 70 0 0 "0 1 0"; hold 0 "holding between the limits"
+echo 0 > "$bat/input_suspend"; echo "0 0 0" > "$dir/state"
+step 83 1 0 "0 1 0"; hold 1 "83 % drains first"
+step 84 0 0 "0 1 0"; hold 1 "still draining above the band"
+echo 82 > "$bat/capacity"; step 82 0 0 "0 1 0"; hold 0 "drained down to the band: hold"
+step 59 0 1 "1 0 0"; hold 0 "below LO the charge comes back"
+echo 0 > "$bat/input_suspend"; echo "0 0 0" > "$dir/state"
+step 100 0 0 "0 1 0"; hold 1 "Full above the band drains"
+
+# While holding on the cable the battery does not move and the kernel sends the gauge no samples (the file
+# stood still for 7 minutes on the phone), so a quiet gauge must not restart the charge there. It still does
+# with the cable suspended (a drain) and without a cable.
+echo 0 > "$bat/input_suspend"; echo "0 1 0" > "$dir/state"; stale=1
+step 81 0 0 "0 1 0"; hold 0 "quiet gauge while holding"
+echo 0 > "$usb/present"; step 81 0 1 "0 0 0"; echo 1 > "$usb/present"
+echo "0 1 0" > "$dir/state"; echo 1 > "$bat/input_suspend"; step 81 0 1 "0 0 0"
+stale=0
 
 # Stopping the service (TERM) turns the charger back on, even while it is cut.
 echo 85 > "$bat/capacity"; echo 1 > "$bat/charging_enabled"; touch "$gauge"

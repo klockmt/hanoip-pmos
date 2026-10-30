@@ -1,10 +1,11 @@
 #!/bin/sh
-# Keeps the battery between 60 % and 80 % to preserve its health: above HI the charger is cut and the
-# cable is suspended (input_suspend), so the phone runs from the battery; below LO both come back.
-# This also happens after the charger finished (Full), so the phone never sits at 100 % on the cable.
-# Between the two it keeps its state.
-# A cycle is a cut at HI followed by a resume below LO. After CYCLES cycles, the next charge runs
-# to 100 % once, and then the count starts again. The state is kept in STATE, so it survives
+# Keeps the battery at about 80 % to preserve its health. At the limit the charger is stopped
+# (charging_enabled=0) and the cable stays on: it feeds the phone and the battery keeps its level (bypass,
+# 0 uA measured). Within SLACK above HI it holds right away; further above (after a finished charge, say) the
+# cable is suspended (input_suspend) so the phone drains the battery down to that band first, then holds.
+# Below LO charging comes back. Between the two it keeps its state.
+# A cycle is a cut at HI followed by a resume below LO (the cable was out, or the load was on the battery).
+# After CYCLES cycles, the next charge runs to 100 % once, and then the count starts again. The state is kept in STATE, so it survives
 # reboots. The HANOIP_* variables override the limits and paths, for tests (scripts/test-charge-limit).
 # While the cable charges, the input current is held at ICL (1.1 A at 9 V is about 10 W) with the override
 # main/force_main_icl. That override beats every other ICL vote, input_suspend included, so it is released
@@ -21,6 +22,7 @@ gauge=${HANOIP_QGD_STATE:-/run/hanoip-qgd.soc}
 hotflag=${HANOIP_THERMAL_FLAG:-/run/hanoip-thermal.hot}
 icl=${HANOIP_CHARGE_ICL_UA:-1100000}
 hi=${HANOIP_CHARGE_HI:-80}
+slack=${HANOIP_CHARGE_SLACK:-2}
 lo=${HANOIP_CHARGE_LO:-60}
 cycles=${HANOIP_CHARGE_CYCLES:-10}
 floor=${HANOIP_CHARGE_FLOOR_UV:-3750000} # about 20 % on this battery's profile; 60 % is about 3.95 V
@@ -36,9 +38,13 @@ done_cycles=${done_cycles:-0} cut=${cut:-0} unlock=${unlock:-0}
 
 save() { echo "$done_cycles $cut $unlock" > "$state"; }
 resume() { echo 0 > $bat/input_suspend; echo 1 > $bat/charging_enabled; }
+hold() { echo -1 > $main/force_main_icl; echo 0 > $bat/charging_enabled; echo 0 > $bat/input_suspend; }
 cutoff() { echo -1 > $main/force_main_icl; echo 0 > $bat/charging_enabled; echo 1 > $bat/input_suspend; }
 fresh() { [ $(( $(date +%s) - $(stat -c %Y "$1" 2>/dev/null || echo 0) )) -le "$2" ]; }
 gauge_fresh() { fresh "$gauge" "$stale_s"; }
+# Holding the level on the cable: the battery does not move and the kernel sends the gauge no samples, so its
+# file goes quiet without anything being wrong.
+holding() { [ "$cut" = 1 ] && [ "$(cat $bat/charging_enabled)" = 0 ] && [ "$(cat $bat/input_suspend)" = 0 ] && [ "$(cat $usb/present)" = 1 ]; }
 # Holds the input current at ICL, or lower when the source offers less (a PC port, for example): the override
 # would otherwise raise the limit above what the source gives.
 throttle() {
@@ -58,18 +64,22 @@ while :; do
 		# Cooled down. A limit cut (cut=1) stays; the checks below cut again above HI.
 		rm -f "$heatf"
 		if [ "$cut" = 0 ]; then resume; fi
-	elif ! gauge_fresh || [ "$volt" -lt "$floor" ]; then
+	elif { ! gauge_fresh && ! holding; } || [ "$volt" -lt "$floor" ]; then
 		if [ "$on" = 0 ] || [ "$(cat $bat/input_suspend)" = 1 ]; then resume; fi
 		# Not a cycle: the battery did not go from 80 to 60 % under our cut.
 		if [ "$cut" = 1 ]; then cut=0; save; fi
 	elif [ "$unlock" = 1 ]; then
 		# The charge after the last cycle runs to full; then the count starts again.
 		if [ "$cap" -ge 100 ]; then done_cycles=0 cut=0 unlock=0; save; fi
-	elif [ "$cap" -gt "$hi" ] && [ "$(cat $bat/input_suspend)" = 0 ] && [ "$(cat $usb/present)" = 1 ]; then
+	elif [ "$cap" -gt $((hi + slack)) ] && [ "$(cat $bat/input_suspend)" = 0 ] && [ "$(cat $usb/present)" = 1 ]; then
 		# The cable powers the phone even after a finished charge (charging_enabled reads 0 at Full), so
 		# the test is the cable, not the charger. Without a cable there is nothing to cut, and the flag
 		# would count a cycle that never happened.
 		cutoff
+		cut=1; save
+	elif [ "$cap" -gt "$hi" ] && [ "$on" = 1 ] && [ "$(cat $usb/present)" = 1 ]; then
+		# Just above HI: stop the charge and keep the cable.
+		hold
 		cut=1; save
 	elif [ "$cap" -lt "$lo" ] && [ "$on" = 0 ]; then
 		resume
@@ -77,7 +87,10 @@ while :; do
 		if [ "$cut" = 1 ]; then done_cycles=$((done_cycles+1)); cut=0; fi
 		if [ "$done_cycles" -ge "$cycles" ]; then unlock=1; fi
 		save
+	elif [ "$cut" = 1 ] && [ "$cap" -le $((hi + slack)) ] && [ "$(cat $bat/input_suspend)" = 1 ]; then
+		# Drained down to the band: hold the level on the cable. (Above it the branch for HI + SLACK keeps the cable suspended.)
+		hold
 	fi
-	if [ "$(cat $usb/present)" = 1 ] && [ "$(cat $bat/input_suspend)" = 0 ]; then throttle; else echo -1 > $main/force_main_icl; fi
+	if [ "$(cat $usb/present)" = 1 ] && [ "$(cat $bat/input_suspend)" = 0 ] && [ "$(cat $bat/charging_enabled)" = 1 ]; then throttle; else echo -1 > $main/force_main_icl; fi
 	sleep 30
 done
