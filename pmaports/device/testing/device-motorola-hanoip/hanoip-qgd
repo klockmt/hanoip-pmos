@@ -33,9 +33,18 @@ GOOD_OCV_PULL = 0.5  # the PMIC measured a real rest voltage: trust it much more
 # sets 100 % only while the battery is not really discharging. At Full on the cable the kernel sends
 # batches with no samples at all; those count as not discharging.
 FULL_MAX_DISCHARGE_UA = 100000
+# The charge limit can hold the battery at 80 % on the cable, and the charger may still say Full from the
+# charge before. A really full battery reads at least 4.40 V (4.45 V under charge, 4.42 V at rest).
+FULL_MIN_UV = 4300000
 BOOT_TRUST_S = 300  # the kernel's boot value is good only if we start soon after boot
 DEFAULT_RBAT_MOHM = 100
 CUTOFF_UV = 3400000  # qcom,vbatt-cutoff-mv is not in this DT, so the driver uses its default
+
+
+def is_full(status, input_suspend, voltage_uv):
+    """The charger says Full and it can be true: not with the cable suspended (the phone runs from the
+    battery) and not at a voltage no full battery has."""
+    return status == "Full" and input_suspend != "1" and voltage_uv >= FULL_MIN_UV
 
 
 def normalize(raw, full_raw, cutoff_raw):
@@ -167,7 +176,7 @@ def main():
         if QG_ESR in params and 10 <= params[QG_ESR] <= 1000:
             rbat = params[QG_ESR]
         # A suspended cable means the phone runs from the battery, whatever the charger's status says.
-        full = read("status") == "Full" and read("input_suspend") != "1"
+        full = is_full(read("status"), read("input_suspend"), int(read("voltage_now", "0")))
         soc, ocv = step(soc, fifo, params, full, fcc_mah(), rbat, lookup)
         os.write(qg, pack_udata(soc, ocv, rbat))
         with open(STATE, "w") as f:

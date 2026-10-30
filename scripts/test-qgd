@@ -76,6 +76,12 @@ soc, _ = qgd.step(100.0, [(4.33e6, 300000, 300000)], {}, True, 6174, 100, flat_l
 check("full but discharging: the count goes down", soc < 100.0)
 soc, _ = qgd.step(98.4, [], {}, True, 6174, 100, flat_lookup(100))
 check("full with no samples (the kernel stops sampling at Full on the cable): 100 %", soc == 100.0)
+# Holding the level on the cable (charging_enabled=0, input on) can leave the charger saying Full after a
+# finished charge; at 4.2 V that is not a full battery, so it must not set 100 %.
+check("full at 4.45 V is full", qgd.is_full("Full", "0", 4450000))
+check("full at 4.2 V is not", not qgd.is_full("Full", "0", 4200000))
+check("full with the cable suspended is not", not qgd.is_full("Full", "1", 4450000))
+check("charging is not full", not qgd.is_full("Charging", "0", 4450000))
 soc, _ = qgd.step(50.0, [], {}, False, 6174, 100, flat_lookup(100))
 check("no samples and not full changes nothing", soc == 50.0)
 soc, _ = qgd.step(0.01, [(3.3e6, 3000000, 3600000)], {}, False, 6174, 100, flat_lookup(0))
