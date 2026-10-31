@@ -1,0 +1,23 @@
+#!/bin/sh
+# Checks that each package declares the interpreters its shipped scripts need (no hardware needed).
+# hanoip-qgd only ran because python3 happened to be installed on the phone; a fresh image would have
+# no battery percentage, and a stuck percentage is how the battery once died.
+set -eu
+cd "$(dirname "$0")/.."
+bad=0
+for apk in pmaports/device/*/*/APKBUILD; do
+	d=$(dirname "$apk")
+	deps=$(sed -n '/^depends="/,/"/p' "$apk")
+	for f in "$d"/*; do
+		[ -f "$f" ] || continue
+		case $(head -1 "$f") in
+		'#!'*python3*) need=python3 ;;
+		*) continue ;;
+		esac
+		echo "$deps" | grep -qw "$need" && continue
+		echo "FAIL: $f needs $need, missing from depends in $apk" >&2
+		bad=1
+	done
+done
+[ $bad -eq 0 ] && echo "apkbuild depends: ok"
+exit $bad
