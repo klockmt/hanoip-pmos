@@ -1,0 +1,27 @@
+#!/bin/sh
+# Checks the downstream kernel config for options that bugs on this phone showed to be required
+# (no hardware needed). Each line: the option, the value it must have, and the bug behind it.
+set -eu
+cd "$(dirname "$0")/.."
+config=pmaports/device/downstream/linux-motorola-hanoip/config-motorola-hanoip.aarch64
+bad=0
+want() {
+	if [ "$2" = n ]; then
+		grep -qx "CONFIG_$1=[ym]" "$config" || return 0
+	else
+		grep -qx "CONFIG_$1=$2" "$config" && return 0
+	fi
+	echo "FAIL: CONFIG_$1 must be $2 ($3)" >&2
+	bad=1
+}
+# Without SMEM item 134 (mmi_unit_info) the modem crashes as Wi-Fi starts (EX:kernel:0x0:tmr_slave1).
+want MMI_INFO y "creates SMEM item 134 for the modem"
+want MMI_ANNOTATE y "MMI_INFO links against it"
+# nftables rules with sets fail with "Not supported" without the set backends; no modules are installed.
+want NFT_SET_HASH y "nftables sets"
+want NFT_SET_RBTREE y "nftables sets"
+want NFT_SET_BITMAP y "nftables sets"
+# Each missing firmware file waited 60 s, so every boot took ~3 min.
+want FW_LOADER_USER_HELPER_FALLBACK n "boot waits 60 s per missing firmware"
+[ $bad -eq 0 ] && echo "kernel config: ok"
+exit $bad
