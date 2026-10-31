@@ -26,10 +26,17 @@ The hanoip Wi-Fi (WCN3990, `qcacld-3.0` driver + `icnss`) runs as a protection d
 2. Set the modem's `restart_level` to `RELATED`: a modem crash does not reboot the device.
 3. Open `/dev/subsys_modem` and keep it open.
 
-## State (2026-10-24)
+## State (2026-10-30): Wi-Fi works
+
+- **Fixed by `CONFIG_MMI_INFO=y` (+ `CONFIG_MMI_ANNOTATE=y`)** in the kernel config. Motorola's `mmi_info` driver writes SMEM item 134 (`mmi_unit_info`), which the modem firmware reads as the WLAN protection domain starts; our config had it off, the stock `hanoip_defconfig` has it on. Patch `0006` keeps the serial out of that driver's log line. `scripts/test-kernel-config` fails if either option goes off again. The same crash and fix were found on a mainline port of this phone (eng-brener/hanoip-mainline).
+- Result after an unattended reboot: `icnss: WLAN FW is ready` about 16 s into boot (2.6 s after WLFW connects, as on Android), `wlan0` appears, NetworkManager associates to a WPA3 (SAE) network on 2.4 or 5 GHz and gets DHCP and a default route. No `early crash` lines.
+- `hanoip-modem` must be in the `default` runlevel (`rc-update add hanoip-modem default`); the device package does not install this userspace yet (GitHub issue #10).
+
+## Diagnosis history (2026-10-24, before the fix)
+
 
 - Works: modem `ONLINE`, EFS read by `rmtfs`, `servloc`, `sysmon` and `service-notifier` connected, IPA initialized, `wlan_pd` loaded through TFTP and WLFW connected to `icnss`.
-- **Does not work yet:** about 0.7 s after `icnss_qmi: QMI Server Connected`, the firmware sends `Received early crash indication from FW` and the modem crashes (`EX:kernel:0x0:tmr_slave1:0x1d1:PC=0xc06ddec0`), in a loop. The `icnss` state reaches `MSA0_ASSIGNED`/`POWER_ON` but not `FW_READY`. On Android, `FW ready` arrives 2.6 s after the connection.
+- **Did not work:** about 0.7 s after `icnss_qmi: QMI Server Connected`, the firmware sends `Received early crash indication from FW` and the modem crashes (`EX:kernel:0x0:tmr_slave1:0x1d1:PC=0xc06ddec0`), in a loop. The `icnss` state reaches `MSA0_ASSIGNED`/`POWER_ON` but not `FW_READY`. On Android, `FW ready` arrives 2.6 s after the connection.
   - Already ruled out: the DT (equal to Android's, `wlan_msa_region` included), IPA order, and a missing `fsg` or `/readwrite`.
 - With `CONFIG_DEBUG_FS` (test kernel #6; it needs `kernel/downstream-patches/0002-clk-drop-duplicate-all_lists-for-debugfs.patch`), `/sys/kernel/debug/icnss/stats` and the IPC log `ipc_logging/icnss/log` show:
   - the QMI handshake finishes **completely and without errors**: `ind_register`, `msa_info` (MSA `0x97500000`, regions `0x4000` + `0x17c000`), `msa_ready` with its indication, `cap` and `dynamic feature mask`;

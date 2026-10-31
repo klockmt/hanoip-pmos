@@ -9,10 +9,10 @@ Work-in-progress port of postmarketOS to the **Motorola Moto G60** (`hanoip`, XT
 | Area | State |
 | --- | --- |
 | Downstream kernel (4.14, cool585 Cybertron) | **Works.** postmarketOS edge boots on its own with openrc, SSH over the USB network gadget, a 104 GB root on `userdata` and an nftables firewall |
-| Wi-Fi (WCN3990) | **Not working yet.** The modem comes up and the Wi-Fi firmware connects to `icnss`, then crashes ~0.7 s later. See [`userspace/modem/README.md`](userspace/modem/README.md) |
+| Wi-Fi (WCN3990) | **Works (2026-10-30).** 2.4 and 5 GHz, WPA3 (SAE) through NetworkManager, back by itself after a reboot. It needed `CONFIG_MMI_INFO` (the modem crashed without the SMEM item that driver creates). The modem userspace is still installed by hand: see [`userspace/modem/README.md`](userspace/modem/README.md) |
 | Mainline kernel | **No boot yet.** The DTS builds; the bootloader (ABL) only runs header-v3 boot images, which invalidated the early tests. See [`docs/STATUS.md`](docs/STATUS.md) |
 
-Without Wi-Fi the phone is reachable only over the USB cable (or a USB Ethernet adapter, which the kernel supports: RTL8152, ASIX, CDC).
+The phone is reachable over Wi-Fi, the USB cable (network gadget) or a USB Ethernet adapter (RTL8152, ASIX, CDC). With a hub the phone is USB host: the PC on the hub cannot reach it over USB, so use Wi-Fi then.
 
 ## Tutorial: reproduce the working image
 
@@ -54,7 +54,7 @@ Saves `boot`, `vendor_boot`, `dtbo`, `vbmeta`, `persist`, `modemst`, `fsg`, `mis
 scripts/build-kernel
 ```
 
-Downloads cool585's kernel at the pinned commit, applies the three patches in [`kernel/downstream-patches/`](kernel/downstream-patches), uses the config from [`pmaports/`](pmaports/device/downstream/linux-motorola-hanoip) and builds `Image.gz` with clang. About 5 minutes on 16 threads, including the 200 MB download.
+Downloads cool585's kernel at the pinned commit, applies the patches in [`kernel/downstream-patches/`](kernel/downstream-patches), uses the config from [`pmaports/`](pmaports/device/downstream/linux-motorola-hanoip) and builds `Image.gz` with clang. About 5 minutes on 16 threads, including the 200 MB download.
 
 ### 4. Prepare pmbootstrap
 
@@ -144,9 +144,9 @@ I want to be clear about what has and has not been run end to end.
 | Path | What it is |
 | --- | --- |
 | `pmaports/` | `device-motorola-hanoip` and `linux-motorola-hanoip` packages, and `PMAPORTS_COMMIT`, the official pmaports commit they were built on |
-| `kernel/downstream-patches/` | Patches for the 4.14 kernel (loop partition rescan, `clk.c` for `DEBUG_FS`, `icnss` BDF/REGDB/`host_cap`) |
+| `kernel/downstream-patches/` | Patches for the 4.14 kernel (loop partition rescan, `clk.c` for `DEBUG_FS`, `icnss` BDF/REGDB/`host_cap`, console on the screen, splash framebuffer, serial kept out of the `mmi_info` log) |
 | `kernel/dts/` | Mainline DTS for the hanoip |
-| `userspace/modem/` | Modem/Wi-Fi userspace for 4.14 (experimental, Wi-Fi still crashes): `qrtr-ns`, `pd-mapper`, `tqftpserv` (patched), openrc and udev files |
+| `userspace/modem/` | Modem/Wi-Fi userspace for 4.14 (installed by hand for now): `qrtr-ns`, `pd-mapper`, `tqftpserv` (patched), openrc and udev files |
 | `scripts/` | All the steps above, `check-repo` (self-check to run before every commit: checksums, patch copies, private-data scan), `push-firmware` and `mount-vendor` for the Wi-Fi investigation, and `coletar-g60.sh` (runs in Termux on the phone) |
 | `docs/` | Project state and test matrix (`STATUS.md`), verified device facts and sanitized dumps (`device-info/`) |
 | `NOTES.md` | Detailed working notes: pitfalls already solved, boot test results |
@@ -157,8 +157,10 @@ I want to be clear about what has and has not been run end to end.
 - The ramdisk must be **LZ4 legacy**; gzip or zstd leave the phone stuck on the Motorola logo.
 - The UFS has **4096-byte sectors**: the rootfs GPT must match, and the 4.14 loop driver needs patch `0001` to see its partitions.
 - Large continuous transfers over the USB network gadget bring it down; `scripts/push-firmware` limits itself to 1 MB/s.
-- **The A/B slot must be marked successful at every boot** (`qbootctl`, installed by the device package), or after ~7 reboots the bootloader invalidates the slot and switches to the other one. Recover with `fastboot set_active b`.
+- **The A/B slot must be marked successful at every boot** (`qbootctl`, installed by the device package), or after ~7 reboots the bootloader invalidates the slot and switches to the other one. Recover with `fastboot getvar slot-unbootable:b` (check first), `fastboot set_active b`, `fastboot reboot`.
 - The bootloader rewrites every `console=` to `console=null`; patch `0004` turns that into the screen console, and `0005` draws it on the bootloader's framebuffer (the MSM fbdev emulation cannot work with this driver).
+- The modem firmware needs SMEM item 134 (`mmi_unit_info`), created by `CONFIG_MMI_INFO` (+ `CONFIG_MMI_ANNOTATE`); without it Wi-Fi crashes ~0.7 s after WLFW connects. `scripts/test-kernel-config` checks the options.
+- With the charge limiter holding on a cable or PD hub, `usb/online` reads 0 even though the input feeds the phone; check `usb/input_current_now` instead.
 - The kernel must not use `CONFIG_EFI_ZBOOT`, and `FW_LOADER_USER_HELPER_FALLBACK` must be off (otherwise every missing firmware file costs 60 s of boot).
 
 ## What is not in this repo
