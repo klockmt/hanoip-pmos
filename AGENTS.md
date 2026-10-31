@@ -54,3 +54,5 @@ Every bug gets an automated test that fails before the fix and passes after (see
 
 ## Commits
 Small, one per specific change, `type(scope): summary` with a body saying why. Never mention AI, no trailers. Author is always the git config identity; contributors on GitHub must show only `klockmt` (`gh api repos/klockmt/hanoip-pmos/contributors` before pushing).
+
+Push to the `beta` branch first. Move commits to `main` only after they were tested and the user approved; never push straight to `main`.
