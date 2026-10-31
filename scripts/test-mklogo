@@ -1,0 +1,58 @@
+#!/bin/sh
+# Checks that mklogo replaces the boot and unlocked-warning images and leaves the others alone
+# (no hardware needed). A bad logo partition is read by ABL before anything else on the phone.
+set -eu
+cd "$(dirname "$0")/.."
+t=$(mktemp -d)
+trap 'rm -rf "$t"' EXIT
+python3 - "$t" <<'PY'
+import struct, sys
+from PIL import Image
+t = sys.argv[1]
+def img(w, h, px):  # one run per row
+	return b"MotoRun\0" + struct.pack(">HH", w, h) + (struct.pack(">H", 0x8000 | w) + px) * h
+ents = [("logo_boot", img(20, 40, b"\x10\x20\x30")), ("qcom", img(4, 2, b"\x01\x02\x03")),
+	("logo_unlocked", img(20, 20, b"\xff\xff\xff")), ("orange1", img(20, 36, b"\0\0\0")),
+	("orange2", img(20, 36, b"\0\0\0"))]
+hs = 13 + 32 * len(ents)
+head, body = b"MotoLogo\0" + struct.pack("<I", hs), b""
+for n, b in ents:
+	head += n.encode().ljust(24, b"\0") + struct.pack("<II", 0x200 + len(body), len(b))
+	body += b.ljust((len(b) + 0x1ff) & ~0x1ff, b"\0")
+open(t + "/in.img", "wb").write(head.ljust(0x200, b"\0") + body)
+pic = Image.new("RGB", (10, 10), "black")
+pic.putpixel((2, 2), (255, 255, 0))  # off-centre content, must land in the middle
+pic.save(t + "/pic.png")
+PY
+scripts/mklogo "$t/in.img" "$t/pic.png" "$t/out.img" >/dev/null
+python3 - "$t" <<'PY'
+import struct, sys
+d = open(sys.argv[1] + "/out.img", "rb").read()
+orig = open(sys.argv[1] + "/in.img", "rb").read()
+def ents(d):
+	hs = struct.unpack_from("<I", d, 9)[0]
+	r = {}
+	for o in range(13, hs, 32):
+		off, size = struct.unpack_from("<II", d, o + 24)
+		r[d[o:o + 24].rstrip(b"\0").decode()] = d[off:off + size]
+	return r
+new, old = ents(d), ents(orig)
+assert list(new) == list(old), "entry order changed"
+assert new["qcom"] == old["qcom"], "untouched image changed"
+for n in ("logo_boot", "logo_unlocked", "orange1", "orange2"):
+	w, h = struct.unpack_from(">HH", new[n], 8)
+	assert (w, h) == struct.unpack_from(">HH", old[n], 8), n + " size changed"
+	assert new[n] != old[n], n + " not replaced"
+	# the decoded centre pixel (BGR) holds the picture's only yellow pixel, scaled up 2x
+	p, px = 12, bytearray()
+	while len(px) < w * h * 3:
+		c = struct.unpack_from(">H", new[n], p)[0]
+		p += 2
+		if c & 0x8000:
+			px += new[n][p:p + 3] * (c & 0x7fff); p += 3
+		else:
+			px += new[n][p:p + 3 * c]; p += 3 * c
+	i = (h // 2 * w + w // 2) * 3
+	assert px[i + 2] > 128 and px[i + 1] > 128 and px[i] < 128, n + " content not centred"
+print("mklogo: ok")
+PY

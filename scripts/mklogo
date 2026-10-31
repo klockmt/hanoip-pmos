@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+# Rebuilds the Motorola `logo` partition with one picture in place of the boot logo and the
+# unlocked-bootloader warnings. Usage: mklogo <logo.img> <picture> <out.img>
+# The picture is scaled to the screen width (keeping its aspect) and its non-background content is
+# centred on a canvas of each image's own size, filled with the picture's corner colour.
+# Every other image is copied byte for byte; the result is decoded back and checked before writing.
+# Format: "MotoLogo\0", u32 LE header size, then 32-byte entries (24-byte name, u32 LE offset,
+# u32 LE size). Each image: "MotoRun\0", u16 BE width, u16 BE height, then rows of BGR runs:
+# u16 BE count, high bit set = one pixel repeated, clear = that many literal pixels.
+import struct
+import sys
+
+from PIL import Image, ImageChops
+
+REPLACE = ("logo_boot", "logo_unlocked", "orange1", "orange2")
+
+
+def parse(d):
+	if d[:9] != b"MotoLogo\0":
+		sys.exit("not a MotoLogo image")
+	hs = struct.unpack_from("<I", d, 9)[0]
+	ents = []
+	for o in range(13, hs, 32):
+		name = d[o:o + 24].rstrip(b"\0").decode()
+		off, size = struct.unpack_from("<II", d, o + 24)
+		ents.append((name, d[off:off + size]))
+	return hs, ents
+
+
+def decode(blob):
+	w, h = struct.unpack_from(">HH", blob, 8)
+	p, out = 12, bytearray()
+	while len(out) < w * h * 3:
+		c = struct.unpack_from(">H", blob, p)[0]
+		p += 2
+		if c & 0x8000:
+			out += blob[p:p + 3] * (c & 0x7fff)
+			p += 3
+		else:
+			out += blob[p:p + 3 * c]
+			p += 3 * c
+	if p != len(blob) or len(out) != w * h * 3:
+		raise ValueError("bad MotoRun image")
+	return w, h, bytes(out)
+
+
+def encode(w, h, bgr):
+	out = bytearray(b"MotoRun\0" + struct.pack(">HH", w, h))
+	for y in range(h):
+		row = [bgr[i:i + 3] for i in range(y * w * 3, (y + 1) * w * 3, 3)]
+		x, lit = 0, []
+		while x < w:
+			n = 1
+			while x + n < w and n < 0x7fff and row[x + n] == row[x]:
+				n += 1
+			if n >= 3:
+				if lit:
+					out += struct.pack(">H", len(lit)) + b"".join(lit)
+					lit = []
+				out += struct.pack(">H", 0x8000 | n) + row[x]
+			else:
+				lit += row[x:x + n]
+			x += n
+		if lit:
+			out += struct.pack(">H", len(lit)) + b"".join(lit)
+	return bytes(out)
+
+
+def render(pic, w, h, screen_w):
+	pic = pic.convert("RGB")
+	pic = pic.resize((screen_w, round(pic.height * screen_w / pic.width)), Image.LANCZOS)
+	bg = pic.getpixel((0, 0))
+	diff = ImageChops.difference(pic, Image.new("RGB", pic.size, bg)).convert("L")
+	l, t, r, b = diff.point(lambda v: 255 if v > 8 else 0).getbbox() or (0, 0, pic.width, pic.height)
+	canvas = Image.new("RGB", (w, h), bg)
+	# shortcut: content wider than the canvas is cropped, fine for a small centred logo
+	canvas.paste(pic, (w // 2 - (l + r) // 2, h // 2 - (t + b) // 2))
+	return canvas.tobytes("raw", "BGR")
+
+
+def build(hs, ents):
+	head = bytearray(b"MotoLogo\0" + struct.pack("<I", hs))
+	body, off = bytearray(), (hs + 0x1ff) & ~0x1ff
+	for name, blob in ents:
+		head += name.encode().ljust(24, b"\0") + struct.pack("<II", off + len(body), len(blob))
+		body += blob + b"\0" * (-len(blob) % 0x200)
+	return bytes(head.ljust(off, b"\0") + body)
+
+
+def main():
+	if len(sys.argv) != 4:
+		sys.exit("usage: mklogo <logo.img> <picture> <out.img>")
+	d = open(sys.argv[1], "rb").read()
+	hs, ents = parse(d)
+	pic = Image.open(sys.argv[2])
+	screen_w = max(decode(b)[0] for n, b in ents if n == "logo_boot")
+	new = [(n, encode(*decode(b)[:2], render(pic, *decode(b)[:2], screen_w)) if n in REPLACE else b)
+		for n, b in ents]
+	out = build(hs, new)
+	# self-check: same table, untouched images identical, replaced ones decode to the rendering
+	hs2, back = parse(out)
+	assert hs2 == hs and [n for n, _ in back] == [n for n, _ in ents]
+	for (n, old), (_, got) in zip(ents, back):
+		if n in REPLACE:
+			w, h, _ = decode(old)
+			assert decode(got) == (w, h, render(pic, w, h, screen_w)), n
+		else:
+			assert got == old, n
+	open(sys.argv[3], "wb").write(out)
+	print(f"{sys.argv[3]}: {len(out)} bytes, replaced {', '.join(REPLACE)}")
+
+
+if __name__ == "__main__":
+	main()
