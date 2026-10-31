@@ -17,8 +17,9 @@ phone is marked **unverified**.
 
 ## 1. Bypass (pass-through)
 
-Today the limiter cuts at 80 % with `charging_enabled=0` **and** `input_suspend=1`. The second one cuts the
-cable, so the phone runs from the battery and the cell cycles 80 % to 60 % to 80 %. That is not bypass.
+Before commit `905db7a` the limiter cut at 80 % with `charging_enabled=0` **and** `input_suspend=1`. The second
+one cuts the cable, so the phone ran from the battery and the cell cycled 80 % to 60 % to 80 %. That is not
+bypass; the limiter now holds with the input on (below).
 
 What the source says:
 
@@ -172,3 +173,8 @@ Tailscale DNS loop already in `NOTES.md`, not the CPU.
 - The 55 °C power-off and the real Telegram alert on the phone; the thresholds in section 3 are guesses.
 - The new scripts installed as a package: the live tests ran them from the repository, not from `pmbootstrap`.
 - The Moto G60 on any "bypass charging" list: no source found either way.
+
+**Through a USB hub (2026-10-30).** With a USB-C hub fed by a PD charger, the phone as USB host (Ethernet and a
+SATA disk on the hub) and the limiter holding: `usb/real_type` `USB_PD`, `usb/input_current_now` ~264 mA at
+5.0 V, battery 0 mA at 81 %. `usb/online` reads 0 in this state and `typec_mode` says "Source attached" (a
+source is attached to the phone), so check `input_current_now`, not `online`.
