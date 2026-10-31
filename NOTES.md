@@ -21,7 +21,7 @@ The rules (commits, personal data, flashing, SSH and security, tests for bugs) a
 - `kernel/downstream-patches/`: patches for the cool585 4.14 kernel (loop, `clk.c` for `DEBUG_FS`, `icnss` with BDF/REGDB/`host_cap`).
 - `pmaports/`: versioned copy of the `device-motorola-hanoip` and `linux-motorola-hanoip` packages (the live copy is in `$PMAPORTS_DIR`).
 - `userspace/modem/`: `qrtr-ns`, `pd-mapper` and `tqftpserv` for the 4.14 kernel, plus the modem/Wi-Fi openrc and udev files.
-- `scripts/`: the replication steps documented in `README.md` (`check-host`, `backup-partitions`, `build-kernel`, `setup-pmaports`, `pmb`, `configure-pmbootstrap`, `build-image`, `flash-rootfs`, `flash-boot`, `setup-usb-net`, `hanoip-ssh`, `reboot-bootloader`, `mkbootimg-kernel`), `check-repo` (**run it before every commit and push**), `flash-boot-ssh` (writes boot over the LAN when the phone is on the Ethernet hub and has no USB link to the PC), `setup-console`, `update-apkbuild-sums` (recompute the APKBUILD checksums), the Wi-Fi investigation helpers (`push-firmware`, `mount-vendor`) and `coletar-g60.sh` (runs in Termux on Android). They read `.env`; the ones that change something accept `DRY_RUN=1`. `README.md` says exactly which were run end to end and which only in dry-run, so keep it honest when you change them.
+- `scripts/`: the replication steps documented in `README.md` (`check-host`, `backup-partitions`, `build-kernel`, `setup-pmaports`, `pmb`, `configure-pmbootstrap`, `build-image`, `flash-rootfs`, `flash-boot`, `setup-usb-net`, `hanoip-ssh`, `reboot-bootloader`, `mkbootimg-kernel`), `check-repo` (**run it before every commit and push**), `flash-boot-ssh` (writes boot over the LAN when the phone is on the Ethernet hub and has no USB link to the PC), `setup-console`, `update-apkbuild-sums` (recompute the APKBUILD checksums), `mklogo` (rebuilds the `logo` partition, see "Boot logo"), the Wi-Fi investigation helpers (`push-firmware`, `mount-vendor`) and `coletar-g60.sh` (runs in Termux on Android). They read `.env`; the ones that change something accept `DRY_RUN=1`. `README.md` says exactly which were run end to end and which only in dry-run, so keep it honest when you change them.
 
 ## pmOS tools (outside the repo)
 
@@ -168,6 +168,17 @@ Notas:
 - O atributo `dpms` em `/sys/class/drm/card0-DSI-1/` é somente leitura, e a propriedade DPMS do conector não tem efeito porque nenhum CRTC está ativo.
 - O log do kernel continua sendo escrito, mas ele não aparece na tela. Para acompanhar, use o SSH.
 - Se o celular não voltar pela rede depois de uma gravação ruim, a recuperação é pelo fastboot, regravando o backup do `boot_b` (o `flash-boot-ssh` guarda o backup antes de gravar).
+
+## Boot logo (2026-10-31)
+
+ABL draws its screens from the `logo_a`/`logo_b` partitions (32 MiB, `MotoLogo` container of
+RLE `MotoRun` images, format in `scripts/mklogo`). `logo_boot` is the Motorola logo (1080x2460);
+`logo_unlocked` (1080x1080) and `orange1`/`orange2` (1080x2340) are the unlocked-bootloader warnings.
+`scripts/mklogo` swaps those four for one picture, centred, and keeps every other image (fastboot,
+charging, recovery screens) byte for byte. The original is `logo_a.img` in `$HANOIP_BACKUP_DIR`
+(both slots were identical). Written over SSH with `dd` to both slots on 2026-10-31 (Tux on black).
+ABL may still print its own text (`OS Fingerprint`) over the orange screens and wait on them.
+To restore: `dd` the backup back to both partitions, or `fastboot flash logo_b logo_a.img`.
 
 ## Battery percentage: the QG fuel gauge needs a userspace daemon (2026-10-28)
 
