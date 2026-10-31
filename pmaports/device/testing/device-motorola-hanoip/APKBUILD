@@ -4,7 +4,7 @@
 pkgname=device-motorola-hanoip
 pkgdesc="Motorola Moto G (60)"
 pkgver=0
-pkgrel=19
+pkgrel=20
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -14,6 +14,7 @@ depends="
 	firmware-qcom-sm7150
 	mkbootimg-osm0sis
 	postmarketos-base
+	python3
 	soc-qcom
 	soc-qcom-qbootctl
 "
