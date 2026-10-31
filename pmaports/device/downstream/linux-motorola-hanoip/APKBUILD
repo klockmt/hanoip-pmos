@@ -5,6 +5,7 @@
 # set backends, the qcacld WLAN driver and DEBUG_FS (needs patch 0002).
 # Patch 0003 is the icnss experiment for the Wi-Fi firmware crash.
 # Patches 0004 and 0005 (+ FRAMEBUFFER_CONSOLE and fonts) put the console on the screen.
+# Patch 0006 keeps the serial out of the log once MMI_INFO is on.
 pkgname=linux-motorola-hanoip
 pkgver=4.14.357
 pkgrel=7
@@ -29,6 +30,7 @@ source="
 	0003-icnss-send-host-cap-regdb-and-bdf-like-cnss-daemon.patch
 	0004-printk-map-console-null-to-tty0.patch
 	0005-fbdev-add-hanoip-splash-framebuffer-console.patch
+	0006-mmi-info-keep-the-serial-out-of-the-log.patch
 "
 builddir="$srcdir/$_repository-$_commit"
 
@@ -63,4 +65,5 @@ b403d53ba0a4eeb4dfcc8ab849ccce90d370fc18196d80e4bdf73ca031c49772bb3801b8f6c28be5
 c8d71af7e443467e1800cb6fe3892c5aa44b1c4d841d80aa9e4cd99eab137a1abed6407e533548cab91cebf984d4994de8a49138db24f2b8829177e6314a2ca8  0003-icnss-send-host-cap-regdb-and-bdf-like-cnss-daemon.patch
 7e0ad0e509e5e2e0d143911e49aef0289952aea037d1aa5e9ed68d1ceb03fe336d9c3b7fa2db9b34ad0e5afd203055f86074b61ba552813e6b90b393c5cdec3c  0004-printk-map-console-null-to-tty0.patch
 5a13abe6d8fc0ebb0401a08eeb6793170c33de785ea524139ec426417d2549805275f1ccfd6af8f5838a60c672baa1c30d970a62374640ea51faceb68bcef3bc  0005-fbdev-add-hanoip-splash-framebuffer-console.patch
+38cbbfb8e85b0202c5cc2ed1f85019f99f0b6728c8df098c8f196524679260fea909beeb069720e7fc7219f6ff9c66bbeb7c4095ecb451a927b724d83343808c  0006-mmi-info-keep-the-serial-out-of-the-log.patch
 "

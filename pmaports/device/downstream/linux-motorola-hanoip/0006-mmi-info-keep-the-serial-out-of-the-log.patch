@@ -1,0 +1,33 @@
+--- a/drivers/mmi_info/mmi_unit_info.c
++++ b/drivers/mmi_info/mmi_unit_info.c
+@@ -115,18 +115,16 @@
+ 	strlcpy(mui_copy->radio_str, androidboot_radio_str, RADIO_MAX_LEN);
+ 	mui_copy->powerup_reason = mmi_chosen_data.powerup_reason;
+ 
++	/* The serial and barcode stay out of the log: the kernel log is kept on disk. */
+ 	pr_info("mmi_unit_info (SMEM) for modem: version = 0x%02x,"
+ 		" device = '%s', radio = 0x%x, radio_str = '%s',"
+-		" system_rev = 0x%04x, system_serial = 0x%08x%08x,"
+-		" machine = '%s', barcode = '%s', baseband = '%s',"
+-		" carrier = '%s', pu_reason = 0x%08x\n",
++		" system_rev = 0x%04x, baseband = '%s', carrier = '%s',"
++		" pu_reason = 0x%08x\n",
+ 		mui_copy->version,
+ 		mui_copy->device,
+ 		mui_copy->radio,
+ 		mui_copy->radio_str,
+ 		mui_copy->system_rev,
+-		mui_copy->system_serial_high, mui_copy->system_serial_low,
+-		mui_copy->machine, mui_copy->barcode,
+ 		mui_copy->baseband, mui_copy->carrier,
+ 		mui_copy->powerup_reason);
+ 
+@@ -182,7 +180,7 @@
+ 
+ 	/* /proc/unitinfo */
+ 	unitinfo_procfs_file = proc_create("unitinfo",
+-		0444, NULL, &unitinfo_operations);
++		0400, NULL, &unitinfo_operations);
+ 
+ 	return 0;
+ }
