@@ -52,4 +52,9 @@ fi
 # .env must stay out of git
 git check-ignore -q .env && ok ".env is ignored" || fail ".env is NOT ignored"
 
+# 7. the regression tests (none needs the phone)
+for t in scripts/test-*; do
+	"$t" >/dev/null 2>&1 && ok "$(basename "$t")" || fail "$(basename "$t") (run it for details)"
+done
+
 [ $bad -eq 0 ] && echo "Repository check passed." || { echo "Repository check FAILED." >&2; exit 1; }
