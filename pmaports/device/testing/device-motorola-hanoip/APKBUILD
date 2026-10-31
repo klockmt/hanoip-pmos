@@ -4,7 +4,7 @@
 pkgname=device-motorola-hanoip
 pkgdesc="Motorola Moto G (60)"
 pkgver=0
-pkgrel=20
+pkgrel=21
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -18,7 +18,7 @@ depends="
 	soc-qcom
 	soc-qcom-qbootctl
 "
-makedepends="devicepkg-dev"
+makedepends="devicepkg-dev rust"
 install="$pkgname.post-install"
 subpackages="
 	$pkgname-kernel-downstream:kernel_downstream
@@ -33,7 +33,7 @@ source="
 	hanoip-console.start
 	hanoip-cpufreq.start
 	hanoip-qbootctl.start
-	hanoip-qgd
+	hanoip-qgd.rs
 	hanoip-qgd.initd
 	hanoip-sshd.conf
 	hanoip-status
@@ -43,6 +43,8 @@ source="
 
 build() {
 	devicepkg_build $startdir $pkgname
+	# One file, std only: no cargo, crates or network in the build.
+	rustc --edition 2021 -C opt-level=2 -o "$srcdir/hanoip-qgd" "$srcdir/hanoip-qgd.rs"
 }
 
 package() {
@@ -75,7 +77,7 @@ kernel_mainline() {
 }
 
 sha512sums="
-db27daa94028607084e40c393550ff9a9beecc36d1f8cbe3bd6afa8afa820dcbcd8d2eb9b7490e665620d1b9c174b5e881512ef18b5029dc94d9c7a81e79df22  hanoip-qgd
+5fec69566c8b93c8d8e63dbea0cb0a1801d77e833f768cb2474bfeb37e12be65c423147a5b61d47feeb19bcf81c2a5fba7b1e0a15e3530c0f1b2c5a761e58690  hanoip-qgd.rs
 088ef67651ebb1673a87184c690f25109e1f4693cf10c9c70d478e7f45c96ccaa6509f1191d9171e085fe6e8a9d74cdddfeb9275c504e3f9df19e1261713d3be  hanoip-qgd.initd
 bc1e9d1cf3f1ae058a4d876ce7af856cdc41bfaf992d02273dc4dca141d29f799c91d7a5a9c24f4c87f75c61f060a5004ae2ddd92aac3fff94e05b2858fd2c38  hanoip-bot
 d211b14464ad74fe9e79cdd1d4ecf59c8701dd5689bf5138d436cf47ebf4fb6f886d411f9ff08f13c4ada470bbccb1c42917628157f64c46d58f78d94e1669aa  hanoip-bot.initd
