@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/sh
 # Read-only collection of the Moto G60 (hanoip) for the postmarketOS port.
-# Usage in Termux: sh coletar-g60.sh
+# Usage in Termux: sh collect-device
 # Nothing is written to the partitions; it only reads them with dd and copies system files.
 set -u
 
