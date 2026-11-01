@@ -4,7 +4,7 @@
 pkgname=device-motorola-hanoip
 pkgdesc="Motorola Moto G (60)"
 pkgver=0
-pkgrel=25
+pkgrel=26
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -35,6 +35,7 @@ source="
 	hanoip-qbootctl.start
 	hanoip-qgd.rs
 	hanoip-qgd.initd
+	hanoip-ssh.nft
 	hanoip-sshd.conf
 	hanoip-status
 	hanoip-thermal
@@ -58,6 +59,7 @@ package() {
 	install -Dm755 "$srcdir/hanoip-qbootctl.start" "$pkgdir/etc/local.d/20-hanoip-qbootctl.start"
 	install -Dm755 "$srcdir/hanoip-qgd" "$pkgdir/usr/bin/hanoip-qgd"
 	install -Dm755 "$srcdir/hanoip-qgd.initd" "$pkgdir/etc/init.d/hanoip-qgd"
+	install -Dm644 "$srcdir/hanoip-ssh.nft" "$pkgdir/etc/nftables.d/02_hanoip-ssh.nft"
 	install -Dm644 "$srcdir/hanoip-sshd.conf" "$pkgdir/etc/ssh/sshd_config.d/60-hanoip-keys-only.conf"
 	install -Dm755 "$srcdir/hanoip-status" "$pkgdir/usr/bin/hanoip-status"
 	install -Dm755 "$srcdir/hanoip-thermal" "$pkgdir/usr/bin/hanoip-thermal"
@@ -87,6 +89,7 @@ d211b14464ad74fe9e79cdd1d4ecf59c8701dd5689bf5138d436cf47ebf4fb6f886d411f9ff08f13
 f08301d2d0b6d4e2488fc257d627a99f84c69c6af387f07aa343d64f25e3328c109d8a3a09f2b9a7b4c0d1c9a9914f8a0cf60e6ded8d43ac2b4c772ee009fad2  hanoip-qbootctl.start
 5fec69566c8b93c8d8e63dbea0cb0a1801d77e833f768cb2474bfeb37e12be65c423147a5b61d47feeb19bcf81c2a5fba7b1e0a15e3530c0f1b2c5a761e58690  hanoip-qgd.rs
 088ef67651ebb1673a87184c690f25109e1f4693cf10c9c70d478e7f45c96ccaa6509f1191d9171e085fe6e8a9d74cdddfeb9275c504e3f9df19e1261713d3be  hanoip-qgd.initd
+ca6c611b6e2509e9116604586233c665eba858f7dce9329d08a072e79a67b8f00c11effcc47c53f8d5f8c28527a84d7664d270bfddea82c26202bc2eae112566  hanoip-ssh.nft
 e9ca1358374ffd74680d371dd99bfce32d51940e9ed1f60dcae301a85808fb4e46af01f8ddc13a2c1ed57777c1989a8c672178714f8d8b466ea695780ef3a974  hanoip-sshd.conf
 b608b08e27f28c6fe45e0ebda67155d931ecb4e45c3145d97c7d2041f1ca2ac3ff0b34ae7fde9800774acef687eaec10346a4854cadaec2aeec98e23aba7074e  hanoip-status
 6d9367494b27aca76b2a68f82d06f6b11d2fe3c8ba3a28cfee4391d216ad730af0071d3229a375f7a823bf2bee82bdd9bf650616974fc89f38fd2f9dab66e1ef  hanoip-thermal

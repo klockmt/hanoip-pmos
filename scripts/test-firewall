@@ -1,0 +1,32 @@
+#!/bin/sh
+# Checks the SSH firewall rule without the phone: it parses, it lets in only USB and the tailnet, and it is
+# loaded before pmOS's own 50_sshd.nft, which accepts port 22 from every interface (nftables.d files load in
+# name order, and the first rule that matches wins).
+set -eu
+cd "$(dirname "$0")/.."
+pkg=pmaports/device/testing/device-motorola-hanoip
+rule=$pkg/hanoip-ssh.nft
+bad=0
+fail() { echo "FAIL: $*" >&2; bad=1; }
+[ -f "$rule" ] || { echo "FAIL: $rule is missing" >&2; exit 1; }
+
+dest=$(sed -n 's|.*"\$pkgdir\(/etc/nftables.d/[^"]*\)".*|\1|p' $pkg/APKBUILD | grep -F hanoip-ssh || true)
+[ -n "$dest" ] || fail "the APKBUILD does not install hanoip-ssh.nft into /etc/nftables.d"
+[ "$(printf '%s\n%s\n' "$(basename "${dest:-x}")" 50_sshd.nft | sort | head -1)" = "$(basename "${dest:-x}")" ] ||
+	fail "$dest loads after 50_sshd.nft, whose accept would win"
+
+grep -q 'iifname "usb\*" tcp dport 22 accept' "$rule" || fail "USB is not allowed to reach port 22"
+grep -q 'iifname "tailscale0" tcp dport 22 accept' "$rule" || fail "the tailnet is not allowed to reach port 22"
+last=$(grep -v '^[[:space:]]*#' "$rule" | grep 'tcp dport 22' | tail -1)
+case $last in *drop*) ;; *) fail "the last port 22 rule must drop everything else" ;; esac
+# Anything that accepts port 22 from every interface must come after the drop, never before it.
+if grep -v '^[[:space:]]*#' "$rule" | grep 'tcp dport 22' | grep -v iifname | grep -q accept; then fail "an accept without iifname opens port 22 to all"; fi
+
+# The syntax, checked by nft in a throwaway network namespace (skipped when the host cannot do that).
+if unshare -rn true 2>/dev/null; then
+	unshare -rn nft -c -f "$rule" || fail "nft rejects $rule"
+else
+	echo "skip: no user namespaces here, syntax not checked" >&2
+fi
+[ $bad -eq 0 ] && echo "firewall: ok"
+exit $bad

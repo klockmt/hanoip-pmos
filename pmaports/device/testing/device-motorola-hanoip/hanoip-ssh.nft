@@ -1,0 +1,10 @@
+# SSH only over USB (the authorized computer) and the tailnet. pmOS's 50_sshd.nft accepts port 22 from every
+# interface, Ethernet and Wi-Fi included; this file loads first (02_), so the drop below wins over that accept.
+# Sessions already open are untouched (the ct state established rule comes before every file in nftables.d).
+table inet filter {
+	chain input {
+		iifname "usb*" tcp dport 22 accept comment "SSH over USB"
+		iifname "tailscale0" tcp dport 22 accept comment "SSH over the tailnet"
+		tcp dport 22 drop comment "SSH from any other interface"
+	}
+}
