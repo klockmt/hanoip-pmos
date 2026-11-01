@@ -12,7 +12,8 @@ mkdir -p "$dir/bin" "$sys/class/net/eth0/statistics" "$sys/class/kgsl/kgsl-3d0/d
 	"$sys/class/power_supply/battery" "$sys/class/power_supply/usb" \
 	"$sys/devices/system/cpu/cpufreq/policy0" "$sys/devices/system/cpu/cpufreq/policy6"
 printf '#!/bin/sh\necho "default via 10.0.0.1 dev eth0"\n' > "$dir/bin/ip"
-printf '#!/bin/sh\necho "rtt min/avg/max/mdev = 0.800/0.887/1.000/0.050 ms"\n' > "$dir/bin/ping"
+# The gateway answers in 0.887 ms and the internet host in 4.5 ms; an unreachable host (HANOIP_PING_HOST=down) says nothing.
+printf '#!/bin/sh\ncase "$*" in *down*) ;; *10.0.0.1*) echo "rtt min/avg/max/mdev = 0.800/0.887/1.000/0.050 ms" ;; *) echo "rtt min/avg/max/mdev = 4.000/4.500/5.000/0.050 ms" ;; esac\n' > "$dir/bin/ping"
 chmod +x "$dir/bin/ip" "$dir/bin/ping"
 echo 0 > "$sys/class/net/eth0/statistics/rx_bytes"
 echo 0 > "$sys/class/net/eth0/statistics/tx_bytes"
@@ -46,7 +47,8 @@ expect() {
 state "Not charging" 0 0 0 1
 out=$(sh "$script")
 expect "one line per item described by -h" "$(echo "$out" | wc -l)" "$(sh "$script" -h | grep -c '^[0-9][0-9]*\.')"
-expect "latency and its target" "$(echo "$out" | sed -n 1p)" "Server - 0.9 ms | 1.1.1.1"
+expect "latency of the gateway and of 1.1.1.1" "$(echo "$out" | sed -n 1p)" "Server - 0.9 ms | gateway • 4.5 ms | 1.1.1.1"
+expect "an unreachable host says so" "$(HANOIP_PING_HOST=down sh "$script" | sed -n 1p)" "Server - 0.9 ms | gateway • no reply | down"
 expect "network" "$(echo "$out" | sed -n 2p)" "eth0 rx 0 kbit/s, tx 0 kbit/s"
 expect "cpu clocks and hottest core" "$(echo "$out" | sed -n 3p | cut -d'|' -f2-)" " 300-2304 MHz | 41.2 °C"
 expect "cpu label" "$(echo "$out" | sed -n 3p | cut -c1-6)" "CPU - "

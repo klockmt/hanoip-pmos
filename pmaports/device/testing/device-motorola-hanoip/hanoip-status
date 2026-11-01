@@ -6,7 +6,7 @@
 if [ "${1:-}" = -h ]; then
 	cat <<'EOF'
 One line each, in this order:
-1. Server: average of 3 pings to 1.1.1.1 (HANOIP_PING_HOST), in ms, and the address pinged.
+1. Server: average of 3 pings in ms to the default gateway (ip route) and to 1.1.1.1 (HANOIP_PING_HOST), each with its target.
 2. Network: interface of the default route (ip route), received and sent kbit/s over 1 s (/sys/class/net/*/statistics).
 3. CPU: busy % over 1 s (/proc/stat), lowest-highest current clock of the two clusters (cpufreq scaling_cur_freq), hottest core (thermal zones cpu-*-usr).
 4. GPU: busy % (kgsl gpu_busy_percentage), clock (kgsl gpuclk), hottest GPU sensor (thermal zones gpuss-*-usr), and on or off (kgsl runtime_status: active is on, suspended is off).
@@ -29,8 +29,11 @@ zones() {
 		sort -n | tail -1 | awk '{printf "%.1f", $1/1000}'
 }
 
+gw=$(ip route show default | awk '{for(i=1;i<=NF;i++) if($i=="via") {print $(i+1); exit}}')
 pinghost=${HANOIP_PING_HOST:-1.1.1.1}
-lat=$(ping -c 3 -W 2 "$pinghost" 2>/dev/null | awk -F'= ' '/min\/avg/{split($2, a, "/"); printf "%.1f ms", a[2]}')
+# Average round trip in ms of 3 pings to $1, or "no reply".
+latency() { ping -c 3 -W 2 "$1" 2>/dev/null | awk -F'= ' '/min\/avg/{split($2, a, "/"); printf "%.1f ms", a[2]; ok=1} END{if (!ok) printf "no reply"}'; }
+lat_gw=$(latency "$gw"); lat_net=$(latency "$pinghost")
 rx0=$(net rx_bytes); tx0=$(net tx_bytes); set -- $(cpu); t0=$1; id0=$2
 sleep 1
 rx1=$(net rx_bytes); tx1=$(net tx_bytes); set -- $(cpu); t1=$1; id1=$2
@@ -59,7 +62,7 @@ cycles=$(cat $bat/cycle_count)
 offset=$(cat /var/lib/hanoip/cycle-offset 2>/dev/null)
 if [ "${offset:-0}" -gt 0 ] 2>/dev/null; then cycles=$((offset + cycles)); fi
 
-echo "Server - ${lat:-no reply} | $pinghost"
+echo "Server - $lat_gw | gateway • $lat_net | $pinghost"
 echo "$dev rx $(( (rx1-rx0)*8/1000 )) kbit/s, tx $(( (tx1-tx0)*8/1000 )) kbit/s"
 echo "CPU - $(( ((t1-t0)-(id1-id0))*100/(t1-t0) )) % | $freqs | $(zones 'cpu-*-usr') °C"
 echo "GPU - $gpubusy % | $(( $(cat $kgsl/gpuclk) / 1000000 )) MHz | $(zones 'gpuss-*-usr') °C | $gpu"
