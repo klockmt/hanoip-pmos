@@ -28,7 +28,6 @@ Read `NOTES.md` (state, pitfalls, working rules) and `docs/STATUS.md` before tou
 - Services (OpenRC): `hanoip-qgd` (battery percentage, see below), `hanoip-charge-limit` (needs `hanoip-qgd`), `hanoip-bot`, `hanoip-thermal`, `hanoip-modem` (Wi-Fi), Tailscale. `qbootctl -m` runs from `/etc/local.d` (keep `local` in `default`).
 - Pending: `zram` (in the kernel; the service fails: no `/lib/modules`, zstd missing, issue #8); `systemd-tmpfiles`/`sysusers` fail on 4.14 (`openat2`). Open work lives in the GitHub issues (roadmap #20).
 - On the phone, `/etc/deviceinfo` sets `deviceinfo_flash_kernel_on_update="false"` until the vendor_boot boot failure of 2026-10-30 is understood (`NOTES.md`). Never flash `boot`/`vendor_boot` without a backup on the PC (`$HANOIP_BACKUP_DIR`).
-- Pending later: patch `qpnp-qg` so `bms/cycle_counts` is writable and restore the lost buckets (`NOTES.md`, next steps 7). `/var/lib/hanoip/cycle-offset` on the phone is a temporary display offset.
 
 ## Bugs found, and what to remember
 Every bug gets an automated test that fails before the fix and passes after (see below). They live in `scripts/test-*` and `scripts/check-repo` runs them all.
@@ -46,7 +45,7 @@ Every bug gets an automated test that fails before the fix and passes after (see
 | `fastboot flash userdata` refused | Motorola fastboot | Write the rootfs through the Lineage recovery with `dd` and verify the hash |
 | Every boot took ~3 min | Each missing firmware file waited 60 s | Keep `FW_LOADER_USER_HELPER_FALLBACK` off |
 | `dtc` segfaults | The tree's own `dtc` built with clang 23 | Build with `DTC=/usr/bin/dtc` |
-| Cycle counter lost (8 buckets) | A fully drained battery clears PMIC SDAM | Never let the battery die; see the pending patch above |
+| Cycle counter lost (8 buckets) | A fully drained battery clears PMIC SDAM | Never let the battery die; if it happens, `scripts/restore-cycle-counts` (needs kernel patch 0007, which makes `bms/cycle_counts` writable; keep it) |
 | Wi-Fi firmware crashed ~0.7 s after WLFW connected (`EX:kernel:0x0:tmr_slave1`) | Modem reads SMEM item 134, created by `mmi_info`, which was off | Keep `CONFIG_MMI_INFO=y` and `CONFIG_MMI_ANNOTATE=y` (`scripts/test-kernel-config`) |
 | Kernel upgrade would flash an old cmdline | Device subpackage `-kernel-downstream` (owner of `deviceinfo`) left at r0 | Install the main device apk and its subpackage together |
 | Phone hung at boot after `boot-deploy` regenerated `vendor_boot` | Unconfirmed; only the cmdline changed (`console=tty0` instead of `console=ttyMSM0,...`) | Back up to the PC first; test a new `vendor_boot` before trusting package updates |
