@@ -1,0 +1,61 @@
+#!/bin/sh
+# Checks hanoip-status against a fake /sys and fake ip/ping (no hardware needed): one line per item in the
+# order -h describes, the CPU and GPU lines, and the power line on the battery, charging and in bypass.
+set -eu
+cd "$(dirname "$0")/.."
+script=$PWD/pmaports/device/testing/device-motorola-hanoip/hanoip-status
+dir=$(mktemp -d)
+trap 'rm -rf "$dir"' EXIT
+sys=$dir/sys
+mkdir -p "$dir/bin" "$sys/class/net/eth0/statistics" "$sys/class/kgsl/kgsl-3d0" \
+	"$sys/class/power_supply/battery" "$sys/class/power_supply/usb" \
+	"$sys/devices/system/cpu/cpufreq/policy0" "$sys/devices/system/cpu/cpufreq/policy6"
+printf '#!/bin/sh\necho "default via 10.0.0.1 dev eth0"\n' > "$dir/bin/ip"
+printf '#!/bin/sh\necho "rtt min/avg/max/mdev = 0.800/0.887/1.000/0.050 ms"\n' > "$dir/bin/ping"
+chmod +x "$dir/bin/ip" "$dir/bin/ping"
+echo 0 > "$sys/class/net/eth0/statistics/rx_bytes"
+echo 0 > "$sys/class/net/eth0/statistics/tx_bytes"
+echo 300000 > "$sys/devices/system/cpu/cpufreq/policy0/scaling_cur_freq"
+echo 2304000 > "$sys/devices/system/cpu/cpufreq/policy6/scaling_cur_freq"
+echo "12 %" > "$sys/class/kgsl/kgsl-3d0/gpu_busy_percentage"
+echo 140000000 > "$sys/class/kgsl/kgsl-3d0/gpuclk"
+n=0
+for z in cpu-0-0-usr:37800 cpu-1-0-usr:41200 gpuss-0-usr:35000 gpuss-1-usr:36500 quiet_therm:34400 battery:31600; do
+	mkdir "$sys/class/thermal/thermal_zone$n" 2>/dev/null || mkdir -p "$sys/class/thermal/thermal_zone$n"
+	echo "${z%%:*}" > "$sys/class/thermal/thermal_zone$n/type"
+	echo "${z##*:}" > "$sys/class/thermal/thermal_zone$n/temp"
+	n=$((n + 1))
+done
+b=$sys/class/power_supply/battery u=$sys/class/power_supply/usb
+echo 81 > "$b/capacity"; echo 4330000 > "$b/voltage_now"; echo 1 > "$b/cycle_count"; echo 316 > "$b/temp"
+echo 100000 > "$u/input_current_now"; echo 9000000 > "$u/voltage_now"
+export HANOIP_SYS_DIR=$sys PATH="$dir/bin:$PATH"
+
+# state <status> <current_now> <charging_enabled> <input_suspend> <usb present>
+state() { echo "$1" > "$b/status"; echo "$2" > "$b/current_now"; echo "$3" > "$b/charging_enabled"
+	echo "$4" > "$b/input_suspend"; echo "$5" > "$u/present"; }
+line() { sh "$script" | sed -n "${1}p"; }
+expect() {
+	[ "$2" = "$3" ] && return 0
+	echo "FAIL: $1: got '$2', expected '$3'" >&2
+	exit 1
+}
+
+state "Not charging" 0 0 0 1
+out=$(sh "$script")
+expect "one line per item described by -h" "$(echo "$out" | wc -l)" "$(sh "$script" -h | grep -c '^[0-9]\.')"
+expect "no labels" "$(echo "$out" | grep -c ':' || true)" 0
+expect "latency" "$(echo "$out" | sed -n 1p)" "0.9 ms"
+expect "network" "$(echo "$out" | sed -n 2p)" "eth0 rx 0 kbit/s, tx 0 kbit/s"
+expect "cpu clocks and hottest core" "$(echo "$out" | sed -n 3p | cut -d, -f2-)" " 300-2304 MHz, 41.2 °C"
+expect "gpu" "$(echo "$out" | sed -n 4p)" "12 %, 140 MHz, 36.5 °C"
+expect "battery" "$(echo "$out" | sed -n 7p)" "81 %, 4.33 V, 1 cycles, 31.6 °C"
+expect "bypass on the cable" "$(echo "$out" | sed -n 8p)" "0.00 W, not charging, bypass; 0.90 W from the cable"
+expect "body" "$(echo "$out" | sed -n 9p)" "34.4 °C"
+state Charging 1000000 1 0 1
+expect "charging" "$(line 8)" "4.33 W, charging, no bypass; 0.90 W from the cable"
+state Discharging -500000 1 0 0
+expect "on the battery" "$(line 8)" "2.17 W, not charging, no bypass; 2.17 W from the battery"
+state "Not charging" -500000 0 1 1
+expect "cable suspended runs from the battery" "$(line 8)" "2.17 W, not charging, no bypass; 2.17 W from the battery"
+echo "status: all checks pass"

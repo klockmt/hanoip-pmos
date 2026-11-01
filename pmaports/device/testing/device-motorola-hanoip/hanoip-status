@@ -1,40 +1,68 @@
 #!/bin/sh
-# Phone health in one screen: latency and traffic of the default link, battery, power draw, RAM, root disk, CPU and temperatures.
+# Phone health in one screen, one value group per line and no labels; `hanoip-status -h` says what each
+# line is and where it comes from. HANOIP_SYS_DIR replaces /sys, for tests (scripts/test-status).
 # shortcut: traffic is the rate over 1 s on the default route, not the link capacity.
-# shortcut: the chassis temperature is the quiet_therm sensor, which is the closest this board has.
+# shortcut: the body temperature is the quiet_therm sensor, which is the closest this board has.
+if [ "${1:-}" = -h ]; then
+	cat <<'EOF'
+One line each, in this order:
+1. Latency: average of 3 pings to the default gateway (ip route), in ms.
+2. Network: interface of the default route, received and sent kbit/s over 1 s (/sys/class/net/*/statistics).
+3. CPU: busy % over 1 s (/proc/stat), lowest-highest current clock of the two clusters (cpufreq scaling_cur_freq), hottest core (thermal zones cpu-*-usr).
+4. GPU: busy % (kgsl gpu_busy_percentage), clock (kgsl gpuclk), hottest GPU sensor (thermal zones gpuss-*-usr).
+5. RAM: used % and used/total GB, used = MemTotal - MemAvailable (/proc/meminfo).
+6. ROM: used % and used/total GB of the root filesystem (df /).
+7. Battery: charge % (capacity), voltage (voltage_now), charge cycles (cycle_count plus the cycles the PMIC lost, /var/lib/hanoip/cycle-offset), temperature (temp).
+8. Power: the battery's own flow, |current_now| x voltage_now (as btop shows it), whether it is charging, and whether it is in bypass (the charge limit stopped charging and the cable powers the phone); then what the whole phone draws and from where: the cable (usb input_current_now x voltage_now) or the battery.
+9. Body: temperature of the quiet_therm sensor, the closest to the case.
+EOF
+	exit 0
+fi
+sys=${HANOIP_SYS_DIR:-/sys}
 dev=$(ip route show default | awk '{for(i=1;i<=NF;i++) if($i=="dev") {print $(i+1); exit}}')
 gw=$(ip route show default | awk '{for(i=1;i<=NF;i++) if($i=="via") {print $(i+1); exit}}')
-net() { cat /sys/class/net/$dev/statistics/$1 2>/dev/null || echo 0; }
+net() { cat $sys/class/net/$dev/statistics/$1 2>/dev/null || echo 0; }
 cpu() { read -r _ u n s i w q sq st _ < /proc/stat; echo "$((u+n+s+i+w+q+sq+st)) $((i+w))"; }
-# Temperature in °C of the thermal zone whose type is $1 (sysfs gives millidegrees).
-zone() { for z in /sys/class/thermal/thermal_zone*; do read -r t < $z/type; [ "$t" = "$1" ] && awk '{printf "%.1f", $1/1000}' $z/temp && return; done; }
+# Hottest of the thermal zones whose type matches the pattern $1, in °C (sysfs gives millidegrees).
+zones() {
+	for z in $sys/class/thermal/thermal_zone*; do read -r t < $z/type; case $t in $1) cat $z/temp;; esac; done |
+		sort -n | tail -1 | awk '{printf "%.1f", $1/1000}'
+}
 
-lat=$(ping -c 3 -W 2 "$gw" 2>/dev/null | awk -F'= ' '/min\/avg/{split($2, a, "/"); print a[2]" ms"}')
+lat=$(ping -c 3 -W 2 "$gw" 2>/dev/null | awk -F'= ' '/min\/avg/{split($2, a, "/"); printf "%.1f ms", a[2]}')
 rx0=$(net rx_bytes); tx0=$(net tx_bytes); set -- $(cpu); t0=$1; id0=$2
 sleep 1
 rx1=$(net rx_bytes); tx1=$(net tx_bytes); set -- $(cpu); t1=$1; id1=$2
 
-bat=/sys/class/power_supply/battery
-status=$(cat $bat/status)
+freqs=$(cat $sys/devices/system/cpu/cpufreq/policy*/scaling_cur_freq | sort -n | awk 'NR==1{lo=$1} {hi=$1} END{lo/=1000; hi/=1000; if (lo==hi) printf "%d MHz", lo; else printf "%d-%d MHz", lo, hi}')
+kgsl=$sys/class/kgsl/kgsl-3d0
+gpubusy=$(awk '{print $1}' $kgsl/gpu_busy_percentage)
+
+bat=$sys/class/power_supply/battery
+usb=$sys/class/power_supply/usb
 cur=$(cat $bat/current_now); volt=$(cat $bat/voltage_now)
-if [ "$cur" -lt 0 ]; then
-	# Same figure btop uses when the battery has no power_now: |current| x voltage. Sysfs gives µA and µV.
-	watts=$(awk -v c=$cur -v v=$volt 'BEGIN{printf "%.2f W (bateria)", (c<0?-c:c)*v/1e12}')
+present=$(cat $usb/present); suspended=$(cat $bat/input_suspend)
+# Current is positive while charging. Same figure btop uses when the battery has no power_now: |current| x voltage (µA x µV).
+batw=$(awk -v c=$cur -v v=$volt 'BEGIN{printf "%.2f W", (c<0?-c:c)*v/1e12}')
+if [ "$(cat $bat/status)" = Charging ]; then charging=charging; else charging="not charging"; fi
+# hanoip-charge-limit's hold: charger stopped, cable kept on and powering the phone.
+if [ "$present" = 1 ] && [ "$suspended" = 0 ] && [ "$(cat $bat/charging_enabled)" = 0 ]; then bypass=bypass; else bypass="no bypass"; fi
+if [ "$present" = 1 ] && [ "$suspended" = 0 ]; then
+	total=$(awk -v c=$(cat $usb/input_current_now) -v v=$(cat $usb/voltage_now) 'BEGIN{printf "%.2f W from the cable", c*v/1e12}')
 else
-	# On the charger: what the phone takes from the cable.
-	watts=$(awk -v c=$(cat /sys/class/power_supply/usb/input_current_now) -v v=$(cat /sys/class/power_supply/usb/voltage_now) 'BEGIN{printf "%.2f W (da tomada)", c*v/1e12}')
+	total="$batw from the battery"
 fi
-cpumax=$(for z in /sys/class/thermal/thermal_zone*; do read -r t < $z/type; case $t in cpu-*-usr) cat $z/temp;; esac; done | sort -n | tail -1 | awk '{printf "%.1f", $1/1000}')
 # Cycles counted before the PMIC lost its saved data (a drained battery clears it), kept per phone outside the repo.
 cycles=$(cat $bat/cycle_count)
 offset=$(cat /var/lib/hanoip/cycle-offset 2>/dev/null)
-if [ "${offset:-0}" -gt 0 ] 2>/dev/null; then cycles="$((offset + cycles)) ($offset + $cycles)"; fi
+if [ "${offset:-0}" -gt 0 ] 2>/dev/null; then cycles=$((offset + cycles)); fi
 
-echo "Latencia:  ${lat:-sem resposta} (gateway ${gw:-?})"
-echo "Rede:      $dev rx $(( (rx1-rx0)*8/1000 )) kbit/s, tx $(( (tx1-tx0)*8/1000 )) kbit/s"
-echo "Bateria:   $(cat $bat/capacity) % ($status), $(awk -v v=$volt 'BEGIN{printf "%.2f", v/1e6}') V, $cycles ciclos, $(awk '{printf "%.1f", $1/10}' $bat/temp) °C"
-echo "Consumo:   $watts"
-awk '/MemTotal/{t=$2} /MemAvailable/{a=$2} END{printf "RAM:       %.0f %% usada (%.1f de %.1f GB)\n", (t-a)*100/t, (t-a)/1048576, t/1048576}' /proc/meminfo
-df -P / | awk 'NR==2{printf "ROM:       %s usada (%.1f de %.1f GB)\n", $5, $3/1048576, $2/1048576}'
-echo "CPU:       $(( ((t1-t0)-(id1-id0))*100/(t1-t0) )) % (${cpumax} °C no máximo)"
-echo "Carcaça:   $(zone quiet_therm) °C"
+echo "${lat:-no reply}"
+echo "$dev rx $(( (rx1-rx0)*8/1000 )) kbit/s, tx $(( (tx1-tx0)*8/1000 )) kbit/s"
+echo "$(( ((t1-t0)-(id1-id0))*100/(t1-t0) )) %, $freqs, $(zones 'cpu-*-usr') °C"
+echo "$gpubusy %, $(( $(cat $kgsl/gpuclk) / 1000000 )) MHz, $(zones 'gpuss-*-usr') °C"
+awk '/MemTotal/{t=$2} /MemAvailable/{a=$2} END{printf "%.0f %%, %.1f/%.1f GB\n", (t-a)*100/t, (t-a)/1048576, t/1048576}' /proc/meminfo
+df -P / | awk 'NR==2{printf "%d %%, %.1f/%.1f GB\n", $5, $3/1048576, $2/1048576}'
+echo "$(cat $bat/capacity) %, $(awk -v v=$volt 'BEGIN{printf "%.2f", v/1e6}') V, $cycles cycles, $(awk '{printf "%.1f", $1/10}' $bat/temp) °C"
+echo "$batw, $charging, $bypass; $total"
+echo "$(zones quiet_therm) °C"
