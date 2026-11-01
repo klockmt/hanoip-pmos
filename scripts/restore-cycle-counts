@@ -8,21 +8,19 @@ set -eu
 if [ -z "${HANOIP_CYCLE_BUCKETS:-}" ]; then . "$(dirname "$0")/env.sh"; fi
 [ -n "${HANOIP_CYCLE_BUCKETS:-}" ] || { echo "HANOIP_CYCLE_BUCKETS is not set in .env (8 counts)." >&2; exit 1; }
 dir=$(dirname "$0")
-psy=/sys/class/power_supply/bms/cycle_counts
-marker=/var/lib/hanoip/cycle-restored
+psy=${HANOIP_CYCLE_PSY:-/sys/class/power_supply/bms/cycle_counts}
+marker=${HANOIP_CYCLE_MARKER:-/var/lib/hanoip/cycle-restored}
 
-phone() { "$dir/hanoip-ssh" "$@"; }
-root() { "$dir/hanoip-sudo" "$1"; }
+# HANOIP_PHONE_CMD and HANOIP_ROOT_CMD stand in for hanoip-ssh and hanoip-sudo, for tests.
+phone() { "${HANOIP_PHONE_CMD:-$dir/hanoip-ssh}" "$@"; }
+root() { "${HANOIP_ROOT_CMD:-$dir/hanoip-sudo}" "$1"; }
 valid() { echo "$1" | awk '{ if (NF != 8) exit 1; for (i = 1; i <= NF; i++) if ($i !~ /^[0-9]+$/ || $i > 65535) exit 1 }'; }
 
 valid "$HANOIP_CYCLE_BUCKETS" || { echo "HANOIP_CYCLE_BUCKETS must be 8 counts of 0-65535." >&2; exit 1; }
-if [ -n "${HANOIP_CYCLE_CURRENT:-}" ]; then
-	current=$HANOIP_CYCLE_CURRENT
-else
-	[ -n "${FORCE:-}" ] || ! phone "test -e $marker" || { echo "Already restored (marker $marker on the phone). FORCE=1 to add again." >&2; exit 1; }
-	phone "test -w $psy" || { echo "$psy is not writable: the phone runs a kernel without patch 0007." >&2; exit 1; }
-	current=$(phone "cat $psy")
-fi
+[ -n "${FORCE:-}" ] || ! phone "test -e $marker" || { echo "Already restored (marker $marker on the phone). FORCE=1 to add again." >&2; exit 1; }
+# The mode, not test -w: the file belongs to root, and this runs as the login user, who can never write it.
+[ -n "$(phone "find $psy -perm -u=w")" ] || { echo "$psy has no write bit: the phone runs a kernel without patch 0007." >&2; exit 1; }
+current=${HANOIP_CYCLE_CURRENT:-$(phone "cat $psy")}
 valid "$current" || { echo "Unexpected cycle_counts from the phone: '$current'" >&2; exit 1; }
 total=$(echo "$HANOIP_CYCLE_BUCKETS $current" | awk '{ for (i = 1; i <= 8; i++) { s = $i + $(i + 8); if (s > 65535) exit 1; printf "%d%s", s, i < 8 ? " " : "\n" } }') ||
 	{ echo "A bucket would pass 65535." >&2; exit 1; }

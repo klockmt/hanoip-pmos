@@ -5,6 +5,14 @@ set -eu
 cd "$(dirname "$0")/.."
 export DRY_RUN=1
 bad=0
+# A stand-in for the phone: the same commands, run here. The sysfs file is a file of root with mode 644, like the
+# real one: its owner can write it, the user the script logs in as cannot, and the script must still go ahead.
+dir=$(mktemp -d)
+trap 'rm -rf "$dir"' EXIT
+printf '#!/bin/sh\nsh -c "$1"\n' > "$dir/fake"
+chmod +x "$dir/fake"
+export HANOIP_PHONE_CMD=$dir/fake HANOIP_ROOT_CMD=$dir/fake HANOIP_CYCLE_MARKER=$dir/marker
+export HANOIP_CYCLE_PSY=/etc/passwd
 run() { HANOIP_CYCLE_BUCKETS=$1 HANOIP_CYCLE_CURRENT=$2 scripts/restore-cycle-counts 2>&1; }
 expect_write() {
 	got=$(run "$2" "$3" | sed -n 's/^+ echo .\(.*\). > .*/\1/p')
@@ -21,5 +29,11 @@ expect_refused "text in the saved values" "25 60 x 148 178 167 137 85" "1 1 1 1 
 expect_refused "9 current values" "25 60 114 148 178 167 137 85" "1 1 1 1 2 2 1 1 1"
 expect_refused "a sum over 65535" "65535 60 114 148 178 167 137 85" "1 1 1 1 2 2 1 1"
 expect_refused "a saved value over 65535" "70000 60 114 148 178 167 137 85" "0 0 0 0 0 0 0 0"
+touch "$dir/marker"
+expect_refused "already restored (marker present)" "25 60 114 148 178 167 137 85" "1 1 1 1 2 2 1 1"
+rm "$dir/marker"
+chmod 755 "$dir/fake"
+printf '1 1 1 1 2 2 1 1\n' > "$dir/ro"; chmod 444 "$dir/ro"
+HANOIP_CYCLE_PSY=$dir/ro expect_refused "kernel file without a write bit" "25 60 114 148 178 167 137 85" "1 1 1 1 2 2 1 1"
 [ $bad -eq 0 ] && echo "restore-cycle-counts: all checks pass"
 exit $bad
