@@ -29,7 +29,9 @@ want CRYPTO_ZSTD y "zram swap defaults to zstd"
 # zramstart runs `modprobe zram` under set -e; with no /lib/modules in the package it fails even though zram is
 # built in. The kernel package has to install the module tree.
 apk=pmaports/device/downstream/linux-motorola-hanoip/APKBUILD
-grep -q 'modules_install' "$apk" || { echo "FAIL: $apk does not install /lib/modules (modprobe zram fails without it)" >&2; bad=1; }
+# (Code lines only: a comment that mentions the module tree must not satisfy this.)
+grep -v '^[[:space:]]*#' "$apk" | grep -q 'depmod' && grep -v '^[[:space:]]*#' "$apk" | grep -q 'lib/modules' ||
+	{ echo "FAIL: $apk does not install /lib/modules (modprobe zram fails without it)" >&2; bad=1; }
 # zramstart sets vm.swappiness=180; this kernel stops at 100 unless patch 0008 raises the limit.
 grep -q '^\s*0008-.*swappiness.*\.patch' "$apk" || { echo "FAIL: $apk does not apply the swappiness patch (sysctl rejects 180)" >&2; bad=1; }
 [ $bad -eq 0 ] && echo "kernel config: ok"

@@ -63,11 +63,16 @@ package() {
 	install -Dm644 "$builddir/arch/$_carch/boot/dts/qcom/sdmmagpie-hanoi-base.dtb" \
 		"$pkgdir/boot/dtbs/qcom/sdmmagpie-hanoi-base.dtb"
 	# The module tree: modprobe fails without /lib/modules/<release> even for options built in (zramstart needs it).
-	_w="-Wno-error=incompatible-pointer-types -Wno-error=incompatible-function-pointer-types"
-	_w="$_w -Wno-error=int-conversion -Wno-error=implicit-function-declaration -Wno-error=implicit-int"
-	make ARCH="$_carch" LLVM=1 LLVM_IAS=1 CC=clang HOSTCC="clang $_w" KCFLAGS="-Wno-error $_w" \
-		DTC=dtc INSTALL_MOD_PATH="$pkgdir" modules_install
-	rm -f "$pkgdir"/lib/modules/*/build "$pkgdir"/lib/modules/*/source
+	# kbuild's modules_install wants to write in the source tree, which pmbootstrap --envkernel hands to the build
+	# user read-only, so do what it does: copy the modules modules.order lists (it names the installed path, under
+	# kernel/), add modules.order and modules.builtin, and run depmod.
+	_kver=$(cat "$builddir/$_outdir/include/config/kernel.release")
+	_moddir="$pkgdir/lib/modules/$_kver"
+	while read -r _m; do
+		install -Dm644 "$builddir/$_outdir/${_m#kernel/}" "$_moddir/$_m"
+	done < "$builddir/$_outdir/modules.order"
+	install -m644 "$builddir/$_outdir/modules.order" "$builddir/$_outdir/modules.builtin" "$_moddir/"
+	depmod -a -b "$pkgdir" "$_kver"
 }
 
 sha512sums="
