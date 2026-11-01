@@ -1,0 +1,34 @@
+#!/bin/sh
+# Checks the private-data scan of scripts/check-repo on a throwaway git repository (no phone, no real data):
+# a 15-digit number (IMEI-like) and the login user from .env, planted in a committable file, must each be
+# reported, and a long hex checksum or a longer word that merely contains the user name must not.
+set -eu
+cd "$(dirname "$0")/.."
+src=$PWD/scripts/check-repo
+dir=$(mktemp -d)
+trap 'rm -rf "$dir"' EXIT
+bad=0
+
+# scan <name> <file content> <expected: hit|clean>
+scan() {
+	rm -rf "$dir/r"; mkdir -p "$dir/r/scripts"
+	cp "$src" "$dir/r/scripts/check-repo"
+	(cd "$dir/r" && git init -q && printf '.env\n' > .gitignore && printf 'HANOIP_USER=planteduser\nHANOIP_HOST=host\n' > .env &&
+		printf '%s\n' "$2" > notes.txt && git add -A)
+	out=$(cd "$dir/r" && sh scripts/check-repo 2>&1 || true)
+	if echo "$out" | grep -q 'FAIL  private-looking data: notes.txt'; then got=hit; else got=clean; fi
+	[ "$got" = "$3" ] || { echo "FAIL $1: $got, expected $3" >&2; bad=1; }
+	# the user name must never be echoed back
+	if echo "$out" | grep -q planteduser; then echo "FAIL $1: the report prints the user name" >&2; bad=1; fi
+}
+n15=$(printf "12345%s" 6789012345)
+scan "15-digit number" "serial $n15 here" hit
+scan "15-digit number at line start" "$n15" hit
+scan "login user as a word" "ssh planteduser@somewhere" hit
+scan "login user alone" "planteduser" hit
+scan "nothing private" "an ordinary line, version 4.14.357, 14 digits $(printf "12345%s" 678901234)" clean
+scan "longer word with the user name" "planteduser2 and myplanteduser" clean
+scan "sha512 line" "$(printf 'a%.0s' $(seq 1 60))${n15}$(printf 'b%.0s' $(seq 1 60))  file.patch" clean
+scan "16-digit number" "${n15}6" clean
+[ $bad -eq 0 ] && echo "check-repo scan: all checks pass"
+exit $bad

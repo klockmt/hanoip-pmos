@@ -15,6 +15,8 @@ for f in scripts/*; do
 done
 [ $bad -eq 0 ] && ok "all scripts parse"
 
+sums=$(mktemp)
+trap 'rm -f "$sums"' EXIT
 # 2. every APKBUILD source exists and its checksum matches (the kernel tarball is skipped: it is downloaded)
 for d in pmaports/device/*/*/; do
 	[ -f "$d/APKBUILD" ] || continue
@@ -23,9 +25,9 @@ for d in pmaports/device/*/*/; do
 		[ -f "$d/$name" ] || { echo "missing source: $d$name"; continue; }
 		[ "$(sha512sum "$d/$name" | cut -d' ' -f1)" = "$sum" ] || echo "stale checksum: $d$name"
 	done
-done > /tmp/hanoip-check-sums.$$
-if [ -s /tmp/hanoip-check-sums.$$ ]; then while read -r l; do fail "$l"; done < /tmp/hanoip-check-sums.$$; else ok "APKBUILD checksums match"; fi
-rm -f /tmp/hanoip-check-sums.$$
+done > "$sums"
+if [ -s "$sums" ]; then while read -r l; do fail "$l"; done < "$sums"; else ok "APKBUILD checksums match"; fi
+rm -f "$sums"
 
 # 3. the patch copies in the package and in kernel/downstream-patches are identical
 for p in kernel/downstream-patches/*.patch; do
@@ -35,6 +37,10 @@ done
 
 # 4. private data. Only files git would commit are scanned (tracked, plus untracked and not ignored).
 files=$(git ls-files; git ls-files -o --exclude-standard)
+# The login user on the phone comes from .env at run time and is never written here. Whole words only, so
+# a longer name that contains it (a GitHub account, say) does not match. Both new patterns report file:line
+# and not the line, so a hit does not copy the value into the output.
+user=$(sed -n 's/^HANOIP_USER=//p' .env 2>/dev/null | head -1 | tr -d "\"'")
 hits=$(for f in $files; do [ -f "$f" ] || continue; case $f in *.dtb) continue;; esac
 	grep -InE '([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}' "$f" | grep -v '00:00:00:00:00:00' | sed "s|^|$f:|"
 	grep -InE 'androidboot\.serialno=[^X"[:space:]]' "$f" | sed "s|^|$f:|"
@@ -43,6 +49,8 @@ hits=$(for f in $files; do [ -f "$f" ] || continue; case $f in *.dtb) continue;;
 	grep -InE '^(battid|pcb-part-no): *[^R ]' "$f" | sed "s|^|$f:|"
 	grep -InE '(^|[[:space:]"'"'"'=:(])/home/[a-z][a-z0-9_-]*/' "$f" | sed "s|^|$f:|"
 	grep -InE '[A-Za-z0-9._-]+@[A-Za-z0-9-]+\.(com|org|net|io|dev)' "$f" | grep -v 'noreply@' | sed "s|^|$f:|"
+	grep -InE '(^|[^0-9A-Za-z])[0-9]{15}([^0-9A-Za-z]|$)' "$f" | cut -d: -f1 | sed "s|^|$f:|"
+	if [ -n "$user" ]; then grep -InwF -- "$user" "$f" | cut -d: -f1 | sed "s|^|$f:|"; fi
 done)
 if [ -n "$hits" ]; then echo "$hits" | cut -c1-160 | while read -r l; do fail "private-looking data: $l"; done; bad=1; else ok "no private-looking data in committable files"; fi
 # the DTB is binary: check the same fields through fdtget when available
