@@ -1,0 +1,22 @@
+#!/bin/sh
+# Checks that the repository states one license in every place (no phone): every APKBUILD says GPL-2.0-only,
+# LICENSE is the standard GPL-2.0 text and nothing else (so GitHub recognises it), and the project's own wording
+# lives in NOTICE, which names the same license.
+set -eu
+cd "$(dirname "$0")/.."
+want=GPL-2.0-only
+bad=0
+fail() { echo "FAIL: $*" >&2; bad=1; }
+
+for apk in pmaports/device/*/*/APKBUILD; do
+	got=$(sed -n 's/^license="\(.*\)"/\1/p' "$apk")
+	[ "$got" = "$want" ] || fail "$apk says license=\"$got\", expected $want"
+done
+first=$(sed -n '/[^[:space:]]/{p;q}' LICENSE | sed 's/^[[:space:]]*//')
+[ "$first" = "GNU GENERAL PUBLIC LICENSE" ] || fail "LICENSE must start with the standard GPL text, not '$first'"
+grep -q 'Version 2, June 1991' LICENSE || fail "LICENSE is not GPL version 2"
+[ -f NOTICE ] || fail "NOTICE is missing"
+[ -f NOTICE ] && ! grep -q "$want" NOTICE && fail "NOTICE does not name $want"
+grep -q 'LICENSE' README.md && grep -q 'NOTICE' README.md || fail "README must point at LICENSE and NOTICE"
+[ $bad -eq 0 ] && echo "license: ok"
+exit $bad

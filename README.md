@@ -169,4 +169,4 @@ Partition backups, the device collection (serial, MAC and IMEI), and the proprie
 
 ## License
 
-GPL-2.0-only, see [`LICENSE`](LICENSE). The kernel patches and the device-tree sources are derived from the Linux kernel; the packaging, scripts and documentation use the same license. Proprietary firmware and device identifiers are not part of the repository.
+GPL-2.0-only, see [`LICENSE`](LICENSE) for the text and [`NOTICE`](NOTICE) for the scope. The kernel patches and the device-tree sources are derived from the Linux kernel; the packaging, scripts and documentation use the same license. Proprietary firmware and device identifiers are not part of the repository.

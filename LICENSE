@@ -1,21 +1,3 @@
-hanoip-pmos: postmarketOS port for the Motorola Moto G60 (hanoip)
-
-Copyright (C) 2026 hanoip-pmos contributors
-
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License version 2 only, as published by the
-Free Software Foundation.
-
-The kernel patches and device-tree sources in this repository are derived from
-the Linux kernel and are therefore GPL-2.0-only. The packaging files (APKBUILD,
-deviceinfo), the scripts and the documentation are distributed under the same
-license for simplicity.
-
-This repository does not contain proprietary firmware, device identifiers or
-partition dumps. Those come from your own device; see README.md.
-
-The full text of the license follows.
-
 		    GNU GENERAL PUBLIC LICENSE
 		       Version 2, June 1991
 

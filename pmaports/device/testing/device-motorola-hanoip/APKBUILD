@@ -4,9 +4,9 @@
 pkgname=device-motorola-hanoip
 pkgdesc="Motorola Moto G (60)"
 pkgver=0
-pkgrel=27
+pkgrel=28
 url="https://postmarketos.org"
-license="MIT"
+license="GPL-2.0-only"
 arch="aarch64"
 options="!check !archcheck !pmb:crossdirect"
 depends="
