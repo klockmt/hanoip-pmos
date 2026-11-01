@@ -36,6 +36,9 @@ want CGROUP_PIDS y "pids cgroup (--pids-limit)"
 want CGROUP_DEVICE y "devices cgroup"
 want POSIX_MQUEUE y "POSIX message queues"
 want NETFILTER_XT_MATCH_ADDRTYPE y "docker's NAT rules match on address type"
+# br_netfilter is built in, not a module: the kernel demands signed modules (MODULE_SIG_FORCE) and modprobe
+# br_netfilter failed with "Required key not available" on the phone, so Docker's bridge networking had no way to get it.
+want BRIDGE_NETFILTER y "docker needs br_netfilter and modules do not load here"
 want IP6_NF_TARGET_MASQUERADE y "docker's IPv6 NAT"
 want BLK_DEV_THROTTLING y "container disk limits"
 want MACVLAN y "containers with their own address on the LAN"
