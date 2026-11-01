@@ -8,6 +8,12 @@ bad=0
 for apk in pmaports/device/*/*/APKBUILD; do
 	d=$(dirname "$apk")
 	deps=$(sed -n '/^depends="/,/"/p' "$apk")
+	# With rust in makedepends, pmbootstrap's crossdirect installs every dependency in the x86_64 chroot,
+	# and the aarch64-only ones (firmware, soc-qcom) do not exist there: the build stops before abuild.
+	if grep -q '^makedepends=.*\brust\b' "$apk" && ! grep -q '^options=.*!pmb:crossdirect' "$apk"; then
+		echo "FAIL: $apk builds rust but lacks options=!pmb:crossdirect" >&2
+		bad=1
+	fi
 	for f in "$d"/*; do
 		[ -f "$f" ] || continue
 		case $(head -1 "$f") in
