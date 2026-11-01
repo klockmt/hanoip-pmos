@@ -29,6 +29,20 @@ want BTRFS_FS_POSIX_ACL y "btrfs ACLs"
 # This tree has timespec64 inode times and fs/btrfs does not, so BTRFS_FS=y alone does not build.
 grep -q '^\s*0009-.*btrfs.*\.patch' pmaports/device/downstream/linux-motorola-hanoip/APKBUILD ||
 	{ echo "FAIL: the APKBUILD does not apply the btrfs timespec64 patch (fs/btrfs does not build without it)" >&2; bad=1; }
+# Containers (issue #4): the options Docker and Podman call necessary and this kernel lacked.
+want USER_NS y "user namespaces (rootless containers)"
+want PID_NS y "PID namespaces"
+want CGROUP_PIDS y "pids cgroup (--pids-limit)"
+want CGROUP_DEVICE y "devices cgroup"
+want POSIX_MQUEUE y "POSIX message queues"
+want NETFILTER_XT_MATCH_ADDRTYPE y "docker's NAT rules match on address type"
+want IP6_NF_TARGET_MASQUERADE y "docker's IPv6 NAT"
+want BLK_DEV_THROTTLING y "container disk limits"
+want MACVLAN y "containers with their own address on the LAN"
+# A watchdog device for a headless server (issues #4 and #17). The Qualcomm one (QCOM_WATCHDOG_V2) has no
+# /dev/watchdog, so this is the software one: it restarts the phone when userspace stops feeding it.
+want WATCHDOG y "watchdog core"
+want SOFT_WATCHDOG y "/dev/watchdog for a headless server"
 # postmarketos-zram-swap asks for zstd unless deviceinfo says otherwise, and zram only offers an algorithm the
 # crypto API has: without this the swap never starts.
 want CRYPTO_ZSTD y "zram swap defaults to zstd"
