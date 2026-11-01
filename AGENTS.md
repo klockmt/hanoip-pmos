@@ -50,6 +50,9 @@ Every bug gets an automated test that fails before the fix and passes after (see
 | Wi-Fi firmware crashed ~0.7 s after WLFW connected (`EX:kernel:0x0:tmr_slave1`) | Modem reads SMEM item 134, created by `mmi_info`, which was off | Keep `CONFIG_MMI_INFO=y` and `CONFIG_MMI_ANNOTATE=y` (`scripts/test-kernel-config`) |
 | Kernel upgrade would flash an old cmdline | Device subpackage `-kernel-downstream` (owner of `deviceinfo`) left at r0 | Install the main device apk and its subpackage together |
 | Phone hung at boot after `boot-deploy` regenerated `vendor_boot` | Unconfirmed; only the cmdline changed (`console=tty0` instead of `console=ttyMSM0,...`) | Back up to the PC first; test a new `vendor_boot` before trusting package updates |
+| `hanoip-qgd` and `hanoip-bot` missing on a fresh image | `python3` was not in the device package's `depends`; it ran only because the phone already had it | Declare the interpreter of every shipped script (`scripts/test-apkbuild-depends`) |
+| `abuild` called `deviceinfo` corrupted | `sha512sums` was not in the order of `source=`; abuild pairs them by position | Keep the same order (`scripts/test-apkbuild-sums`; `update-apkbuild-sums` keeps the lines in place) |
+| Package build died before abuild, installing `firmware-qcom-sm7150` in the x86_64 chroot | `rust` in `makedepends` makes pmbootstrap use crossdirect, which installs every dependency natively | Keep `options=!pmb:crossdirect` on a package that builds Rust (checked by `scripts/test-apkbuild-depends`) |
 | A boot's log missing from `logbookd.db` | logbookd writes only on a clean shutdown; the raw `reboot()` syscall skips it | Use `reboot` when the log matters |
 | "Not charging" with `usb/online=0` read as no power | In the limiter's hold the input still feeds the phone | Check `usb/input_current_now`, not `usb/online` |
 
