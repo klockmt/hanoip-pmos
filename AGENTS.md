@@ -52,6 +52,7 @@ Every bug gets an automated test that fails before the fix and passes after (see
 | `hanoip-qgd` and `hanoip-bot` missing on a fresh image | `python3` was not in the device package's `depends`; it ran only because the phone already had it | Declare the interpreter of every shipped script (`scripts/test-apkbuild-depends`) |
 | `abuild` called `deviceinfo` corrupted | `sha512sums` was not in the order of `source=`; abuild pairs them by position | Keep the same order (`scripts/test-apkbuild-sums`; `update-apkbuild-sums` keeps the lines in place) |
 | Package build died before abuild, installing `firmware-qcom-sm7150` in the x86_64 chroot | `rust` in `makedepends` makes pmbootstrap use crossdirect, which installs every dependency natively | Keep `options=!pmb:crossdirect` on a package that builds Rust (checked by `scripts/test-apkbuild-depends`) |
+| `flash-boot-ssh` stopped at its first root command, and pushed 64 MB with no rate limit | Plain `sudo` over the BatchMode login cannot ask for the password; no `pv` | Root commands go through `hanoip-sudo`, transfers through `pv -L 1m` (`scripts/test-flash-boot-ssh`) |
 | A boot's log missing from `logbookd.db` | logbookd writes only on a clean shutdown; the raw `reboot()` syscall skips it | Use `reboot` when the log matters |
 | "Not charging" with `usb/online=0` read as no power | In the limiter's hold the input still feeds the phone | Check `usb/input_current_now`, not `usb/online` |
 
