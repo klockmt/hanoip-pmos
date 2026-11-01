@@ -1,9 +1,14 @@
 #!/bin/sh
 # Copies the modem/Wi-Fi/IPA/DSP firmware from the collection to /lib/firmware on the device.
-# Limited to 1 MB/s: large continuous transfers bring the device's USB (NCM) network down.
+# Limited to 1 MB/s: large continuous transfers bring the device's USB (NCM) network down. DRY_RUN=1 only prints.
 set -eu
 . "$(dirname "$0")/env.sh"
 img=$HANOIP_COLLECTION_DIR/firmware/vendor/firmware_mnt/image
+if [ -n "${DRY_RUN:-}" ]; then
+	echo "+ tar the modem, Wi-Fi, IPA and DSP firmware in $img | pv -L 1m | hanoip-ssh 'sudo tar -xf - -C /lib/firmware'"
+	echo "+ hanoip-ssh 'sudo mkdir -p /lib/firmware/wlan/qca_cld && sudo tee /lib/firmware/wlan/qca_cld/WCNSS_qcom_cfg.ini' < $HANOIP_COLLECTION_DIR/firmware/vendor/etc/wifi/WCNSS_qcom_cfg.ini"
+	exit 0
+fi
 cd "$img"
 files=$(ls | grep -E '^(modem\.(mdt|b[0-9]+)|wlanmdsp\.mbn|.*\.jsn|mcfg_(hw|sw)\.mbn|mbn_(hw|sw)\.(dig|txt)|qdsp6m\.qdb|regdb\.bin|bdwlan.*|ipa_fws\..*|adsp\..*|cdsp\..*)$')
 tar -cf - $files | pv -L 1m | "$(dirname "$0")/hanoip-ssh" 'sudo tar -xf - -C /lib/firmware'

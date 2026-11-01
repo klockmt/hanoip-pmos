@@ -1,0 +1,40 @@
+#!/bin/sh
+# Checks that the scripts that change something do nothing with DRY_RUN=1 and print what they would do (no
+# phone): ssh, fastboot, pv and tar are stand-ins that log any call, and update-apkbuild-sums runs on a copy.
+set -eu
+cd "$(dirname "$0")/.."
+dir=$(mktemp -d)
+trap 'rm -rf "$dir"' EXIT
+bad=0
+fail() { echo "FAIL: $*" >&2; bad=1; }
+
+mkdir -p "$dir/scripts" "$dir/bin" "$dir/pmaports/device/testing/x"
+cp scripts/env.sh scripts/push-firmware scripts/reboot-bootloader scripts/mount-vendor scripts/update-apkbuild-sums "$dir/scripts/"
+printf 'HANOIP_COLLECTION_DIR=%s/none\nHANOIP_HOST=h\nHANOIP_USER=u\nHANOIP_SSH_KEY=k\n' "$dir" > "$dir/.env"
+log=$dir/calls
+printf '#!/bin/sh\necho "hanoip-ssh $*" >> "%s"\n' "$log" > "$dir/scripts/hanoip-ssh"
+for c in fastboot pv tar; do printf '#!/bin/sh\necho "%s $*" >> "%s"\n' "$c" "$log" > "$dir/bin/$c"; done
+chmod +x "$dir/scripts/hanoip-ssh" "$dir/bin/"*
+
+for s in push-firmware reboot-bootloader mount-vendor "mount-vendor -u"; do
+	: > "$log"
+	# shellcheck disable=SC2086
+	if ! out=$(cd "$dir" && DRY_RUN=1 PATH="$dir/bin:$PATH" sh scripts/$s 2>&1); then fail "$s exits non-zero with DRY_RUN=1"; fi
+	[ ! -s "$log" ] || fail "$s ran a command with DRY_RUN=1: $(head -1 "$log")"
+	echo "$out" | grep -q '^+ ' || fail "$s prints no plan with DRY_RUN=1"
+done
+
+# update-apkbuild-sums rewrites a tracked file: with DRY_RUN it only says so, without it it does the job.
+apk=$dir/pmaports/device/testing/x/APKBUILD
+printf 'hello\n' > "$dir/pmaports/device/testing/x/a.txt"
+zeros=$(printf '0%.0s' $(seq 1 128))
+printf 'source="\n\ta.txt\n"\nsha512sums="\n%s  a.txt\n"\n' "$zeros" > "$apk"
+cp "$apk" "$dir/before"
+out=$(cd "$dir" && DRY_RUN=1 sh scripts/update-apkbuild-sums 2>&1) || fail "update-apkbuild-sums exits non-zero with DRY_RUN=1"
+cmp -s "$apk" "$dir/before" || fail "update-apkbuild-sums changed the APKBUILD with DRY_RUN=1"
+echo "$out" | grep -q 'would update' || fail "update-apkbuild-sums does not say what it would do"
+ls "$dir/pmaports/device/testing/x" | grep -q 'APKBUILD.new' && fail "update-apkbuild-sums left a temporary file"
+(cd "$dir" && sh scripts/update-apkbuild-sums >/dev/null 2>&1) || fail "update-apkbuild-sums fails without DRY_RUN"
+cmp -s "$apk" "$dir/before" && fail "update-apkbuild-sums no longer updates a stale checksum"
+[ $bad -eq 0 ] && echo "dry-run: all checks pass"
+exit $bad

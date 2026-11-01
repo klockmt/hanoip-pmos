@@ -16,7 +16,7 @@ The phone is reachable over Wi-Fi, the USB cable (network gadget) or a USB Ether
 
 ## Tutorial: reproduce the working image
 
-Everything is scripted. Steps marked **[manual]** need your hands on the phone or an interactive prompt. The scripts that change something (`setup-pmaports`, `configure-pmbootstrap`, `build-image`, `setup-usb-net`, `flash-rootfs`, `flash-boot`) accept `DRY_RUN=1` (print the commands, change nothing), and `ASSUME_YES=1` skips their questions.
+Everything is scripted. Steps marked **[manual]** need your hands on the phone or an interactive prompt. The scripts that change something (`setup-pmaports`, `configure-pmbootstrap`, `build-image`, `setup-usb-net`, `flash-rootfs`, `flash-boot`, `flash-boot-ssh`, `setup-console`, `push-firmware`, `reboot-bootloader`, `mount-vendor`, `update-apkbuild-sums`, `restore-cycle-counts`) accept `DRY_RUN=1` (print the commands, change nothing), and `ASSUME_YES=1` skips their questions.
 
 ### What you need
 

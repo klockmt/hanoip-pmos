@@ -3,10 +3,14 @@
 # vendor_b is a single linear extent of super; the sectors come from: lpdump -s 1 /dev/disk/by-partlabel/super
 # Usage: scripts/mount-vendor        (mount)
 #        scripts/mount-vendor -u     (unmount and release the loop)
+# DRY_RUN=1 only prints the command that would run on the device.
 set -eu
 start=18258944 # 512-byte sectors
 count=1313712
 if [ "${1:-}" = -u ]; then
-	exec "$(dirname "$0")/hanoip-ssh" 'sudo sh -c "umount /mnt/vendor; for l in \$(losetup -a | grep -F /dev/sdb23 | cut -d: -f1); do losetup -d \$l; done"'
+	cmd='sudo sh -c "umount /mnt/vendor; for l in \$(losetup -a | grep -F /dev/sdb23 | cut -d: -f1); do losetup -d \$l; done"'
+else
+	cmd="sudo sh -c 'L=\$(losetup -r -f --show -o \$(($start * 512)) --sizelimit \$(($count * 512)) /dev/disk/by-partlabel/super) && mkdir -p /mnt/vendor && mount -o ro,noload \$L /mnt/vendor && echo mounted on /mnt/vendor'"
 fi
-exec "$(dirname "$0")/hanoip-ssh" "sudo sh -c 'L=\$(losetup -r -f --show -o \$(($start * 512)) --sizelimit \$(($count * 512)) /dev/disk/by-partlabel/super) && mkdir -p /mnt/vendor && mount -o ro,noload \$L /mnt/vendor && echo mounted on /mnt/vendor'"
+if [ -n "${DRY_RUN:-}" ]; then echo "+ hanoip-ssh $cmd"; exit 0; fi
+exec "$(dirname "$0")/hanoip-ssh" "$cmd"

@@ -2,7 +2,7 @@
 # Recomputes the sha512sums in this repo's APKBUILDs for every source file that sits next to the APKBUILD
 # (config, patches, deviceinfo). The downloaded kernel tarball is left alone. It saves a `pmbootstrap
 # checksum` round trip, and a stale sum makes the package build fail. New sources: add them to source=
-# and a line "<128 zeros>  <name>" to sha512sums, then run this.
+# and a line "<128 zeros>  <name>" to sha512sums, then run this. DRY_RUN=1 only lists what it would update.
 set -eu
 cd "$(dirname "$0")/.."
 for apk in pmaports/device/*/*/APKBUILD; do
@@ -18,5 +18,7 @@ for apk in pmaports/device/*/*/APKBUILD; do
 		esac
 		printf '%s\n' "$line" >> "$tmp"
 	done < "$apk"
-	if cmp -s "$tmp" "$apk"; then rm -f "$tmp"; else mv "$tmp" "$apk"; echo "updated $apk"; fi
+	if cmp -s "$tmp" "$apk"; then rm -f "$tmp"
+	elif [ -n "${DRY_RUN:-}" ]; then rm -f "$tmp"; echo "would update $apk"
+	else mv "$tmp" "$apk"; echo "updated $apk"; fi
 done
