@@ -1,0 +1,25 @@
+#!/bin/sh
+# Checks scripts/restore-cycle-counts without the phone (DRY_RUN and HANOIP_CYCLE_CURRENT): the saved buckets
+# are added to the ones counted since, and bad input is refused before anything is written.
+set -eu
+cd "$(dirname "$0")/.."
+export DRY_RUN=1
+bad=0
+run() { HANOIP_CYCLE_BUCKETS=$1 HANOIP_CYCLE_CURRENT=$2 scripts/restore-cycle-counts 2>&1; }
+expect_write() {
+	got=$(run "$2" "$3" | sed -n 's/^+ echo .\(.*\). > .*/\1/p')
+	[ "$got" = "$4" ] || { echo "FAIL $1: wrote '$got', expected '$4'" >&2; bad=1; }
+}
+expect_refused() {
+	if out=$(run "$2" "$3"); then echo "FAIL $1: accepted" >&2; bad=1
+	elif echo "$out" | grep -q '^+ echo'; then echo "FAIL $1: refused but printed a write" >&2; bad=1; fi
+}
+expect_write "saved plus counted" "25 60 114 148 178 167 137 85" "1 1 1 1 2 2 1 1" "26 61 115 149 180 169 138 86"
+expect_write "nothing counted yet" "25 60 114 148 178 167 137 85" "0 0 0 0 0 0 0 0" "25 60 114 148 178 167 137 85"
+expect_refused "7 saved values" "25 60 114 148 178 167 137" "1 1 1 1 2 2 1 1"
+expect_refused "text in the saved values" "25 60 x 148 178 167 137 85" "1 1 1 1 2 2 1 1"
+expect_refused "9 current values" "25 60 114 148 178 167 137 85" "1 1 1 1 2 2 1 1 1"
+expect_refused "a sum over 65535" "65535 60 114 148 178 167 137 85" "1 1 1 1 2 2 1 1"
+expect_refused "a saved value over 65535" "70000 60 114 148 178 167 137 85" "0 0 0 0 0 0 0 0"
+[ $bad -eq 0 ] && echo "restore-cycle-counts: all checks pass"
+exit $bad
