@@ -8,7 +8,7 @@ pkgrel=21
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
-options="!check !archcheck"
+options="!check !archcheck !pmb:crossdirect"
 depends="
 	android-tools
 	firmware-qcom-sm7150
