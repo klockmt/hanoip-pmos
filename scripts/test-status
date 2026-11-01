@@ -1,13 +1,14 @@
 #!/bin/sh
 # Checks hanoip-status against a fake /sys and fake ip/ping (no hardware needed): one line per item in the
-# order -h describes, the CPU and GPU lines, and the power line on the battery, charging and in bypass.
+# order -h describes, the labelled lines (CPU, GPU on/off, RAM and ROM temperatures) and the power lines on
+# the battery, charging and in bypass.
 set -eu
 cd "$(dirname "$0")/.."
 script=$PWD/pmaports/device/testing/device-motorola-hanoip/hanoip-status
 dir=$(mktemp -d)
 trap 'rm -rf "$dir"' EXIT
 sys=$dir/sys
-mkdir -p "$dir/bin" "$sys/class/net/eth0/statistics" "$sys/class/kgsl/kgsl-3d0" \
+mkdir -p "$dir/bin" "$sys/class/net/eth0/statistics" "$sys/class/kgsl/kgsl-3d0/device/power" \
 	"$sys/class/power_supply/battery" "$sys/class/power_supply/usb" \
 	"$sys/devices/system/cpu/cpufreq/policy0" "$sys/devices/system/cpu/cpufreq/policy6"
 printf '#!/bin/sh\necho "default via 10.0.0.1 dev eth0"\n' > "$dir/bin/ip"
@@ -19,8 +20,9 @@ echo 300000 > "$sys/devices/system/cpu/cpufreq/policy0/scaling_cur_freq"
 echo 2304000 > "$sys/devices/system/cpu/cpufreq/policy6/scaling_cur_freq"
 echo "12 %" > "$sys/class/kgsl/kgsl-3d0/gpu_busy_percentage"
 echo 140000000 > "$sys/class/kgsl/kgsl-3d0/gpuclk"
+echo suspended > "$sys/class/kgsl/kgsl-3d0/device/power/runtime_status"
 n=0
-for z in cpu-0-0-usr:37800 cpu-1-0-usr:41200 gpuss-0-usr:35000 gpuss-1-usr:36500 quiet_therm:34400 battery:31600; do
+for z in cpu-0-0-usr:37800 cpu-1-0-usr:41200 gpuss-0-usr:35000 gpuss-1-usr:36500 ddr-usr:38200 nvm-therm-adc:34675 quiet_therm:34400 battery:31600; do
 	mkdir "$sys/class/thermal/thermal_zone$n" 2>/dev/null || mkdir -p "$sys/class/thermal/thermal_zone$n"
 	echo "${z%%:*}" > "$sys/class/thermal/thermal_zone$n/type"
 	echo "${z##*:}" > "$sys/class/thermal/thermal_zone$n/temp"
@@ -43,19 +45,27 @@ expect() {
 
 state "Not charging" 0 0 0 1
 out=$(sh "$script")
-expect "one line per item described by -h" "$(echo "$out" | wc -l)" "$(sh "$script" -h | grep -c '^[0-9]\.')"
-expect "no labels" "$(echo "$out" | grep -c ':' || true)" 0
-expect "latency" "$(echo "$out" | sed -n 1p)" "0.9 ms"
+expect "one line per item described by -h" "$(echo "$out" | wc -l)" "$(sh "$script" -h | grep -c '^[0-9][0-9]*\.')"
+expect "latency and its target" "$(echo "$out" | sed -n 1p)" "Server - 0.9 ms | 1.1.1.1"
 expect "network" "$(echo "$out" | sed -n 2p)" "eth0 rx 0 kbit/s, tx 0 kbit/s"
-expect "cpu clocks and hottest core" "$(echo "$out" | sed -n 3p | cut -d, -f2-)" " 300-2304 MHz, 41.2 °C"
-expect "gpu" "$(echo "$out" | sed -n 4p)" "12 %, 140 MHz, 36.5 °C"
-expect "battery" "$(echo "$out" | sed -n 7p)" "81 %, 4.33 V, 1 cycles, 31.6 °C"
-expect "bypass on the cable" "$(echo "$out" | sed -n 8p)" "0.00 W, not charging, bypass; 0.90 W from the cable"
-expect "body" "$(echo "$out" | sed -n 9p)" "34.4 °C"
+expect "cpu clocks and hottest core" "$(echo "$out" | sed -n 3p | cut -d'|' -f2-)" " 300-2304 MHz | 41.2 °C"
+expect "cpu label" "$(echo "$out" | sed -n 3p | cut -c1-6)" "CPU - "
+expect "gpu off" "$(echo "$out" | sed -n 4p)" "GPU - 12 % | 140 MHz | 36.5 °C | off"
+echo active > "$sys/class/kgsl/kgsl-3d0/device/power/runtime_status"
+expect "gpu on" "$(line 4)" "GPU - 12 % | 140 MHz | 36.5 °C | on"
+expect "ram label" "$(echo "$out" | sed -n 5p | cut -c1-6)" "RAM - "
+expect "ram temperature" "$(echo "$out" | sed -n 5p | awk -F' [|] ' '{print $NF}')" "38.2 °C"
+expect "rom temperature" "$(echo "$out" | sed -n 6p | awk -F' [|] ' '{print $NF}')" "34.7 °C"
+expect "battery" "$(echo "$out" | sed -n 7p)" "Battery - 81 % | 4.33 V | 1 cycles | 31.6 °C"
+expect "bypass on the cable" "$(echo "$out" | sed -n 8p)" "0.00 W | not charging • bypass"
+expect "energy drain" "$(echo "$out" | sed -n 9p)" "Energy drain - 0.90 W • cable"
+expect "body" "$(echo "$out" | sed -n 10p)" "Body - 34.4 °C"
 state Charging 1000000 1 0 1
-expect "charging" "$(line 8)" "4.33 W, charging, no bypass; 0.90 W from the cable"
+expect "charging" "$(line 8)" "4.33 W | charging"
+expect "charging drain" "$(line 9)" "Energy drain - 0.90 W • cable"
 state Discharging -500000 1 0 0
-expect "on the battery" "$(line 8)" "2.17 W, not charging, no bypass; 2.17 W from the battery"
+expect "on the battery" "$(line 8)" "2.17 W | not charging"
+expect "battery drain" "$(line 9)" "Energy drain - 2.17 W • battery"
 state "Not charging" -500000 0 1 1
-expect "cable suspended runs from the battery" "$(line 8)" "2.17 W, not charging, no bypass; 2.17 W from the battery"
+expect "cable suspended runs from the battery" "$(line 9)" "Energy drain - 2.17 W • battery"
 echo "status: all checks pass"
