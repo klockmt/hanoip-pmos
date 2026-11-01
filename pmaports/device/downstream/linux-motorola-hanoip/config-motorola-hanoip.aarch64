@@ -1,4 +1,5 @@
 #
+CONFIG_RAID6_PQ=y
 # Automatically generated file; DO NOT EDIT.
 # Linux/arm64 4.14.357-openela Kernel Configuration
 #
@@ -5611,7 +5612,8 @@ CONFIG_FS_MBCACHE=y
 # CONFIG_XFS_FS is not set
 # CONFIG_GFS2_FS is not set
 # CONFIG_OCFS2_FS is not set
-# CONFIG_BTRFS_FS is not set
+CONFIG_BTRFS_FS=y
+CONFIG_BTRFS_FS_POSIX_ACL=y
 # CONFIG_NILFS2_FS is not set
 CONFIG_F2FS_FS=y
 CONFIG_F2FS_STAT_FS=y
@@ -6077,6 +6079,7 @@ CONFIG_INIT_STACK_NONE=y
 # CONFIG_INIT_STACK_ALL_ZERO is not set
 # CONFIG_INIT_ON_ALLOC_DEFAULT_ON is not set
 # CONFIG_INIT_ON_FREE_DEFAULT_ON is not set
+CONFIG_XOR_BLOCKS=y
 CONFIG_CRYPTO=y
 
 #
