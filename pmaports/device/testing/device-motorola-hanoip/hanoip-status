@@ -12,7 +12,7 @@ One line each, in this order:
 4. GPU: busy % (kgsl gpu_busy_percentage), clock (kgsl gpuclk), hottest GPU sensor (thermal zones gpuss-*-usr), and on or off (kgsl runtime_status: active is on, suspended is off).
 5. RAM: used %, used/total GB (used = MemTotal - MemAvailable, /proc/meminfo) and the memory controller temperature (thermal zone ddr-usr).
 6. ROM: used % and used/total GB of the root filesystem (df /) and the flash temperature (thermal zone nvm-therm-adc).
-7. Battery: charge % (capacity), voltage (voltage_now), charge cycles (cycle_count plus the cycles the PMIC lost, /var/lib/hanoip/cycle-offset), temperature (temp).
+7. Battery: charge % (capacity), voltage (voltage_now), charge cycles (cycle_count, the average of the 8 buckets the PMIC keeps), temperature (temp).
 8. Battery power: the battery's own flow, |current_now| x voltage_now (as btop shows it), then charging or not charging, plus bypass when the charge limit stopped charging and the cable powers the phone.
 9. Energy drain: what the whole phone draws, and from where: cable (usb input_current_now x voltage_now) or battery (the same figure as line 8).
 10. Body: temperature of the quiet_therm sensor, the closest to the case.
@@ -57,10 +57,7 @@ if [ "$present" = 1 ] && [ "$suspended" = 0 ]; then
 else
 	total="$batw • battery"
 fi
-# Cycles counted before the PMIC lost its saved data (a drained battery clears it), kept per phone outside the repo.
 cycles=$(cat $bat/cycle_count)
-offset=$(cat /var/lib/hanoip/cycle-offset 2>/dev/null)
-if [ "${offset:-0}" -gt 0 ] 2>/dev/null; then cycles=$((offset + cycles)); fi
 
 echo "Server - $lat_gw | $pinghost  - $lat_net"
 echo "$dev rx $(( (rx1-rx0)*8/1000 )) kbit/s, tx $(( (tx1-tx0)*8/1000 )) kbit/s"

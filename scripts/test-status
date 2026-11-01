@@ -70,4 +70,10 @@ expect "on the battery" "$(line 8)" "2.17 W | not charging"
 expect "battery drain" "$(line 9)" "Energy drain - 2.17 W • battery"
 state "Not charging" -500000 0 1 1
 expect "cable suspended runs from the battery" "$(line 9)" "Energy drain - 2.17 W • battery"
+# The kernel's cycle count is the whole count since the buckets were restored (patch 0007); the status must not
+# add a leftover offset on top of it (it showed 229 for a real 115).
+if grep -q 'cycle-offset' "$script"; then echo "FAIL: hanoip-status still adds a cycle offset" >&2; exit 1; fi
+echo 120 > "$b/cycle_count"
+state "Not charging" 0 0 0 1
+expect "cycles are the kernel's count as it is" "$(line 7)" "Battery - 81 % | 4.33 V | 120 cycles | 31.6 °C"
 echo "status: all checks pass"
