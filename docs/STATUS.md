@@ -9,7 +9,7 @@ State on 2026-10-30 (the sections below the summary are the record of 2026-10-24
 - **Server services: working.** `hanoip-qgd` (battery percentage, the kernel gauge does not compute it; Rust since v0.1.3), `hanoip-charge-limit` (holds 80-82 % with the input on, bypass; resumes below 60 %; 10-cycle calibration), `hanoip-thermal` (40 °C pauses charging, 45 °C caps the CPU, 55 °C powers off), `hanoip-bot` (Telegram, fixed commands: `/up`, `/status`, `/status -h`, `/status -t -g`), Tailscale (TUN, `--accept-dns=false`), screen off. Details in `docs/BATTERY.md` and `NOTES.md`.
 - **A/B slot: handled.** `qbootctl -m` at every boot marks slot b successful; without it the ABL gave up on the slot after ~7 boots.
 - **USB host: working through a hub** (Ethernet, a UAS disk at 24.6 MB/s, PD charging in bypass). btrfs is not in the kernel yet (GitHub issue #19).
-- **Pending:** zram (#8), packaging the modem userspace (#10), a `vendor_boot` regenerated from the current deviceinfo did not boot (2026-10-30, `NOTES.md`). Open work: the GitHub issues, roadmap #20.
+- **Pending:** packaging the modem userspace (#10), a `vendor_boot` regenerated from the current deviceinfo did not boot (2026-10-30, `NOTES.md`). Open work: the GitHub issues, roadmap #20.
 - **Mainline kernel: no boot yet.** The DTS builds and the kernel and the pmOS package are generated, but no temporary boot reached the pmOS USB network. The cause is the ABL only running header-v3 images (found on 24/10), so every v0 test was invalid; the v3 `vendor_boot` with our DTB is still to be tested on slot `b`.
 
 ## 1. Device

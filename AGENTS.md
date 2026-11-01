@@ -26,7 +26,7 @@ Read `NOTES.md` (state, pitfalls, working rules) and `docs/STATUS.md` before tou
 ## Server setup
 - The screen is off by design (`hanoip_splashfb.screen_off=1` from `scripts/mkbootimg-kernel`). It only comes back with a reboot on an image built without the parameter. Do not use `fb0/blank`.
 - Services (OpenRC): `hanoip-qgd` (battery percentage, see below), `hanoip-charge-limit` (needs `hanoip-qgd`), `hanoip-bot`, `hanoip-thermal`, `hanoip-modem` (Wi-Fi), Tailscale. `qbootctl -m` runs from `/etc/local.d` (keep `local` in `default`).
-- Pending: `zram` (in the kernel; the service fails: no `/lib/modules`, zstd missing, issue #8); `systemd-tmpfiles`/`sysusers` cannot read their `.d` directories on 4.14 (`openat2`), which is harmless here (`NOTES.md`). Open work lives in the GitHub issues (roadmap #20).
+- Pending: `systemd-tmpfiles`/`sysusers` cannot read their `.d` directories on 4.14 (`openat2`), which is harmless here (`NOTES.md`). Open work lives in the GitHub issues (roadmap #20).
 - On the phone, `/etc/deviceinfo` sets `deviceinfo_flash_kernel_on_update="false"` until the vendor_boot boot failure of 2026-10-30 is understood (`NOTES.md`). Never flash `boot`/`vendor_boot` without a backup on the PC (`$HANOIP_BACKUP_DIR`).
 
 ## Bugs found, and what to remember
@@ -53,6 +53,7 @@ Every bug gets an automated test that fails before the fix and passes after (see
 | `abuild` called `deviceinfo` corrupted | `sha512sums` was not in the order of `source=`; abuild pairs them by position | Keep the same order (`scripts/test-apkbuild-sums`; `update-apkbuild-sums` keeps the lines in place) |
 | Package build died before abuild, installing `firmware-qcom-sm7150` in the x86_64 chroot | `rust` in `makedepends` makes pmbootstrap use crossdirect, which installs every dependency natively | Keep `options=!pmb:crossdirect` on a package that builds Rust (checked by `scripts/test-apkbuild-depends`) |
 | `flash-boot-ssh` stopped at its first root command, and pushed 64 MB with no rate limit | Plain `sudo` over the BatchMode login cannot ask for the password; no `pv` | Root commands go through `hanoip-sudo`, transfers through `pv -L 1m` (`scripts/test-flash-boot-ssh`) |
+| `postmarketos-zram-swap` never started | No `CRYPTO_ZSTD`, no `/lib/modules` for `modprobe zram`, and `vm.swappiness=180` rejected over 100 | Keep `CRYPTO_ZSTD=y`, the module tree in the kernel package and patch 0008 (`scripts/test-kernel-config`); `scripts/push-modules` for a phone that already runs the kernel |
 | A boot's log missing from `logbookd.db` | logbookd writes only on a clean shutdown; the raw `reboot()` syscall skips it | Use `reboot` when the log matters |
 | "Not charging" with `usb/online=0` read as no power | In the limiter's hold the input still feeds the phone | Check `usb/input_current_now`, not `usb/online` |
 
