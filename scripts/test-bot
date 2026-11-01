@@ -29,9 +29,9 @@ def check(name, got, want):
         raise SystemExit(f"FAIL {name}: got {got!r}, want {want!r}")
 
 
-def fake_status():
+def fake_status(*args):
     fake_status.calls += 1
-    return "status ok"
+    return "help ok" if args == ("-h",) else "status ok"
 
 
 fake_status.calls = 0
@@ -51,6 +51,8 @@ text, watch = bot.reply_for(msg("/status -t=30 -g=1"), OWNER)
 check("watch request", watch, (30, 1))
 check("watch replies with the status now", text.endswith("status ok") and "a cada 1 min por 30 min" in text, True)
 check("/stop", bot.reply_for(msg("/stop"), OWNER), ("envio automático parado", "stop"))
+check("/status -h explains each line", bot.reply_for(msg("/status -h"), OWNER), ("help ok", None))
+check("/status -h with more words is the usage", bot.reply_for(msg("/status -h x"), OWNER), (bot.USAGE, None))
 check("bad watch gives the usage and starts nothing", bot.reply_for(msg("/status -t=abc"), OWNER), (bot.USAGE, None))
 check("parse both", bot.parse_watch(["-g=5", "-t=60"]), (60, 5))
 check("parse defaults", bot.parse_watch(["-t=10"]), (10, 1))
@@ -81,6 +83,10 @@ with open(script, "w") as f:
 os.chmod(script, os.stat(script).st_mode | stat.S_IEXEC)
 bot.STATUS = script
 check("long output is cut", len(real_run_status()), bot.MAX_TEXT)
+
+with open(script, "w") as f:
+    f.write("#!/bin/sh\necho \"$@\"\n")
+check("-h reaches the command as a fixed argument", real_run_status("-h"), "-h\n")
 
 bot.STATUS = os.path.join(tmp, "missing")
 check("missing command is text, not a crash", real_run_status(), "erro ao rodar hanoip-status: FileNotFoundError")
