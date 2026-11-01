@@ -1,0 +1,25 @@
+#!/bin/sh
+# Installs the kernel's module tree (staged by scripts/build-kernel) into /lib/modules on the phone. modprobe needs
+# /lib/modules/<release> even for options built in (zramstart runs `modprobe zram` under set -e), and neither the
+# boot image nor a flash of boot_b carries it. The device kernel package ships the same tree for fresh installs.
+# The tree is copied only when its release is the one the phone runs. Limited to 1 MB/s (large transfers bring the
+# USB NCM link down). DRY_RUN=1 only prints.
+set -eu
+. "$(dirname "$0")/env.sh"
+dir=$(dirname "$0")
+stage=$KERNEL_DOWNSTREAM_DIR/.output/modules-staging
+if [ -n "${DRY_RUN:-}" ]; then
+	echo "+ check that $stage/lib/modules/<release> is the release the phone runs (uname -r)"
+	echo "+ tar lib/modules from $stage | pv -L 1m | hanoip-ssh 'cat > /tmp/modules.tar'"
+	echo "+ hanoip-sudo 'tar -xf /tmp/modules.tar -C / && rm -f /tmp/modules.tar'"
+	exit 0
+fi
+[ -d "$stage/lib/modules" ] || { echo "No module tree at $stage (run scripts/build-kernel)." >&2; exit 1; }
+command -v pv >/dev/null || { echo "pv is needed to throttle the transfer." >&2; exit 1; }
+have=$(ls "$stage/lib/modules")
+[ "$(echo "$have" | wc -l)" -eq 1 ] || { echo "Expected one release in $stage/lib/modules, found: $have" >&2; exit 1; }
+running=$("$dir/hanoip-ssh" 'uname -r')
+[ "$have" = "$running" ] || { echo "The tree is for $have, the phone runs $running. Flash the matching kernel first." >&2; exit 1; }
+tar -C "$stage" -cf - lib/modules | pv -L 1m | "$dir/hanoip-ssh" 'cat > /tmp/modules.tar'
+"$dir/hanoip-sudo" 'tar -xf /tmp/modules.tar -C / && rm -f /tmp/modules.tar'
+echo "Installed /lib/modules/$have on the phone."
