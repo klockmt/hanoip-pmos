@@ -1,11 +1,15 @@
 # Moto G60 (hanoip) on postmarketOS: context, attempts and errors
 
-State on 2026-10-24. The goal is to run postmarketOS on the Moto G60 (hanoip) as a headless server, and to publish everything on GitHub with reproducible instructions and a way to update the kernel.
+State on 2026-10-30 (the sections below the summary are the record of 2026-10-24). The goal is to run postmarketOS on the Moto G60 (hanoip) as a headless server, and to publish everything on GitHub with reproducible instructions and a way to update the kernel.
 
 **Result so far:**
 
 - **Downstream kernel (4.14, cool585 Cybertron): working.** postmarketOS edge boots on its own from `boot_b` + `vendor_boot_b` with a 104 GB root on `userdata`, SSH over the USB network gadget and an nftables firewall. See the "Downstream path" section and `NOTES.md`.
-- **Wi-Fi: not working yet.** The modem comes up and the Wi-Fi firmware connects to the kernel (`icnss`), then crashes about 0.7 s later. See `userspace/modem/README.md`.
+- **Wi-Fi: working since 2026-10-30.** The crash ~0.7 s after the firmware connected was the missing SMEM item 134, created by `CONFIG_MMI_INFO`. 2.4/5 GHz, WPA3, back by itself after a reboot. The modem userspace is still installed by hand. See `userspace/modem/README.md`.
+- **Server services: working.** `hanoip-qgd` (battery percentage, the kernel gauge does not compute it), `hanoip-charge-limit` (holds 80-82 % with the input on, bypass; resumes below 60 %; 10-cycle calibration), `hanoip-thermal` (40 °C pauses charging, 45 °C caps the CPU, 55 °C powers off), `hanoip-bot` (Telegram, fixed commands), Tailscale (TUN, `--accept-dns=false`), screen off. Details in `docs/BATTERY.md` and `NOTES.md`.
+- **A/B slot: handled.** `qbootctl -m` at every boot marks slot b successful; without it the ABL gave up on the slot after ~7 boots.
+- **USB host: working through a hub** (Ethernet, a UAS disk at 24.6 MB/s, PD charging in bypass). btrfs is not in the kernel yet (GitHub issue #19).
+- **Pending:** zram (#8), packaging the modem userspace (#10), a `vendor_boot` regenerated from the current deviceinfo did not boot (2026-10-30, `NOTES.md`). Open work: the GitHub issues, roadmap #20.
 - **Mainline kernel: no boot yet.** The DTS builds and the kernel and the pmOS package are generated, but no temporary boot reached the pmOS USB network. The cause is the ABL only running header-v3 images (found on 24/10), so every v0 test was invalid; the v3 `vendor_boot` with our DTB is still to be tested on slot `b`.
 
 ## 1. Device
@@ -94,7 +98,7 @@ The pmOS `172.16.42.x` USB interface or the U-Boot gadget never appeared in any 
 | `git clone` from GitHub failed with `SSL_read unexpected eof` | A git transport problem on this host (`curl` works) | Download tarballs with `curl` from `codeload.github.com` |
 | fuyuki's DTS did not compile | Nonexistent `tz_memmpss_mem` label and an unclosed brace | DTS rewritten |
 | `delete-node &reserved_memory` broke the build | `sm7150.dtsi` references `smem_mem`, `adsp_mem`, etc. | Keep upstream's `reserved_memory` and override only what differs |
-| `mkbootimg` v2 required a DTB section | A DTB appended to the kernel does not count as a section | Use header v0 like surya (`append_dtb`) |
+| `mkbootimg` v2 required a DTB section | A DTB appended to the kernel does not count as a section | Superseded: this ABL only runs header v3, so the v0 tests never ran the kernel (see below) |
 | `pmbootstrap init` failed with `EOF` | Run through `!`, without interactive input | Run in a normal terminal |
 | pmaports without `.git` / `origin/main` | It came as a tarball | `git init -b master`, official remote and `refs/remotes/origin/main` |
 | `Strict mode ... abuild needs building` | Local pmaports older than the binary repo | Build `abuild` manually, then update pmaports to the official `main` |

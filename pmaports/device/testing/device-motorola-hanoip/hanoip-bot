@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Telegram bot for the phone. It answers only the owner's private chat, with fixed commands: /up (the
-# phone is alive), /status (hanoip-status), /status -t=MIN -g=MIN (hanoip-status every g minutes for t
+# phone is alive), /status (hanoip-status), /status -h (what each status line means), /status -t=MIN -g=MIN (hanoip-status every g minutes for t
 # minutes) and /stop (ends that). Nothing from a message reaches a shell; -t and -g must be numbers.
 # `hanoip-bot --alert TEXT` sends TEXT to the owner once and exits; hanoip-thermal uses it (the text comes
 # from the phone's own scripts, never from a message).
@@ -17,7 +17,7 @@ ENV = os.environ.get("HANOIP_BOT_ENV", "/etc/hanoip/telegram.env")
 STATUS = os.environ.get("HANOIP_STATUS_CMD", "/usr/bin/hanoip-status")
 API = "https://api.telegram.org/bot{}/{}"
 MAX_TEXT = 4000  # Telegram refuses messages over 4096 characters
-HELP = "comandos: /up, /status, /status -t=30 -g=1, /stop"
+HELP = "comandos: /up, /status, /status -h, /status -t=30 -g=1, /stop"
 USAGE = "uso: /status -t=MIN -g=MIN (-g de 1 a 60, -t de g a 1440)"
 POLL_S = 50
 
@@ -38,9 +38,10 @@ def call(token, method, **params):
         return json.load(r)["result"]
 
 
-def run_status():
+def run_status(*args):
+    """args are fixed by this file, never taken from a message."""
     try:
-        out = subprocess.run([STATUS], capture_output=True, text=True, timeout=30)
+        out = subprocess.run([STATUS, *args], capture_output=True, text=True, timeout=30)
         return (out.stdout or out.stderr or "sem saída")[:MAX_TEXT]
     except Exception as e:  # keep the bot alive whatever the command does
         return f"erro ao rodar hanoip-status: {type(e).__name__}"
@@ -74,6 +75,8 @@ def reply_for(msg, owner):
     if command == "/status":
         if len(words) == 1:
             return run_status(), None
+        if words[1:] == ["-h"]:
+            return run_status("-h"), None
         watch = parse_watch(words[1:])
         if watch is None:
             return USAGE, None

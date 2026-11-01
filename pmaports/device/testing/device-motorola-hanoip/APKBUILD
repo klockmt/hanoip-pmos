@@ -4,11 +4,11 @@
 pkgname=device-motorola-hanoip
 pkgdesc="Motorola Moto G (60)"
 pkgver=0
-pkgrel=20
+pkgrel=24
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
-options="!check !archcheck"
+options="!check !archcheck !pmb:crossdirect"
 depends="
 	android-tools
 	firmware-qcom-sm7150
@@ -18,7 +18,7 @@ depends="
 	soc-qcom
 	soc-qcom-qbootctl
 "
-makedepends="devicepkg-dev"
+makedepends="devicepkg-dev rust"
 install="$pkgname.post-install"
 subpackages="
 	$pkgname-kernel-downstream:kernel_downstream
@@ -33,7 +33,7 @@ source="
 	hanoip-console.start
 	hanoip-cpufreq.start
 	hanoip-qbootctl.start
-	hanoip-qgd
+	hanoip-qgd.rs
 	hanoip-qgd.initd
 	hanoip-sshd.conf
 	hanoip-status
@@ -43,6 +43,8 @@ source="
 
 build() {
 	devicepkg_build $startdir $pkgname
+	# One file, std only: no cargo, crates or network in the build.
+	rustc --edition 2021 -C opt-level=2 -o "$srcdir/hanoip-qgd" "$srcdir/hanoip-qgd.rs"
 }
 
 package() {
@@ -75,18 +77,18 @@ kernel_mainline() {
 }
 
 sha512sums="
-db27daa94028607084e40c393550ff9a9beecc36d1f8cbe3bd6afa8afa820dcbcd8d2eb9b7490e665620d1b9c174b5e881512ef18b5029dc94d9c7a81e79df22  hanoip-qgd
-088ef67651ebb1673a87184c690f25109e1f4693cf10c9c70d478e7f45c96ccaa6509f1191d9171e085fe6e8a9d74cdddfeb9275c504e3f9df19e1261713d3be  hanoip-qgd.initd
-bc1e9d1cf3f1ae058a4d876ce7af856cdc41bfaf992d02273dc4dca141d29f799c91d7a5a9c24f4c87f75c61f060a5004ae2ddd92aac3fff94e05b2858fd2c38  hanoip-bot
-d211b14464ad74fe9e79cdd1d4ecf59c8701dd5689bf5138d436cf47ebf4fb6f886d411f9ff08f13c4ada470bbccb1c42917628157f64c46d58f78d94e1669aa  hanoip-bot.initd
 708703849b9d961ac1b112e85f85e1c364bce1b848f527ff16517677c1847c55cd3d9569c31053f2e195459374881a7704e03f9c126af1ddb9ff453c5f531ebf  deviceinfo
-856a5b5efcee9a5b47d0671eacf09a9b7c0f88142ff1a705789c4a9503e1bcd7409f2d355731701b4fd2f96dcbc9061403aebff803210c849919e2274f1ea5b9  hanoip-console.start
 743097f8b5390e7a1b409c000dc896d6eadb7c61d2e99492c5de0382bf4a8efa2b85dedb4f08a18e90cc20694403f2c9ee15da626f6a29d97a8eb520725c503a  hanoip-charge-limit
+6c9d99352bf5bacedd0ea24ff475584f0a356881f5e7043a313260a5b9bd01e4c2b0843ec3990de26894a3d250ae80cb069a699a00e0603b25d30a0fc7621f84  hanoip-bot
+d211b14464ad74fe9e79cdd1d4ecf59c8701dd5689bf5138d436cf47ebf4fb6f886d411f9ff08f13c4ada470bbccb1c42917628157f64c46d58f78d94e1669aa  hanoip-bot.initd
 514860f64c0094e8bdadee4e33e9f37219d9e59e5c35c1adab87697b757bec430d8cac91ccb6d8357b318b60c2538848f65a0f54c50289280013cd042af6fe22  hanoip-charge-limit.initd
-f08301d2d0b6d4e2488fc257d627a99f84c69c6af387f07aa343d64f25e3328c109d8a3a09f2b9a7b4c0d1c9a9914f8a0cf60e6ded8d43ac2b4c772ee009fad2  hanoip-qbootctl.start
-af3dec436edf7762305d6495892bab9a31418bb318f0a237570c2525967d46140d557768355239b34eb829658a62f08ad611b07f2568fd302567caaa32a650b9  hanoip-status
-e9ca1358374ffd74680d371dd99bfce32d51940e9ed1f60dcae301a85808fb4e46af01f8ddc13a2c1ed57777c1989a8c672178714f8d8b466ea695780ef3a974  hanoip-sshd.conf
+856a5b5efcee9a5b47d0671eacf09a9b7c0f88142ff1a705789c4a9503e1bcd7409f2d355731701b4fd2f96dcbc9061403aebff803210c849919e2274f1ea5b9  hanoip-console.start
 26e122ade046004a2305f3d380d43e7fd9187f8819910e93afb43f3626a847c779ae9ec90bc1a6b60faf473fffa9d3bab33a458a036920ae31fcf6db243364e0  hanoip-cpufreq.start
+f08301d2d0b6d4e2488fc257d627a99f84c69c6af387f07aa343d64f25e3328c109d8a3a09f2b9a7b4c0d1c9a9914f8a0cf60e6ded8d43ac2b4c772ee009fad2  hanoip-qbootctl.start
+5fec69566c8b93c8d8e63dbea0cb0a1801d77e833f768cb2474bfeb37e12be65c423147a5b61d47feeb19bcf81c2a5fba7b1e0a15e3530c0f1b2c5a761e58690  hanoip-qgd.rs
+088ef67651ebb1673a87184c690f25109e1f4693cf10c9c70d478e7f45c96ccaa6509f1191d9171e085fe6e8a9d74cdddfeb9275c504e3f9df19e1261713d3be  hanoip-qgd.initd
+e9ca1358374ffd74680d371dd99bfce32d51940e9ed1f60dcae301a85808fb4e46af01f8ddc13a2c1ed57777c1989a8c672178714f8d8b466ea695780ef3a974  hanoip-sshd.conf
+c5e2779e9ea9a97452538258c2574dbb746f23b3996d7616a983b9cfeaf8166a61578e10b04728e2d27971b33333710d37f3437ea7b3d49dbbeb718f4b9427cf  hanoip-status
 6d9367494b27aca76b2a68f82d06f6b11d2fe3c8ba3a28cfee4391d216ad730af0071d3229a375f7a823bf2bee82bdd9bf650616974fc89f38fd2f9dab66e1ef  hanoip-thermal
 e2718a5060419afccb775e70f07e91cd28df068b59e7712c9d1caa490869726f24655d9e22dc1b8c7dceee18b2671741980e65b7a8d778a2eb78c88154b01a9c  hanoip-thermal.initd
 "
