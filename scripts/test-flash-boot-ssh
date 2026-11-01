@@ -1,0 +1,72 @@
+#!/bin/sh
+# Checks scripts/flash-boot-ssh against a stand-in phone (no hardware): the ssh stand-in refuses `sudo` like a
+# BatchMode login does, hanoip-sudo stands in for root commands, and pv logs its arguments. What it must do:
+# write and verify the image through hanoip-sudo, never pass `sudo` to ssh, throttle both transfers with pv -L,
+# and write nothing when the staged copy differs or when DRY_RUN=1.
+set -eu
+cd "$(dirname "$0")/.."
+dir=$(mktemp -d)
+trap 'rm -rf "$dir"' EXIT
+bad=0
+fail() { echo "FAIL: $*" >&2; bad=1; }
+
+mkdir -p "$dir/scripts" "$dir/bin" "$dir/phone" "$dir/backups"
+cp scripts/env.sh scripts/flash-boot-ssh "$dir/scripts/"
+printf 'HANOIP_HOST=h\nHANOIP_USER=u\nHANOIP_SSH_KEY=k\nHANOIP_BACKUP_DIR=%s/backups\n' "$dir" > "$dir/.env"
+phone=$dir/phone log=$dir/calls
+head -c 1048576 /dev/zero > "$phone/boot_b"                       # the partition: 1 MiB
+{ printf 'ANDROID!'; head -c 4088 /dev/urandom; } > "$dir/boot.img"  # the image to write
+cat > "$dir/scripts/hanoip-ssh" <<EOS
+#!/bin/sh
+echo "ssh \$1" >> "$log"
+case "\$1" in
+*slot_suffix*) echo b ;;
+"grep -q 'androidboot.device=hanoip' /proc/cmdline") ;;
+"cat > /tmp/boot-stage.img") cat > "$phone/stage.img"; [ -z "\${CORRUPT:-}" ] || printf X | dd of="$phone/stage.img" conv=notrunc 2>/dev/null ;;
+"sha256sum /tmp/boot-stage.img") sha256sum "$phone/stage.img" | sed 's|  .*|  /tmp/boot-stage.img|' ;;
+"rm -f /tmp/boot-stage.img") rm -f "$phone/stage.img" ;;
+*sudo*) echo "sudo: a password is required" >&2; exit 1 ;;
+*) echo "unexpected ssh command: \$1" >&2; exit 1 ;;
+esac
+EOS
+cat > "$dir/scripts/hanoip-sudo" <<EOS
+#!/bin/sh
+echo "sudo \$1" >> "$log"
+case "\$1" in
+"blockdev --getsize64 "*) echo 1048576 ;;
+"dd if=/dev/disk/by-partlabel/boot_b bs=4M "*) cat "$phone/boot_b" ;;
+"dd if=/tmp/boot-stage.img of=/dev/disk/by-partlabel/boot_b "*) dd if="$phone/stage.img" of="$phone/boot_b" conv=notrunc 2>/dev/null ;;
+"head -c "*" /dev/disk/by-partlabel/boot_b | sha256sum") head -c "\$(echo "\$1" | cut -d' ' -f3)" "$phone/boot_b" | sha256sum ;;
+*) echo "unexpected root command: \$1" >&2; exit 1 ;;
+esac
+EOS
+printf '#!/bin/sh\necho "pv $*" >> "%s"\ncat\n' "$log" > "$dir/bin/pv"
+chmod +x "$dir/scripts/hanoip-ssh" "$dir/scripts/hanoip-sudo" "$dir/bin/pv"
+
+flash() { (cd "$dir" && ASSUME_YES=1 PATH="$dir/bin:$PATH" "$@" sh scripts/flash-boot-ssh boot.img) 2>&1; }
+img_sum=$(sha256sum "$dir/boot.img" | cut -d' ' -f1)
+part_sum() { head -c 4096 "$phone/boot_b" | sha256sum | cut -d' ' -f1; }
+zero_sum=$(head -c 4096 /dev/zero | sha256sum | cut -d' ' -f1)
+
+: > "$log"
+if ! out=$(flash env); then fail "the flash fails on a healthy stand-in phone: $(echo "$out" | tail -2 | tr '\n' ' ')"; fi
+echo "$out" | grep -q 'written and verified' || fail "no 'written and verified' in the output"
+[ "$(part_sum)" = "$img_sum" ] || fail "the partition does not hold the image"
+set -- "$dir/backups/"*
+[ $# -eq 1 ] && [ -f "$1" ] && [ "$(wc -c < "$1")" -eq 1048576 ] || fail "the backup is missing or has the wrong size"
+grep -c '^pv -L 1m' "$log" | grep -q '^2$' || fail "both transfers must go through pv -L 1m ($(grep -c '^pv' "$log") pv calls)"
+! grep '^ssh ' "$log" | grep -q sudo || fail "a sudo command went through ssh, where it cannot ask for the password"
+
+# A staged copy that differs from the image must stop before anything is written.
+head -c 1048576 /dev/zero > "$phone/boot_b"; : > "$log"
+if flash env CORRUPT=1 >/dev/null; then fail "a corrupted staged copy was accepted"; fi
+[ "$(part_sum)" = "$zero_sum" ] || fail "the partition was written although the staged copy differed"
+! grep -q 'of=/dev/disk' "$log" || fail "dd to the partition ran with a corrupted staged copy"
+
+# DRY_RUN reads the partition size and then stops: no backup, no write.
+rm -f "$dir/backups/"*; : > "$log"
+if ! flash env DRY_RUN=1 >/dev/null; then fail "DRY_RUN=1 exits non-zero"; fi
+[ "$(part_sum)" = "$zero_sum" ] && [ -z "$(ls "$dir/backups")" ] || fail "DRY_RUN=1 changed something"
+! grep -qE 'of=/dev/disk|^pv' "$log" || fail "DRY_RUN=1 transferred or wrote something"
+[ $bad -eq 0 ] && echo "flash-boot-ssh: all checks pass"
+exit $bad
