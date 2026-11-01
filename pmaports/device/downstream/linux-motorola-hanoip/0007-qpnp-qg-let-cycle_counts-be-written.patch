@@ -1,0 +1,120 @@
+qpnp-qg: let cycle_counts be written
+
+A fully drained battery clears the PMIC SDAM and with it the 8 cycle
+buckets, and nothing in userspace could put them back: cycle_counts was
+read-only. Allow writing all 8 counts at once, in the same format it is
+read ("25 60 114 ..."). The counts go to SDAM and to the driver's copy in
+RAM together, so the next stored cycle adds one to the restored value.
+Anything but exactly 8 counts in 0-65535 is refused and changes nothing.
+
+The generic power supply sysfs store only parsed one integer, so it
+hands the text of cycle_counts to the driver as it is.
+
+--- a/drivers/power/supply/power_supply_sysfs.c
++++ b/drivers/power/supply/power_supply_sysfs.c
+@@ -295,6 +295,13 @@
+ 	const ptrdiff_t off = attr - power_supply_attrs;
+ 	union power_supply_propval value;
+ 
++	/* A list of counts, not one integer: the driver parses the text. */
++	if (off == POWER_SUPPLY_PROP_CYCLE_COUNTS) {
++		value.strval = buf;
++		ret = power_supply_set_property(psy, off, &value);
++		return ret < 0 ? ret : count;
++	}
++
+ 	/* maybe it is a enum property? */
+ 	switch (off) {
+ 	case POWER_SUPPLY_PROP_STATUS:
+--- a/drivers/power/supply/qcom/fg-alg.c
++++ b/drivers/power/supply/qcom/fg-alg.c
+@@ -278,6 +278,59 @@
+ }
+ 
+ /**
++ * set_cycle_counts -
++ * @counter: Cycle counter object
++ * @buf: One decimal count for each bucket, separated by spaces
++ *
++ * Replaces all the bucket counters at once, in FG/QG and in RAM, so the next
++ * store_cycle_count() adds one to the new value and not to an old one. Used
++ * to restore the counters after the PMIC lost them. Nothing changes unless
++ * @buf holds exactly BUCKET_COUNT valid 16-bit counts.
++ *
++ */
++int set_cycle_counts(struct cycle_counter *counter, const char *buf)
++{
++	u16 counts[BUCKET_COUNT];
++	char *copy, *cur, *tok;
++	int i = 0, rc = 0;
++
++	if (!counter)
++		return -ENODEV;
++
++	copy = kstrdup(buf, GFP_KERNEL);
++	if (!copy)
++		return -ENOMEM;
++
++	cur = strim(copy);
++	while ((tok = strsep(&cur, " \t\n")) != NULL) {
++		if (!*tok)
++			continue;
++		if (i == BUCKET_COUNT) {
++			rc = -EINVAL;
++			goto out;
++		}
++		rc = kstrtou16(tok, 10, &counts[i++]);
++		if (rc < 0)
++			goto out;
++	}
++	if (i != BUCKET_COUNT) {
++		rc = -EINVAL;
++		goto out;
++	}
++
++	mutex_lock(&counter->lock);
++	rc = counter->store_count(counter->data, counts, 0, BUCKET_COUNT * 2);
++	if (rc >= 0) {
++		memcpy(counter->count, counts, sizeof(counts));
++		rc = 0;
++	}
++	mutex_unlock(&counter->lock);
++out:
++	kfree(copy);
++	return rc;
++}
++
++/**
+  * cycle_count_init -
+  * @counter: Cycle counter object
+  *
+--- a/drivers/power/supply/qcom/fg-alg.h
++++ b/drivers/power/supply/qcom/fg-alg.h
+@@ -157,6 +157,7 @@
+ 		int charge_status, bool charge_done, bool input_present);
+ int get_cycle_count(struct cycle_counter *counter, int *count);
+ int get_cycle_counts(struct cycle_counter *counter, const char **buf);
++int set_cycle_counts(struct cycle_counter *counter, const char *buf);
+ int cycle_count_init(struct cycle_counter *counter);
+ void cap_learning_abort(struct cap_learning *cl);
+ void cap_learning_update(struct cap_learning *cl, int batt_temp,
+--- a/drivers/power/supply/qcom/qpnp-qg.c
++++ b/drivers/power/supply/qcom/qpnp-qg.c
+@@ -2072,6 +2072,9 @@
+ 	case POWER_SUPPLY_PROP_BATT_AGE_LEVEL:
+ 		rc = qg_setprop_batt_age_level(chip, pval->intval);
+ 		break;
++	case POWER_SUPPLY_PROP_CYCLE_COUNTS:
++		/* The error goes back to the writer; the rc below is dropped. */
++		return set_cycle_counts(chip->counter, pval->strval);
+ 	case POWER_SUPPLY_PROP_BATT_FULL_CURRENT:
+ 		chip->dt.iterm_ma = pval->intval;
+ 		qg_dbg(chip, QG_DEBUG_STATUS, "set bat full current =%d\n",
+@@ -2242,6 +2245,7 @@
+ 	case POWER_SUPPLY_PROP_FG_RESET:
+ 	case POWER_SUPPLY_PROP_BATT_AGE_LEVEL:
+ 	case POWER_SUPPLY_PROP_BATT_FULL_CURRENT:
++	case POWER_SUPPLY_PROP_CYCLE_COUNTS:
+ 		return 1;
+ 	default:
+ 		break;

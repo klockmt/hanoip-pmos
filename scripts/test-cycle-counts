@@ -1,0 +1,120 @@
+#!/bin/sh
+# Checks the kernel's set_cycle_counts() (patch 0007) without the phone: the function is cut out of the patch
+# and built in userspace against small stand-ins for the kernel helpers it uses. What it must do: take exactly
+# 8 counts in 0-65535, write them to the PMIC store and to the driver's RAM copy together, and change nothing
+# on any bad input or store error.
+set -eu
+cd "$(dirname "$0")/.."
+patch=kernel/downstream-patches/0007-qpnp-qg-let-cycle_counts-be-written.patch
+dir=$(mktemp -d)
+trap 'rm -rf "$dir"' EXIT
+awk '/^\+int set_cycle_counts/ { on = 1 } on { print substr($0, 2) } on && /^\+}/ { exit }' "$patch" > "$dir/func.inc"
+[ -s "$dir/func.inc" ] || { echo "FAIL: set_cycle_counts not found in $patch" >&2; exit 1; }
+cat > "$dir/t.c" <<'EOC'
+#include <errno.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+typedef uint16_t u16;
+#define BUCKET_COUNT 8
+#define GFP_KERNEL 0
+struct mutex { int locked; };
+static void mutex_lock(struct mutex *m) { m->locked++; }
+static void mutex_unlock(struct mutex *m) { m->locked--; }
+struct cycle_counter {
+	void *data;
+	u16 count[BUCKET_COUNT];
+	struct mutex lock;
+	int (*store_count)(void *data, u16 *buf, int id, int num_bytes);
+};
+static char *kstrdup(const char *s, int flags) { (void)flags; return strdup(s); }
+static void kfree(void *p) { free(p); }
+static char *strim(char *s)
+{
+	char *e;
+	while (*s == ' ' || *s == '\t' || *s == '\n') s++;
+	e = s + strlen(s);
+	while (e > s && (e[-1] == ' ' || e[-1] == '\t' || e[-1] == '\n')) *--e = 0;
+	return s;
+}
+/* Like the kernel's: no sign, nothing after the digits but a newline, and 16 bits at most. */
+static int kstrtou16(const char *s, unsigned int base, u16 *res)
+{
+	char *end;
+	unsigned long long v;
+	if (!*s || *s == '-' || *s == '+') return -EINVAL;
+	errno = 0;
+	v = strtoull(s, &end, base);
+	if (end == s || (*end && !(end[0] == '\n' && !end[1]))) return -EINVAL;
+	if (errno || v > 0xffff) return -ERANGE;
+	*res = v;
+	return 0;
+}
+#include "func.inc"
+
+static int stores, store_rc;
+static u16 stored[BUCKET_COUNT];
+static int store(void *data, u16 *buf, int id, int num_bytes)
+{
+	(void)data;
+	stores++;
+	if (id != 0 || num_bytes != BUCKET_COUNT * 2) return -EINVAL;
+	if (store_rc) return store_rc;
+	memcpy(stored, buf, sizeof(stored));
+	return 0;
+}
+
+static int bad;
+static struct cycle_counter c = { .store_count = store };
+static const u16 before[BUCKET_COUNT] = { 9, 9, 9, 9, 9, 9, 9, 9 };
+
+static void expect(const char *name, const char *in, int want_rc, const u16 *want)
+{
+	int rc;
+	memcpy(c.count, before, sizeof(before));
+	memset(stored, 0, sizeof(stored));
+	stores = 0;
+	rc = set_cycle_counts(&c, in);
+	if (rc != want_rc) { printf("FAIL %s: rc %d, want %d\n", name, rc, want_rc); bad = 1; return; }
+	if (want) {
+		if (memcmp(c.count, want, sizeof(before)) || memcmp(stored, want, sizeof(before)) || stores != 1) {
+			printf("FAIL %s: RAM and store must both hold the new counts, one write\n", name); bad = 1;
+		}
+	} else if (memcmp(c.count, before, sizeof(before)) || stores > 1 || (stores && !store_rc && 0)) {
+		printf("FAIL %s: nothing may change\n", name); bad = 1;
+	}
+	if (c.lock.locked) { printf("FAIL %s: mutex left locked\n", name); bad = 1; }
+}
+
+int main(void)
+{
+	const u16 restored[BUCKET_COUNT] = { 25, 60, 114, 148, 178, 167, 137, 85 };
+	const u16 zeros[BUCKET_COUNT] = { 0 };
+	const u16 maxes[BUCKET_COUNT] = { 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535 };
+	struct cycle_counter *none = NULL;
+	const char *wrong[] = { "25 60 114 148 178 167 137", "25 60 114 148 178 167 137 85 1", "", "\n", "   ",
+		"1 2 3 4 5 6 7 65536", "1 2 3 4 5 6 7 -1", "1 2 3 4 5 6 7 abc", "1 2 3 4 5 6 7 8x", "1 2 3 4 5 6 7 +8",
+		"1,2,3,4,5,6,7,8", "1 2 3 4 5 6 7 99999999999999999999" };
+	unsigned int i;
+
+	expect("restored values", "25 60 114 148 178 167 137 85\n", 0, restored);
+	expect("the format cycle_counts is read in (trailing space)", "25 60 114 148 178 167 137 85 \n", 0, restored);
+	expect("tabs and runs of spaces", "25  60\t114 148   178 167 137 85", 0, restored);
+	expect("all zero", "0 0 0 0 0 0 0 0", 0, zeros);
+	expect("all 65535", "65535 65535 65535 65535 65535 65535 65535 65535", 0, maxes);
+	for (i = 0; i < sizeof(wrong) / sizeof(*wrong); i++) {
+		char name[80];
+		snprintf(name, sizeof(name), "refuses '%.40s'", wrong[i]);
+		expect(name, wrong[i], strstr(wrong[i], "65536") || strstr(wrong[i], "99999") ? -ERANGE : -EINVAL, NULL);
+	}
+	store_rc = -EIO;
+	expect("store error leaves RAM alone", "25 60 114 148 178 167 137 85", -EIO, NULL);
+	store_rc = 0;
+	if (set_cycle_counts(none, "1 2 3 4 5 6 7 8") != -ENODEV) { printf("FAIL no counter: want -ENODEV\n"); bad = 1; }
+	if (!bad) printf("cycle counts: all checks pass\n");
+	return bad;
+}
+EOC
+cc -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=all -I"$dir" -o "$dir/t" "$dir/t.c"
+"$dir/t"

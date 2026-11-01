@@ -7,9 +7,10 @@
 # Patch 0003 is the icnss experiment for the Wi-Fi firmware crash.
 # Patches 0004 and 0005 (+ FRAMEBUFFER_CONSOLE and fonts) put the console on the screen.
 # Patch 0006 keeps the serial out of the log once MMI_INFO is on.
+# Patch 0007 makes bms/cycle_counts writable, to restore the buckets a drained battery clears.
 pkgname=linux-motorola-hanoip
 pkgver=4.14.357
-pkgrel=8
+pkgrel=9
 pkgdesc="Motorola Moto G (60) downstream kernel (cool585 Cybertron v18)"
 arch="aarch64"
 _carch="arm64"
@@ -32,6 +33,7 @@ source="
 	0004-printk-map-console-null-to-tty0.patch
 	0005-fbdev-add-hanoip-splash-framebuffer-console.patch
 	0006-mmi-info-keep-the-serial-out-of-the-log.patch
+	0007-qpnp-qg-let-cycle_counts-be-written.patch
 "
 builddir="$srcdir/$_repository-$_commit"
 
@@ -67,4 +69,5 @@ c8d71af7e443467e1800cb6fe3892c5aa44b1c4d841d80aa9e4cd99eab137a1abed6407e533548ca
 7e0ad0e509e5e2e0d143911e49aef0289952aea037d1aa5e9ed68d1ceb03fe336d9c3b7fa2db9b34ad0e5afd203055f86074b61ba552813e6b90b393c5cdec3c  0004-printk-map-console-null-to-tty0.patch
 5a13abe6d8fc0ebb0401a08eeb6793170c33de785ea524139ec426417d2549805275f1ccfd6af8f5838a60c672baa1c30d970a62374640ea51faceb68bcef3bc  0005-fbdev-add-hanoip-splash-framebuffer-console.patch
 38cbbfb8e85b0202c5cc2ed1f85019f99f0b6728c8df098c8f196524679260fea909beeb069720e7fc7219f6ff9c66bbeb7c4095ecb451a927b724d83343808c  0006-mmi-info-keep-the-serial-out-of-the-log.patch
+6a3a056d3c178e10e7728e321fb03faaf3d982bada65a4fc9b72c09d75eed2a046e9390b7b0b375deb28597697de99587759e0cfb11033273e320e839c47b8c3  0007-qpnp-qg-let-cycle_counts-be-written.patch
 "
