@@ -43,7 +43,12 @@ mk() {
 		DTC="${DTC:-$(command -v dtc)}" "$@"
 }
 mk olddefconfig
-mk -j"${JOBS:-$(nproc)}" Image.gz dtbs
+mk -j"${JOBS:-$(nproc)}" Image.gz dtbs modules
+# The module tree, staged next to the build: modprobe needs /lib/modules/<release> even for options built in
+# (zramstart), and the boot image does not carry it. Copy it to the phone with scripts/push-modules.
+rm -rf .output/modules-staging
+mk INSTALL_MOD_PATH="$PWD/.output/modules-staging" modules_install
+rm -f .output/modules-staging/lib/modules/*/build .output/modules-staging/lib/modules/*/source
 
 img=.output/arch/arm64/boot/Image.gz
 dtb=.output/arch/arm64/boot/dts/qcom/sdmmagpie-hanoi-base.dtb

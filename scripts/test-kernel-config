@@ -23,5 +23,14 @@ want NFT_SET_RBTREE y "nftables sets"
 want NFT_SET_BITMAP y "nftables sets"
 # Each missing firmware file waited 60 s, so every boot took ~3 min.
 want FW_LOADER_USER_HELPER_FALLBACK n "boot waits 60 s per missing firmware"
+# postmarketos-zram-swap asks for zstd unless deviceinfo says otherwise, and zram only offers an algorithm the
+# crypto API has: without this the swap never starts.
+want CRYPTO_ZSTD y "zram swap defaults to zstd"
+# zramstart runs `modprobe zram` under set -e; with no /lib/modules in the package it fails even though zram is
+# built in. The kernel package has to install the module tree.
+apk=pmaports/device/downstream/linux-motorola-hanoip/APKBUILD
+grep -q 'modules_install' "$apk" || { echo "FAIL: $apk does not install /lib/modules (modprobe zram fails without it)" >&2; bad=1; }
+# zramstart sets vm.swappiness=180; this kernel stops at 100 unless patch 0008 raises the limit.
+grep -q '^\s*0008-.*swappiness.*\.patch' "$apk" || { echo "FAIL: $apk does not apply the swappiness patch (sysctl rejects 180)" >&2; bad=1; }
 [ $bad -eq 0 ] && echo "kernel config: ok"
 exit $bad

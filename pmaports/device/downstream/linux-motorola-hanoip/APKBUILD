@@ -8,9 +8,12 @@
 # Patches 0004 and 0005 (+ FRAMEBUFFER_CONSOLE and fonts) put the console on the screen.
 # Patch 0006 keeps the serial out of the log once MMI_INFO is on.
 # Patch 0007 makes bms/cycle_counts writable, to restore the buckets a drained battery clears.
+# Zram swap: CRYPTO_ZSTD (zram offers only what the crypto API has; postmarketos-zram-swap asks for zstd),
+# patch 0008 (vm.swappiness up to 200, the script sets 180) and /lib/modules in the package (its modprobe zram
+# fails without it, with zram built in).
 pkgname=linux-motorola-hanoip
 pkgver=4.14.357
-pkgrel=9
+pkgrel=10
 pkgdesc="Motorola Moto G (60) downstream kernel (cool585 Cybertron v18)"
 arch="aarch64"
 _carch="arm64"
@@ -18,7 +21,7 @@ _flavor="motorola-hanoip"
 url="https://github.com/cool585/android_kernel_motorola_sm6150"
 license="GPL-2.0-only"
 options="!strip !check !tracedeps pmb:cross-native"
-makedepends="bash bc bison clang devicepkg-dev dtc flex linux-headers lld llvm openssl-dev perl"
+makedepends="bash bc bison clang devicepkg-dev dtc flex kmod linux-headers lld llvm openssl-dev perl"
 
 # Source
 _repository="android_kernel_motorola_sm6150"
@@ -34,6 +37,7 @@ source="
 	0005-fbdev-add-hanoip-splash-framebuffer-console.patch
 	0006-mmi-info-keep-the-serial-out-of-the-log.patch
 	0007-qpnp-qg-let-cycle_counts-be-written.patch
+	0008-sysctl-allow-vm.swappiness-up-to-200.patch
 "
 builddir="$srcdir/$_repository-$_commit"
 
@@ -49,7 +53,7 @@ build() {
 	_w="$_w -Wno-error=int-conversion -Wno-error=implicit-function-declaration -Wno-error=implicit-int"
 	make ARCH="$_carch" LLVM=1 LLVM_IAS=1 CC=clang HOSTCC="clang $_w" \
 		KCFLAGS="-Wno-error $_w" \
-		DTC=dtc KBUILD_BUILD_VERSION="$((pkgrel + 1 ))-postmarketOS" Image.gz dtbs
+		DTC=dtc KBUILD_BUILD_VERSION="$((pkgrel + 1 ))-postmarketOS" Image.gz dtbs modules
 }
 
 package() {
@@ -58,11 +62,17 @@ package() {
 	# Base DTB for vendor_boot; the stock dtbo applies the board overlay on top.
 	install -Dm644 "$builddir/arch/$_carch/boot/dts/qcom/sdmmagpie-hanoi-base.dtb" \
 		"$pkgdir/boot/dtbs/qcom/sdmmagpie-hanoi-base.dtb"
+	# The module tree: modprobe fails without /lib/modules/<release> even for options built in (zramstart needs it).
+	_w="-Wno-error=incompatible-pointer-types -Wno-error=incompatible-function-pointer-types"
+	_w="$_w -Wno-error=int-conversion -Wno-error=implicit-function-declaration -Wno-error=implicit-int"
+	make ARCH="$_carch" LLVM=1 LLVM_IAS=1 CC=clang HOSTCC="clang $_w" KCFLAGS="-Wno-error $_w" \
+		DTC=dtc INSTALL_MOD_PATH="$pkgdir" modules_install
+	rm -f "$pkgdir"/lib/modules/*/build "$pkgdir"/lib/modules/*/source
 }
 
 sha512sums="
 d56517f53b84077a931aa2911bbc218fd1627cb6d1d6b18885ce43df7705df79fb67f8a766e451e8091ae2ff3d3207dd9039d2a28097bebf3077caac19ca2b13  linux-motorola-hanoip-b92cb6cd8376a426543d48b80383c417a719a619.tar.gz
-396df4b601bed720d3e1ae7e09553eb59292ffa1d14c03a4354064364166c1e631850f5af94bd69ab9ddc582951beedbd33cee789ab2ac5fb6ef8174c9f5a9ef  config-motorola-hanoip.aarch64
+2bd3bb06a894f31c775a8be79ef8f3b635f443cbeaac97190c99f1f4d0b1ddc6323747d6b2476f6740a61ea69f2c8a80657a920cea42ceaa62420201d8d8a1b9  config-motorola-hanoip.aarch64
 2689921d0478951e24f88b5594e0344a7a3e710498e0c269bf017c713e17db70277fe3d7193052a2202f749b4af7d84cf8584bce4e47fc37ed6d4e259b9ca441  0001-loop-rescan-partitions-after-block-size-change.patch
 b403d53ba0a4eeb4dfcc8ab849ccce90d370fc18196d80e4bdf73ca031c49772bb3801b8f6c28be5993f3b74c82e1f3ad16b7dd53f112355afbba5a2e0847485  0002-clk-drop-duplicate-all_lists-for-debugfs.patch
 c8d71af7e443467e1800cb6fe3892c5aa44b1c4d841d80aa9e4cd99eab137a1abed6407e533548cab91cebf984d4994de8a49138db24f2b8829177e6314a2ca8  0003-icnss-send-host-cap-regdb-and-bdf-like-cnss-daemon.patch
@@ -70,4 +80,5 @@ c8d71af7e443467e1800cb6fe3892c5aa44b1c4d841d80aa9e4cd99eab137a1abed6407e533548ca
 5a13abe6d8fc0ebb0401a08eeb6793170c33de785ea524139ec426417d2549805275f1ccfd6af8f5838a60c672baa1c30d970a62374640ea51faceb68bcef3bc  0005-fbdev-add-hanoip-splash-framebuffer-console.patch
 38cbbfb8e85b0202c5cc2ed1f85019f99f0b6728c8df098c8f196524679260fea909beeb069720e7fc7219f6ff9c66bbeb7c4095ecb451a927b724d83343808c  0006-mmi-info-keep-the-serial-out-of-the-log.patch
 6a3a056d3c178e10e7728e321fb03faaf3d982bada65a4fc9b72c09d75eed2a046e9390b7b0b375deb28597697de99587759e0cfb11033273e320e839c47b8c3  0007-qpnp-qg-let-cycle_counts-be-written.patch
+ed20107581bfd4b2f20552ed5fc7f521ef1f9233c2123b72c877c5cc6335fc8d9d174b1ef0863f0bbfeac16de5ac08b4499871ce3bbd9c720e548d5a7e7fec63  0008-sysctl-allow-vm.swappiness-up-to-200.patch
 "
