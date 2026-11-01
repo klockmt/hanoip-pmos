@@ -1,0 +1,18 @@
+#!/bin/sh
+# Checks that sha512sums lists the local sources in the same order as source= (no hardware needed).
+# abuild pairs the two lists by position, not by name, so a shuffled list fails the build with a
+# checksum error on a file whose sum is right.
+set -eu
+cd "$(dirname "$0")/.."
+bad=0
+for apk in pmaports/device/*/*/APKBUILD; do
+	d=$(dirname "$apk")
+	# Sourced in a subshell like abuild does, so $_config and friends expand; only local files are compared.
+	src=$(set +u; srcdir=; . "./$apk"; for s in $source; do case $s in *://*) ;; *) echo "${s##*/}" ;; esac; done)
+	sums=$(grep -E '^[0-9a-f]{128}  ' "$apk" | awk '{ print $2 }' | while read -r n; do [ -f "$d/$n" ] && echo "$n"; done)
+	[ "$src" = "$sums" ] && continue
+	echo "FAIL: $apk: sha512sums order differs from source=" >&2
+	bad=1
+done
+[ $bad -eq 0 ] && echo "apkbuild sums order: ok"
+exit $bad
