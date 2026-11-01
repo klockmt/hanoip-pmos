@@ -6,7 +6,7 @@
 if [ "${1:-}" = -h ]; then
 	cat <<'EOF'
 One line each, in this order:
-1. Server: average of 3 pings in ms to the default gateway (ip route) and to 1.1.1.1 (HANOIP_PING_HOST), each with its target.
+1. Server: average of 3 pings in ms to the default gateway (ip route), then the address of the internet host (1.1.1.1, HANOIP_PING_HOST) and its average ping.
 2. Network: interface of the default route (ip route), received and sent kbit/s over 1 s (/sys/class/net/*/statistics).
 3. CPU: busy % over 1 s (/proc/stat), lowest-highest current clock of the two clusters (cpufreq scaling_cur_freq), hottest core (thermal zones cpu-*-usr).
 4. GPU: busy % (kgsl gpu_busy_percentage), clock (kgsl gpuclk), hottest GPU sensor (thermal zones gpuss-*-usr), and on or off (kgsl runtime_status: active is on, suspended is off).
@@ -62,7 +62,7 @@ cycles=$(cat $bat/cycle_count)
 offset=$(cat /var/lib/hanoip/cycle-offset 2>/dev/null)
 if [ "${offset:-0}" -gt 0 ] 2>/dev/null; then cycles=$((offset + cycles)); fi
 
-echo "Server - $lat_gw | gateway • $lat_net | $pinghost"
+echo "Server - $lat_gw | $pinghost  - $lat_net"
 echo "$dev rx $(( (rx1-rx0)*8/1000 )) kbit/s, tx $(( (tx1-tx0)*8/1000 )) kbit/s"
 echo "CPU - $(( ((t1-t0)-(id1-id0))*100/(t1-t0) )) % | $freqs | $(zones 'cpu-*-usr') °C"
 echo "GPU - $gpubusy % | $(( $(cat $kgsl/gpuclk) / 1000000 )) MHz | $(zones 'gpuss-*-usr') °C | $gpu"

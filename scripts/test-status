@@ -47,8 +47,8 @@ expect() {
 state "Not charging" 0 0 0 1
 out=$(sh "$script")
 expect "one line per item described by -h" "$(echo "$out" | wc -l)" "$(sh "$script" -h | grep -c '^[0-9][0-9]*\.')"
-expect "latency of the gateway and of 1.1.1.1" "$(echo "$out" | sed -n 1p)" "Server - 0.9 ms | gateway • 4.5 ms | 1.1.1.1"
-expect "an unreachable host says so" "$(HANOIP_PING_HOST=down sh "$script" | sed -n 1p)" "Server - 0.9 ms | gateway • no reply | down"
+expect "latency of the gateway and of 1.1.1.1" "$(echo "$out" | sed -n 1p)" "Server - 0.9 ms | 1.1.1.1  - 4.5 ms"
+expect "an unreachable host says so" "$(HANOIP_PING_HOST=down sh "$script" | sed -n 1p)" "Server - 0.9 ms | down  - no reply"
 expect "network" "$(echo "$out" | sed -n 2p)" "eth0 rx 0 kbit/s, tx 0 kbit/s"
 expect "cpu clocks and hottest core" "$(echo "$out" | sed -n 3p | cut -d'|' -f2-)" " 300-2304 MHz | 41.2 °C"
 expect "cpu label" "$(echo "$out" | sed -n 3p | cut -c1-6)" "CPU - "
