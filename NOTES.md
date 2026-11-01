@@ -192,6 +192,7 @@ What that caused (2026-10-26 to 2026-10-28): `capacity` read 100 % for days whil
 - It writes `QG_SYS_SOC`, `QG_CC_SOC` and `QG_BATT_SOC` (0-10000) back. The kernel ramps `capacity` toward it 1 % at a time and saves it to SDAM, so the next boot starts from it.
 - Where it starts: the value in `/run/hanoip-qgd.soc` after a restart, the kernel's boot value if it starts within 5 minutes of boot, otherwise an OCV estimate (rough while charging: it read 51 % when the charge since boot gave 29 %).
 - `scripts/test-qgd` runs the tests in `hanoip-qgd.rs` (`rustc --test`): the arithmetic and the struct layout (412 and 144 bytes), without the phone.
+- On the phone since 2026-11-01 (package `0-r21` from the `beta` branch, built with `pmbootstrap build --force device-motorola-hanoip` and installed with `apk add --allow-untrusted`): about 1 MB RSS against 7.7 MB for the Python one, and it resumed from `/run/hanoip-qgd.soc` and kept writing batches. The Python version is kept on the phone as `/var/lib/hanoip/hanoip-qgd.py`; to go back, copy it over `/usr/bin/hanoip-qgd` and `rc-service hanoip-qgd restart`.
 
 The charge limit `need`s `hanoip-qgd`. Cycle counts are not writable through sysfs, so the old count (114) cannot be restored until the `qpnp-qg` patch in next steps 7 lands; the counter starts again from 0.
 
