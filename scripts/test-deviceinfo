@@ -1,0 +1,16 @@
+#!/bin/sh
+# Checks the kernel command line in the device package's deviceinfo, which boot-deploy copies into vendor_boot. The one
+# that boots has console=ttyMSM0,115200n8 in vendor_boot; a regenerated vendor_boot with console=tty0 there left the
+# phone hung with no USB (issue #21), so the command line must start with the working console.
+set -eu
+cd "$(dirname "$0")/.."
+f=pmaports/device/testing/device-motorola-hanoip/deviceinfo
+fail() { echo "FAIL: $*" >&2; exit 1; }
+cmd=$(sed -n 's/^deviceinfo_kernel_cmdline="\(.*\)"$/\1/p' "$f")
+[ -n "$cmd" ] || fail "no deviceinfo_kernel_cmdline in $f"
+case $cmd in console=ttyMSM0,115200n8\ *) ;; *) fail "the command line must start with console=ttyMSM0,115200n8, got: ${cmd%% *}" ;; esac
+case " $cmd " in *" console=tty0 "*) fail "console=tty0 is in the command line (never booted from vendor_boot)" ;; esac
+for a in hanoip_splashfb.screen_off=1 ignore_loglevel lpm_levels.sleep_disabled=1 loop.max_part=7; do
+	case " $cmd " in *" $a "*) ;; *) fail "$a is missing from the command line" ;; esac
+done
+echo "deviceinfo: ok"
