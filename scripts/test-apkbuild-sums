@@ -9,7 +9,7 @@ for apk in pmaports/device/*/*/APKBUILD; do
 	d=$(dirname "$apk")
 	# Sourced in a subshell like abuild does, so $_config and friends expand; only local files are compared.
 	src=$(set +u; srcdir=; . "./$apk"; for s in $source; do case $s in *://*) ;; *) echo "${s##*/}" ;; esac; done)
-	sums=$(grep -E '^[0-9a-f]{128}  ' "$apk" | awk '{ print $2 }' | while read -r n; do [ -f "$d/$n" ] && echo "$n"; done)
+	sums=$(grep -E '^[0-9a-f]{128}  ' "$apk" | awk '{ print $2 }' | while read -r n; do if [ -f "$d/$n" ]; then echo "$n"; fi; done)
 	[ "$src" = "$sums" ] && continue
 	echo "FAIL: $apk: sha512sums order differs from source=" >&2
 	bad=1
