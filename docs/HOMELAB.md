@@ -38,7 +38,7 @@ All OpenRC, on by default, started by the device package.
 | `tailscale` | The tailnet. DNS from the tailnet is off (below) | `tailscale status` |
 | `local` (not a daemon) | Runs `/etc/local.d`: `qbootctl -m` marks the A/B slot successful at every boot, the cpufreq governor, the console | keep `local` in `default` |
 
-`hanoip-status` prints the health of the phone in ten lines (`hanoip-status -h` says what each is and where it is read).
+`hanoip-status` prints the health of the phone in ten lines, plus a Warning line when `resolv.conf` uses the Tailscale DNS (`hanoip-status -h` says what each is and where it is read).
 The bot's `/status` is the same output.
 
 The bot's secrets (token, owner id) live only on the phone in `/etc/hanoip/telegram.env`; they are never printed,
