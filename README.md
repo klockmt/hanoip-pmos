@@ -137,7 +137,7 @@ I want to be clear about what has and has not been run end to end.
 | `build-image`, `configure-pmbootstrap` | Dry-run only (they need `sudo` and an interactive `init`). The commands are the ones the author ran to produce the images that boot. The package build **without** `--envkernel` (letting pmbootstrap compile the kernel itself) was never tried |
 | `backup-partitions`, `flash-rootfs`, `flash-boot` | Tested against a simulated phone, including the refusals (wrong device, not in recovery, corrupted write, no SSH). The underlying `dd`, `adb` and `fastboot` commands are the ones used on the real phone |
 | `setup-usb-net` | Interface detection and the `nmcli` command checked; same command the author used |
-| A completely fresh machine, start to finish | **Not done.** Expect to hit something |
+| A completely fresh machine, start to finish | **Partly done (2026-11-02), in a clean Ubuntu 22.04 container, not a VM:** `check-host`, `setup-pmaports` and `build-kernel` (all 10 patches, `Image.gz` built) ran from the README with only two changes to it, both fixed above (pmbootstrap is not on PyPI; it needs Python 3.11). **Not run:** `pmb init`, `configure-pmbootstrap`, `build-image` and the flashing, which need `sudo`, chroots and binfmt (a rootless container has none) and the phone. Expect to hit something there |
 
 ## Layout
 
