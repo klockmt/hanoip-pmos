@@ -32,7 +32,7 @@ All OpenRC, on by default, started by the device package.
 | `hanoip-qgd` | The battery percentage: the kernel gauge only measures, this daemon computes the charge and writes it back | `cat /run/hanoip-qgd.soc` moves about once a minute |
 | `hanoip-charge-limit` (needs `hanoip-qgd`) | Holds the battery near 80 % on the cable (bypass), resumes below 60 %, one charge to 100 % every 10 cycles | `hanoip-status` line 8 says `bypass` |
 | `hanoip-thermal` | From 40 °C pauses charging, from 45 °C caps the CPU, at 55 °C warns on Telegram and powers off | `docs/BATTERY.md` |
-| `hanoip-bot` | The Telegram bot: `/up`, `/status`, `/status -h`, `/status -t=MIN -g=MIN`, `/stop`; only the owner's private chat | `hanoip-bot --alert TEXT` sends one message |
+| `hanoip-bot` | The Telegram bot: `/up`, `/status`, `/status -h`, `/status -t=MIN -g=MIN`, `/stop`, `/notes` (lists them); only the owner's private chat | `hanoip-bot --alert TEXT` sends one message |
 | `hanoip-modem` and its helpers (`hanoip-qrtr-ns`, `-pd-mapper`, `-tqftpserv`, `-rmtfs`) | Brings the modem up, which runs the Wi-Fi firmware (subpackage `device-motorola-hanoip-modem`) | `dmesg` shows `icnss: WLAN FW is ready` about 16 s after boot |
 | `postmarketos-zram-swap` | A zstd zram swap, 150 % of RAM, priority 300, above the 1 GB swapfile | `swapon --show` |
 | `tailscale` | The tailnet. DNS from the tailnet is off (below) | `tailscale status` |
