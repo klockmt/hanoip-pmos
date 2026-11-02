@@ -141,26 +141,7 @@ Active slot `b`. **Lineage was replaced by pmOS** (the user's choice on 24/10): 
 
 ## Tela apagada (modo servidor)
 
-A tela fica apagada desde o início do boot, e continua apagada depois de cada reboot. O kernel desliga as alimentações do painel (`vddio`, `lab` e `ibb`, do LCDB e do PM6150L) e o backlight, e o celular continua rodando, com SSH e Tailscale.
-
-Isso vem do parâmetro de boot `hanoip_splashfb.screen_off=1`, lido pelo driver do framebuffer (`patch 0005`). A imagem gerada por `scripts/mkbootimg-kernel` já traz esse parâmetro por padrão.
-
-Para acender a tela de novo, gere a imagem sem o parâmetro e grave o `boot_b`:
-
-```sh
-KERNEL_CMDLINE="ignore_loglevel fbcon=font:SUN12x22" scripts/mkbootimg-kernel "" boot-screen-on.img
-HANOIP_HOST=<ip> scripts/flash-boot-ssh boot-screen-on.img
-ssh <host> 'sudo reboot'
-```
-
-O mesmo vale para desligar: a tela volta a apagar só com uma imagem gerada com o parâmetro (o padrão) e um reboot. Não há comando para ligar ou desligar a tela com o sistema já rodando.
-
-Notas:
-- Não há controle em tempo de execução. O driver não consegue religar o painel depois de cortadas as alimentações, porque o pipeline DRM/DSI não está ativo neste kernel. A tela só volta com um reboot.
-- O hook `fb_blank` do driver só mexe no backlight, e não apaga a tela por completo. Não use `echo 4 > /sys/class/graphics/fb0/blank` como forma de desligar.
-- O atributo `dpms` em `/sys/class/drm/card0-DSI-1/` é somente leitura, e a propriedade DPMS do conector não tem efeito porque nenhum CRTC está ativo.
-- O log do kernel continua sendo escrito, mas ele não aparece na tela. Para acompanhar, use o SSH.
-- Se o celular não voltar pela rede depois de uma gravação ruim, a recuperação é pelo fastboot, regravando o backup do `boot_b` (o `flash-boot-ssh` guarda o backup antes de gravar).
+Moved, translated, to [`docs/HOMELAB.md`](docs/HOMELAB.md), section "The screen".
 
 ## Boot logo (2026-10-31)
 
@@ -222,9 +203,7 @@ Found on 2026-10-29, before turning the charge limit back on:
 
 ## Tailscale DNS loop and a full conntrack table (2026-10-29)
 
-`tailscaled` had rewritten `/etc/resolv.conf` to its own MagicDNS (`100.100.100.100`, `fd7a:115c:a1e0::53`), and failed to keep the original (`resolvconf: signature mismatch`). Its own lookups then went through `tailscale0` back to itself and kept being reset: about 7,000 DNS connections in `TIME_WAIT`, more than 2,000 packets a second on `tailscale0`, a load average of 3-4, and a full conntrack table (65,536 entries) that dropped new connections, SSH included (`nf_conntrack: table full, dropping packet`).
-
-The phone does not need MagicDNS, so: `tailscale set --accept-dns=false` (kept in the Tailscale state), then `resolvconf -u`, because Tailscale did not restore the file and DNS failed until then. `resolv.conf` now points at the router again; the load went to 0.4 and the table started draining. Undo with `tailscale set --accept-dns=true`.
+Moved to [`docs/HOMELAB.md`](docs/HOMELAB.md), section "Tailscale and the DNS loop"; the row is in [`docs/PITFALLS.md`](docs/PITFALLS.md).
 
 ## Found on 2026-10-30
 
