@@ -24,7 +24,7 @@ Every bug gets an automated test that fails before the fix and passes after (`sc
 | SSH answered on Ethernet and Wi-Fi too | pmOS's `50_sshd.nft` accepts port 22 from every interface | `02_hanoip-ssh.nft` loads first and accepts only `usb*` and `tailscale0` | `scripts/test-firewall` |
 | Tailscale's firewall file was hand-made and opened UDP 41641 on every interface | Nothing packaged it | `52_hanoip-tailscale.nft` accepts that port only on `eth*` and `wlan*`; the package depends on `tailscale` and removes the old file on install | `scripts/test-firewall` |
 | Tailscale on a relay, long copies dropping | Cloudflare WARP on the PC takes Tailscale's UDP when the PC is on another network | Pause WARP off the LAN; keep transfers short over a relay | docs only (see HOMELAB) |
-| Large transfers over the USB (NCM) network take it down until a reboot | Cause not found (issue #2) | Throttle to 1 MB/s (`pv -L 1m`) | `scripts/test-flash-boot-ssh` (its transfers), docs for the rest |
+| Large transfers over the USB (NCM) network take it down until a reboot | Cause not found (issue #2) | Throttle to 1 MB/s (`pv -L 1m`); a script that feeds a file into `hanoip-ssh` without it needs a `# small` comment | `scripts/test-throttle` (every script), `scripts/test-flash-boot-ssh` |
 
 ## Boot, slots and flashing
 
