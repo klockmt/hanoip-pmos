@@ -19,7 +19,7 @@ Every bug gets an automated test that fails before the fix and passes after (`sc
 
 | Symptom | Cause | Rule | Where enforced |
 |---|---|---|---|
-| SSH dropped, load 3-4, conntrack full (65,536) | Tailscale rewrote `resolv.conf` to its own MagicDNS and looped | `tailscale set --accept-dns=false`, then `resolvconf -u` | docs only (see HOMELAB) |
+| SSH dropped, load 3-4, conntrack full (65,536) | Tailscale rewrote `resolv.conf` to its own MagicDNS and looped | `tailscale up --accept-dns=false`; a boot script turns it off if it was left on; `hanoip-status` warns | `scripts/test-tailscale-dns`, `scripts/test-status` |
 | nftables rules with `{ ... }` fail with "Not supported" | The set backends were missing | Keep `NFT_SET_HASH/RBTREE/BITMAP` as `=y` | `scripts/test-kernel-config` |
 | SSH answered on Ethernet and Wi-Fi too | pmOS's `50_sshd.nft` accepts port 22 from every interface | `02_hanoip-ssh.nft` loads first and accepts only `usb*` and `tailscale0` | `scripts/test-firewall` |
 | Tailscale's firewall file was hand-made and opened UDP 41641 on every interface | Nothing packaged it | `52_hanoip-tailscale.nft` accepts that port only on `eth*` and `wlan*`; the package depends on `tailscale` and removes the old file on install | `scripts/test-firewall` |

@@ -59,8 +59,11 @@ tailscale debug prefs | grep CorpDNS # must say false
 
 `resolv.conf` then points at the router again. Undo with `tailscale set --accept-dns=true`. The device package depends on
 `tailscale` and ships the firewall file for it (`52_hanoip-tailscale.nft`): everything arriving on `tailscale0`, and UDP
-41641 (what lets two peers connect directly) only on `eth*` and `wlan*`. Logging in is still by hand, once
-(`tailscale up`, then the two commands above); the package does not start Tailscale or sign in for you.
+41641 (what lets two peers connect directly) only on `eth*` and `wlan*`. Logging in is still by hand, once:
+`tailscale up --accept-dns=false`; the package does not start Tailscale or sign in for you. If DNS was left on, the
+boot script `/etc/local.d/40-hanoip-tailscale-dns.start` turns it off and runs `resolvconf -u` at the next boot (it does
+nothing while Tailscale is not running or not signed in). `hanoip-status` still warns if `resolv.conf` shows the
+Tailscale DNS.
 
 ## Firewall
 
