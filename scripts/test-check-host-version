@@ -1,0 +1,22 @@
+#!/bin/sh
+# check-host must refuse a pmbootstrap that is not the version pinned in pmaports/PMBOOTSTRAP_VERSION (the README pins
+# it, and a different one can change the flags or the chroot layout), and accept the pinned one. Runs in a copy of the
+# tree with a fake pmbootstrap and a throwaway .env (issue #7).
+set -eu
+cd "$(dirname "$0")/.."
+fail() { echo "FAIL: $*" >&2; exit 1; }
+[ -f pmaports/PMBOOTSTRAP_VERSION ] || fail "pmaports/PMBOOTSTRAP_VERSION is missing"
+want=$(cat pmaports/PMBOOTSTRAP_VERSION)
+grep -q "pmbootstrap==$want" README.md || fail "README.md does not install pmbootstrap==$want"
+dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT
+mkdir -p "$dir/scripts" "$dir/pmaports"
+cp scripts/check-host scripts/env.sh "$dir/scripts/"; cp pmaports/PMBOOTSTRAP_VERSION "$dir/pmaports/"
+# line <version>: the pmbootstrap lines check-host prints when the fake pmbootstrap reports that version
+line() {
+	printf '#!/bin/sh\necho "%s"\n' "$1" > "$dir/pmb"; chmod +x "$dir/pmb"
+	echo "PMBOOTSTRAP=$dir/pmb" > "$dir/.env"
+	sh "$dir/scripts/check-host" 2>&1 | grep -i pmbootstrap || true
+}
+case $(line "$want") in ok*) ;; *) fail "the pinned version $want was refused: $(line "$want")" ;; esac
+case $(line "9.9.9") in MISSING*"9.9.9"*"$want"*) ;; *) fail "a different version was accepted: $(line 9.9.9)" ;; esac
+echo "check-host version: ok"

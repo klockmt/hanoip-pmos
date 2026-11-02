@@ -26,7 +26,12 @@ for t in llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-strip; do need "$t" "llv
 need dtc "dtc (device-tree-compiler)"
 if printf '#include <openssl/bio.h>\n' | cc -E -x c - >/dev/null 2>&1; then echo "ok        openssl headers"; else echo "MISSING   openssl headers (libssl-dev / openssl-devel)"; missing=1; fi
 echo "== postmarketOS"
-if [ -x "${PMBOOTSTRAP:-}" ]; then echo "ok        pmbootstrap ($PMBOOTSTRAP)"; else echo "MISSING   pmbootstrap: PMBOOTSTRAP in .env is not an executable file"; missing=1; fi
+if [ -x "${PMBOOTSTRAP:-}" ]; then
+	want=$(cat "$HANOIP_ROOT/pmaports/PMBOOTSTRAP_VERSION")
+	got=$("$PMBOOTSTRAP" --version 2>/dev/null | head -1)
+	if [ "$got" = "$want" ]; then echo "ok        pmbootstrap $got ($PMBOOTSTRAP)"
+	else echo "MISSING   pmbootstrap: version '$got', the port is built with $want (pmaports/PMBOOTSTRAP_VERSION)"; missing=1; fi
+else echo "MISSING   pmbootstrap: PMBOOTSTRAP in .env is not an executable file"; missing=1; fi
 echo "== Optional"
 optional nmcli "NetworkManager, for scripts/setup-usb-net"
 optional aarch64-linux-gnu-gcc "only for userspace/modem/build.sh"
