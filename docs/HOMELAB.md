@@ -57,9 +57,10 @@ resolvconf -u                        # Tailscale did not restore the file, so do
 tailscale debug prefs | grep CorpDNS # must say false
 ```
 
-`resolv.conf` then points at the router again. Undo with `tailscale set --accept-dns=true`. The firewall file for
-Tailscale (`52_tailscale.nft`) was made by hand and is not packaged yet (issue #11); it accepts everything arriving on
-`tailscale0` and UDP 41641 on every interface, which is what lets two peers connect directly.
+`resolv.conf` then points at the router again. Undo with `tailscale set --accept-dns=true`. The device package depends on
+`tailscale` and ships the firewall file for it (`52_hanoip-tailscale.nft`): everything arriving on `tailscale0`, and UDP
+41641 (what lets two peers connect directly) only on `eth*` and `wlan*`. Logging in is still by hand, once
+(`tailscale up`, then the two commands above); the package does not start Tailscale or sign in for you.
 
 ## Firewall
 
@@ -72,7 +73,7 @@ Files in `/etc/nftables.d`, loaded in name order, first match wins:
 | `10_dhcp.nft` | pmOS | DHCP on `usb*` and `wlan*` |
 | `50_sshd.nft` | pmOS | Accepts port 22 from everywhere; the file above wins first |
 | `51_usb_inet.nft` | pmOS | Accepts **everything** coming in over `usb*` |
-| `52_tailscale.nft` | by hand | Everything on `tailscale0`, UDP 41641 anywhere |
+| `52_hanoip-tailscale.nft` | this repo | Everything on `tailscale0`, UDP 41641 only on `eth*` and `wlan*` |
 
 Do not open a port, weaken a rule, enable password login or add a public-facing service without a decision. To change
 a rule on the running phone without wiping Tailscale's own tables, use `nft insert rule` and `nft replace rule`; a

@@ -22,6 +22,7 @@ Every bug gets an automated test that fails before the fix and passes after (`sc
 | SSH dropped, load 3-4, conntrack full (65,536) | Tailscale rewrote `resolv.conf` to its own MagicDNS and looped | `tailscale set --accept-dns=false`, then `resolvconf -u` | docs only (see HOMELAB) |
 | nftables rules with `{ ... }` fail with "Not supported" | The set backends were missing | Keep `NFT_SET_HASH/RBTREE/BITMAP` as `=y` | `scripts/test-kernel-config` |
 | SSH answered on Ethernet and Wi-Fi too | pmOS's `50_sshd.nft` accepts port 22 from every interface | `02_hanoip-ssh.nft` loads first and accepts only `usb*` and `tailscale0` | `scripts/test-firewall` |
+| Tailscale's firewall file was hand-made and opened UDP 41641 on every interface | Nothing packaged it | `52_hanoip-tailscale.nft` accepts that port only on `eth*` and `wlan*`; the package depends on `tailscale` and removes the old file on install | `scripts/test-firewall` |
 | Tailscale on a relay, long copies dropping | Cloudflare WARP on the PC takes Tailscale's UDP when the PC is on another network | Pause WARP off the LAN; keep transfers short over a relay | docs only (see HOMELAB) |
 | Large transfers over the USB (NCM) network take it down until a reboot | Cause not found (issue #2) | Throttle to 1 MB/s (`pv -L 1m`) | `scripts/test-flash-boot-ssh` (its transfers), docs for the rest |
 
