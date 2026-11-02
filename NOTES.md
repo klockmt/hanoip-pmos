@@ -16,7 +16,7 @@ The rules (commits, personal data, flashing, SSH and security, tests for bugs) a
 ## Files
 
 - `kernel/dts/sm7150-motorola-hanoip.dts`: our own DTS (mainline).
-- `docs/STATUS.md`: project state, test matrix, commands to reproduce.
+- `docs/STATUS.md`: what works, in a table; `docs/MAINLINE.md`: the mainline attempt, its test matrix and commands; `docs/PITFALLS.md`; `docs/HOMELAB.md`.
 - `docs/device-info/`: device outputs (getvar, running DTB, Android kernel config).
 - `kernel/downstream-patches/`: patches for the cool585 4.14 kernel (loop, `clk.c` for `DEBUG_FS`, `icnss` with BDF/REGDB/`host_cap`).
 - `pmaports/`: versioned copy of the `device-motorola-hanoip` and `linux-motorola-hanoip` packages (the live copy is in `$PMAPORTS_DIR`).
@@ -90,7 +90,7 @@ The screen used to stay on the Motorola logo for the whole boot. What was found 
 - Kernel 6.6.0-rc1-sm7150 + our DTS + test initramfs: the device resets and no USB gadget appears.
 - U-Boot (sm7150-mainline/u-boot, sdm845-based branch) + our DTB: resets, no fastboot gadget.
 - Control with the stock `boot_b.img`: Android boots (USB 22b8:2e82), then slows down and reboots by itself. The reset is **not specific to our images**.
-- Full matrix (12 tests) in `docs/STATUS.md`. **All** variations through the official pmOS flow failed the same way: kernels 6.6, 6.13.4 and 7.1_rc3 (pmOS config, `EFI_ZBOOT=y`), header v0 + appended DTB and v3, original and zeroed `dtbo`, `pmbootstrap flasher boot`, U-Boot. `172.16.42.x` and the USB gadget never showed up. Image format and `dtbo` alone do not explain it.
+- Full matrix (12 tests) in `docs/MAINLINE.md`. **All** variations through the official pmOS flow failed the same way: kernels 6.6, 6.13.4 and 7.1_rc3 (pmOS config, `EFI_ZBOOT=y`), header v0 + appended DTB and v3, original and zeroed `dtbo`, `pmbootstrap flasher boot`, U-Boot. `172.16.42.x` and the USB gadget never showed up. Image format and `dtbo` alone do not explain it.
 - With header v3, the ABL uses the DTB/cmdline/ramdisk of the stock `vendor_boot` (which DTB the kernel receives is unverified); with v0 the stock `dtbo` corrupts the appended DTB unless it is zeroed. Both combinations were tested.
 - Unconfirmed hypotheses: a hang before pstore/USB/framebuffer (watchdog, reserved memory, DTB handed over by the ABL); the ABL choosing the DTB by `qcom,board-id`/`msm-id` and rejecting ours.
 
