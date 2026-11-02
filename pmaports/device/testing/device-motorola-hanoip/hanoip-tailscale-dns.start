@@ -1,0 +1,8 @@
+#!/bin/sh
+# Keeps Tailscale's MagicDNS out of resolv.conf. With it on, tailscaled rewrote resolv.conf to 100.100.100.100, its own
+# lookups looped back through tailscale0 and conntrack filled up (docs/HOMELAB.md). The setting is kept in the Tailscale
+# state, so this only acts on a phone that just signed in (the default is on). Not running or not signed in: nothing to do.
+if tailscale debug prefs 2>/dev/null | grep -q '"CorpDNS": true'; then
+	tailscale set --accept-dns=false >/dev/null 2>&1 && resolvconf -u >/dev/null 2>&1
+fi
+exit 0

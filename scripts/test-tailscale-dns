@@ -1,0 +1,38 @@
+#!/bin/sh
+# Checks the boot script that keeps Tailscale's DNS off, against a fake tailscale and resolvconf (no phone): it turns
+# the DNS off and refreshes resolv.conf only when the saved preference says CorpDNS is on, it does nothing when it is
+# already off or when tailscale is not running, and the package installs it into /etc/local.d.
+set -eu
+cd "$(dirname "$0")/.."
+pkg=pmaports/device/testing/device-motorola-hanoip
+script=$pkg/hanoip-tailscale-dns.start
+dir=$(mktemp -d)
+trap 'rm -rf "$dir"' EXIT
+mkdir -p "$dir/bin"
+cat > "$dir/bin/tailscale" <<'FAKE'
+#!/bin/sh
+echo "tailscale $*" >> "$CALLS"
+case "$1 $2" in
+"debug prefs") [ -n "${PREFS:-}" ] || exit 1; echo "{ \"CorpDNS\": $PREFS, \"RouteAll\": false }" ;;
+esac
+FAKE
+printf '#!/bin/sh\necho "resolvconf $*" >> "$CALLS"\n' > "$dir/bin/resolvconf"
+chmod +x "$dir/bin/tailscale" "$dir/bin/resolvconf"
+export PATH="$dir/bin:$PATH" CALLS=$dir/calls
+
+fail() { echo "FAIL: $*" >&2; exit 1; }
+# run <PREFS: true|false|empty for tailscale not running> <expected calls, "|" between>
+run() {
+	: > "$CALLS"
+	PREFS=$1 sh "$script" || fail "the script exited non-zero with PREFS='$1'"
+	got=$(grep -v 'debug prefs' "$CALLS" | paste -sd'|' -)
+	[ "$got" = "$2" ] || fail "PREFS='$1': got '$got', expected '$2'"
+}
+[ -f "$script" ] || fail "$script is missing"
+run true "tailscale set --accept-dns=false|resolvconf -u"
+run false ""
+run "" ""
+
+grep -q "\"\$srcdir/hanoip-tailscale-dns.start\" \"\$pkgdir/etc/local.d/" $pkg/APKBUILD || fail "the APKBUILD does not install the script into /etc/local.d"
+grep -q '^	hanoip-tailscale-dns.start$' $pkg/APKBUILD || fail "the script is not in source="
+echo "tailscale-dns: ok"

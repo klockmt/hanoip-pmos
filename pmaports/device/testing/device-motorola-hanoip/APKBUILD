@@ -4,7 +4,7 @@
 pkgname=device-motorola-hanoip
 pkgdesc="Motorola Moto G (60)"
 pkgver=0
-pkgrel=34
+pkgrel=35
 _qrtr_rev=29e36ae164389580a0f8ea7a7fdb728140ae978d
 _pdmapper_rev=5ecd2fe926aca7abfe40724177f63b942cff3947
 url="https://postmarketos.org"
@@ -48,6 +48,7 @@ source="
 	hanoip-ssh.nft
 	hanoip-sshd.conf
 	hanoip-status
+	hanoip-tailscale-dns.start
 	hanoip-tailscale.nft
 	hanoip-thermal
 	hanoip-thermal.initd
@@ -95,6 +96,7 @@ package() {
 	install -Dm755 "$srcdir/hanoip-console.start" "$pkgdir/etc/local.d/10-hanoip-console.start"
 	install -Dm755 "$srcdir/hanoip-cpufreq.start" "$pkgdir/etc/local.d/30-hanoip-cpufreq.start"
 	install -Dm755 "$srcdir/hanoip-qbootctl.start" "$pkgdir/etc/local.d/20-hanoip-qbootctl.start"
+	install -Dm755 "$srcdir/hanoip-tailscale-dns.start" "$pkgdir/etc/local.d/40-hanoip-tailscale-dns.start"
 	install -Dm755 "$srcdir/hanoip-qgd" "$pkgdir/usr/bin/hanoip-qgd"
 	install -Dm755 "$srcdir/hanoip-reboot-bootloader" "$pkgdir/usr/bin/hanoip-reboot-bootloader"
 	install -Dm755 "$srcdir/hanoip-qgd.initd" "$pkgdir/etc/init.d/hanoip-qgd"
@@ -158,6 +160,7 @@ d053952c44b67385f7adc7153df5bd95e970956a839380192a8c1d2bc4254be479711ac1833a1504
 ca6c611b6e2509e9116604586233c665eba858f7dce9329d08a072e79a67b8f00c11effcc47c53f8d5f8c28527a84d7664d270bfddea82c26202bc2eae112566  hanoip-ssh.nft
 e9ca1358374ffd74680d371dd99bfce32d51940e9ed1f60dcae301a85808fb4e46af01f8ddc13a2c1ed57777c1989a8c672178714f8d8b466ea695780ef3a974  hanoip-sshd.conf
 b2ab559ba68d5a6ee089dfc6da5e5740978106b064eabe52314a6a92057b35dc9f08dae2e13734da2858084930d62ab206e59792e807b1e5ea5810c67e1b4655  hanoip-status
+651fc11e659280d87dad9047b4405031854f4d7d146c5510a6275a60957332e33769762b294f03810d571f8150c72d9240dcb703c3ac4c3130e58987588a0832  hanoip-tailscale-dns.start
 cd448c113f43af2cbf745d486c6754d9da469a401365d5f1d406a66f192cd46d0c10836a8077fccf994e766411aa3a19580d8e47c7dc0f97926235ef78a69d76  hanoip-tailscale.nft
 6d9367494b27aca76b2a68f82d06f6b11d2fe3c8ba3a28cfee4391d216ad730af0071d3229a375f7a823bf2bee82bdd9bf650616974fc89f38fd2f9dab66e1ef  hanoip-thermal
 e2718a5060419afccb775e70f07e91cd28df068b59e7712c9d1caa490869726f24655d9e22dc1b8c7dceee18b2671741980e65b7a8d778a2eb78c88154b01a9c  hanoip-thermal.initd
