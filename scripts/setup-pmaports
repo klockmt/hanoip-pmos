@@ -5,7 +5,7 @@
 set -eu
 . "$(dirname "$0")/env.sh"
 commit=$(awk 'NR==1{print $1}' "$HANOIP_ROOT/pmaports/PMAPORTS_COMMIT")
-url=https://gitlab.postmarketos.org/postmarketOS/pmaports.git
+url=${HANOIP_PMAPORTS_URL:-https://gitlab.postmarketos.org/postmarketOS/pmaports.git} # the variable is for tests
 
 if [ ! -d "$PMAPORTS_DIR/.git" ]; then
 	run mkdir -p "$PMAPORTS_DIR"
@@ -16,6 +16,8 @@ if [ "$(git -C "$PMAPORTS_DIR" rev-parse HEAD 2>/dev/null || true)" != "$commit"
 	run git -C "$PMAPORTS_DIR" fetch --depth 1 origin "$commit"
 	run git -C "$PMAPORTS_DIR" checkout -q FETCH_HEAD
 fi
+# pmbootstrap init reads channels.cfg from origin/main, which a one-commit fetch never creates: point it at the pin.
+run git -C "$PMAPORTS_DIR" update-ref refs/remotes/origin/main "$commit"
 run mkdir -p "$PMAPORTS_DIR/device"
 run cp -r "$HANOIP_ROOT/pmaports/device/." "$PMAPORTS_DIR/device/"
 echo "pmaports ready in $PMAPORTS_DIR at $commit with device-motorola-hanoip and linux-motorola-hanoip."

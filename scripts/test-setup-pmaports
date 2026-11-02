@@ -1,0 +1,24 @@
+#!/bin/sh
+# setup-pmaports must leave a clone that pmbootstrap init accepts: it reads channels.cfg from origin/main, and the
+# script checks out one pinned commit, so origin/main must point at that commit. On a clean machine pmb init stopped
+# with "Failed to read channels.cfg from 'origin/main'" (issue #7). Runs against a throwaway upstream, no network.
+set -eu
+cd "$(dirname "$0")/.."
+fail() { echo "FAIL: $*" >&2; exit 1; }
+dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT
+up=$dir/upstream
+git init -q "$up"; git -C "$up" config uploadpack.allowAnySHA1InWant true
+printf '[channels]\n' > "$up/channels.cfg"
+git -C "$up" add channels.cfg
+git -C "$up" -c user.name=t -c user.email=t@t commit -q -m base
+commit=$(git -C "$up" rev-parse HEAD)
+# a copy of the tree with its own pin and .env, so the real ones stay untouched
+mkdir -p "$dir/tree/scripts" "$dir/tree/pmaports/device"
+cp scripts/setup-pmaports scripts/env.sh "$dir/tree/scripts/"
+echo "$commit  test pin" > "$dir/tree/pmaports/PMAPORTS_COMMIT"
+printf 'PMAPORTS_DIR=%s\nPMBOOTSTRAP=pmbootstrap\n' "$dir/pmaports" > "$dir/tree/.env"
+HANOIP_PMAPORTS_URL=$up sh "$dir/tree/scripts/setup-pmaports" >/dev/null 2>&1 || fail "setup-pmaports failed"
+[ "$(git -C "$dir/pmaports" rev-parse HEAD)" = "$commit" ] || fail "the clone is not at the pinned commit"
+git -C "$dir/pmaports" show origin/main:channels.cfg >/dev/null 2>&1 || fail "origin/main cannot be read: pmbootstrap init would stop"
+[ "$(git -C "$dir/pmaports" rev-parse origin/main)" = "$commit" ] || fail "origin/main is not the pinned commit"
+echo "setup-pmaports: ok"
