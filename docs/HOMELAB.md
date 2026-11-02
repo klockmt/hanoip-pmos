@@ -124,6 +124,36 @@ running system:
 - **Kernel modules** load now (patch 0010). The module tree has to come from the same build as the running kernel;
   `scripts/push-modules` copies it and checks the release.
 
+## The NAS disk
+
+A 3.5" SAMSUNG HD502HJ (500 GB, 7200 rpm) behind a USB-SATA bridge. It is formatted on the PC. Its serial stays out of
+the repo: identify it with `smartctl -i -d sat <dev>`. The tests so far ran on the PC only; plugging it into the phone
+(USB host mode and the drive's own power supply) is still untested (issue #19).
+
+**It has a damaged zone, so it is partitioned around it** (GPT, 512 B logical sectors, 1 MiB aligned):
+
+| Partition | Label | Range | Size |
+|---|---|---|---|
+| 1 | `hd-a` | 1 MiB to 100 GB | 93 GiB |
+| none | | 100 GB to 165 GB | ~65 GB, never partition or write it |
+| 2 | `hd-b` | 165 GB to the end | 312 GiB |
+
+Why: from LBA 220053504 (~112.7 GB) the surface fails every ~15 MB and each read of it drops the disk off USB. The rest
+that was read (0 to ~105 GB and 150 GiB to the end) read clean at 110 MB/s. The part of the gap from ~113 to ~161 GB was
+never mapped. See "Storage" in [`PITFALLS.md`](PITFALLS.md) for the symptoms.
+
+Using it as the homelab storage:
+
+- **Before the first mount on the phone**, check `btrfs inspect-internal dump-super` on each partition: `compat_ro_flags`
+  must not have `0x8` (`block-group-tree`), or the 4.14 kernel mounts it read-only. The disk as formatted today **does**
+  have it; fix it first with `btrfstune --convert-from-block-group-tree` on the unmounted partition.
+- Mount with `compress=zstd,noatime,nofail`, so a missing disk does not hold up the boot.
+- Keep only data that is reproducible or has a second copy. The disk is wearing out: watch `Current_Pending_Sector` with
+  `smartctl -A -d sat <dev>` on the PC now and then (it was 148 on 2026-11-02, `Reallocated_Sector_Ct` 0). If it keeps
+  rising, replace the disk.
+- Run `btrfs scrub start <mount point>` regularly: btrfs checksums data, so a bad read is reported instead of passing.
+- Unmount before powering the disk off. After a USB drop, power-cycling the drive is what brings it back.
+
 ## Updating the phone
 
 The device package (`device-motorola-hanoip`, with the subpackages `-modem` and `-kernel-downstream`) is built on the PC
