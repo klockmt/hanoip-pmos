@@ -30,5 +30,13 @@ scan "nothing private" "an ordinary line, version 4.14.357, 14 digits $(printf "
 scan "longer word with the user name" "planteduser2 and myplanteduser" clean
 scan "sha512 line" "$(printf 'a%.0s' $(seq 1 60))${n15}$(printf 'b%.0s' $(seq 1 60))  file.patch" clean
 scan "16-digit number" "${n15}6" clean
+# The real .gitignore: what must stay out, and what must stay in (.env.example is the template for .env)
+rm -rf "$dir/g"; mkdir -p "$dir/g"; cp .gitignore "$dir/g/"; (cd "$dir/g" && git init -q)
+for f in .env .env.local telegram.env wlanmdsp.mbn modem.b00 modem.mdt tqftpserv.jsn bdwlan.bin SHA256SUMS boot.img x.tar.gz reports/a.md research_notes/b.md; do
+	(cd "$dir/g" && git check-ignore -q "$f") || { echo "FAIL: .gitignore does not ignore $f" >&2; bad=1; }
+done
+for f in .env.example README.md scripts/check-repo pmaports/device/testing/device-motorola-hanoip/APKBUILD kernel/downstream-patches/0001-x.patch; do
+	! (cd "$dir/g" && git check-ignore -q "$f") || { echo "FAIL: .gitignore hides $f" >&2; bad=1; }
+done
 [ $bad -eq 0 ] && echo "check-repo scan: all checks pass"
 exit $bad

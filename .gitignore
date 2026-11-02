@@ -16,9 +16,24 @@ dmesg-ours.txt
 
 # Local configuration (user, paths); the template is .env.example
 .env
+.env.*
+!.env.example
 
 # Secrets: bot token and owner id (the phone keeps them in /etc/hanoip/telegram.env)
 telegram.env
 *.token
-# Output of userspace/modem/build.sh
-/userspace/modem/build/
+
+# Proprietary firmware by extension, wherever it ends up: it comes from the phone itself (scripts/push-firmware)
+*.mbn
+*.mdt
+*.b[0-9][0-9]
+*.jsn
+bdwlan*
+
+# Checksum lists of backups, and downloaded archives
+SHA256SUMS
+*.tar.gz
+
+# Working notes that are not part of the repository
+/research_notes/
+/reports/
