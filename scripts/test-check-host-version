@@ -9,6 +9,8 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 want=$(cat pmaports/PMBOOTSTRAP_VERSION)
 # 3.x is not on PyPI (the newest there is 2.1.0): pip install pmbootstrap==3.12.1 cannot work, found on a clean machine.
 grep -q 'pip install pmbootstrap==' README.md && fail "README.md installs pmbootstrap from PyPI, which has no $want"
+# Python 3.10 passes pmbootstrap's own requires-python but then fails on a missing tomli (found on a clean Ubuntu 22.04).
+grep -q 'Python 3.11 or newer' README.md || fail "README.md does not ask for Python 3.11 or newer"
 grep -q -- "--branch $want https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git" README.md || fail "README.md does not install pmbootstrap from the $want tag on gitlab.postmarketos.org"
 dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT
 mkdir -p "$dir/scripts" "$dir/pmaports"
