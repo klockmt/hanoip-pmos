@@ -1,6 +1,6 @@
 // Telegram bot for the phone. It answers only the owner's private chat, with fixed commands: /up (the
 // phone is alive), /status (hanoip-status), /status -h (what each status line means), /status -t=MIN -g=MIN
-// (hanoip-status every g minutes for t minutes) and /stop (ends that). Nothing from a message reaches a
+// (hanoip-status every g minutes for t minutes), /stop (ends that) and /notes (lists these). Nothing from a message reaches a
 // shell; -t and -g must be numbers.
 // `hanoip-bot --alert TEXT` sends TEXT to the owner once and exits; hanoip-thermal uses it (the text comes
 // from the phone's own scripts, never from a message).
@@ -16,7 +16,15 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 const MAX_TEXT: usize = 4000; // Telegram refuses messages over 4096 characters
-const HELP: &str = "comandos: /up, /status, /status -h, /status -t=30 -g=1, /stop";
+const HELP: &str = "comandos: /up, /status, /status -h, /status -t=30 -g=1, /stop, /notes";
+const NOTES: &str = "comandos do hanoip-bot:
+/up - responde se o celular está de pé
+/status - o estado do celular (latência, rede, CPU, GPU, RAM, disco, bateria, consumo, temperatura)
+/status -h - o que cada linha do status significa e de onde vem
+/status -t=MIN -g=MIN - repete o status a cada g minutos durante t minutos (g de 1 a 60, t de g a 1440; sem -t são 30, sem -g é 1)
+/stop - para o envio automático
+/notes - esta lista
+Só o dono responde, e só neste chat.";
 const USAGE: &str = "uso: /status -t=MIN -g=MIN (-g de 1 a 60, -t de g a 1440)";
 const POLL_S: u64 = 50;
 const STATUS_TIMEOUT: Duration = Duration::from_secs(30);
@@ -393,6 +401,7 @@ fn reply_for(msg: &Msg, owner: i64, run: &dyn Fn(&[&str]) -> String) -> (Option<
     match command {
         "/up" => (Some("de pé".into()), Action::Nothing),
         "/stop" => (Some("envio automático parado".into()), Action::Stop),
+        "/notes" => (Some(NOTES.into()), Action::Nothing),
         "/status" => {
             if words.len() == 1 {
                 return (Some(run(&[])), Action::Nothing);
@@ -533,6 +542,24 @@ mod tests {
         assert_eq!(reply_for(&owner_msg("; rm -rf /"), OWNER, &run), (Some(HELP.into()), Action::Nothing), "unknown text gets the help");
         assert_eq!(reply_for(&owner_msg(""), OWNER, &run), (Some(HELP.into()), Action::Nothing), "empty text gets the help");
         assert_eq!(calls.get(), 2, "only the two /status ran the command");
+    }
+
+    // /notes lists the commands, so the owner does not have to remember them.
+    #[test]
+    fn notes_lists_every_command() {
+        let calls = std::cell::Cell::new(0);
+        let run = fake(&calls);
+        let (text, action) = reply_for(&owner_msg("/notes"), OWNER, &run);
+        assert_eq!(action, Action::Nothing);
+        let text = text.unwrap();
+        for cmd in ["/up", "/status", "/status -h", "/status -t=", "-g=", "/stop", "/notes"] {
+            assert!(text.contains(cmd), "{cmd} is missing from /notes: {text}");
+        }
+        assert!(text.chars().count() < MAX_TEXT, "fits in one message");
+        assert_eq!(reply_for(&owner_msg("/notes@hanoip_bot"), OWNER, &run).0.as_deref(), Some(text.as_str()), "accepts /notes@botname");
+        assert_eq!(reply_for(&msg("/notes", 99, OWNER), OWNER, &run), (None, Action::Nothing), "a stranger gets nothing");
+        assert_eq!(calls.get(), 0, "/notes does not run the status");
+        assert!(HELP.contains("/notes"), "the answer to unknown text points at /notes");
     }
 
     #[test]

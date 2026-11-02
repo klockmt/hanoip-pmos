@@ -3,7 +3,7 @@
 # commands, who is answered, the watch schedule, the status runner, the JSON reader and the curl config. This script
 # then builds the real binary and runs it against a fake Telegram on localhost, with the real curl: the text arrives
 # byte for byte (quotes, newlines, accents), the token never shows in curl's arguments, a stranger is ignored, the
-# owner's /up is answered, and a network error does not print the token.
+# owner's /up and /notes are answered, and a network error does not print the token.
 set -eu
 cd "$(dirname "$0")/.."
 src=pmaports/device/testing/device-motorola-hanoip/hanoip-bot.rs
@@ -34,7 +34,7 @@ class H(BaseHTTPRequestHandler):
             state["polls"] += 1
             if state["polls"] == 1:
                 msg = lambda uid, who, text: {"update_id": uid, "message": {"from": {"id": who}, "chat": {"id": who}, "text": text}}
-                result = [msg(10, 99, "/up"), msg(11, 1234, "/up"), {"update_id": 12, "edited_message": {}}]
+                result = [msg(10, 99, "/up"), msg(11, 1234, "/up"), {"update_id": 12, "edited_message": {}}, msg(13, 1234, "/notes")]
             else:
                 time.sleep(0.2)
                 result = []
@@ -73,16 +73,20 @@ PY
 : > "$tmp/requests.log"
 "$tmp/bot" 2> "$tmp/bot.err" &
 bot=$!
-i=0; while ! grep -q '"sendMessage"' "$tmp/requests.log"; do i=$((i + 1)); [ $i -lt 100 ] || fail "the bot did not answer /up"; sleep 0.1; done
+i=0; while [ "$(grep -c '"sendMessage"' "$tmp/requests.log")" -lt 2 ]; do i=$((i + 1)); [ $i -lt 100 ] || fail "the bot did not answer /up"; sleep 0.1; done
 sleep 0.5
 kill "$bot" 2>/dev/null || true; wait "$bot" 2>/dev/null || true; bot=
 python3 -I - "$tmp" <<'PY' || fail "the polling loop did something else than expected"
 import json, sys
 reqs = [json.loads(l) for l in open(sys.argv[1] + "/requests.log")]
 sent = [r["form"] for r in reqs if r["method"] == "sendMessage"]
-assert sent == [{"chat_id": "1234", "text": "de pé"}], sent
+assert len(sent) == 2, sent
+assert sent[0] == {"chat_id": "1234", "text": "de pé"}, sent[0]
+assert sent[1]["chat_id"] == "1234" and sent[1]["text"].startswith("comandos do hanoip-bot:\n/up - "), sent[1]
+for cmd in ("/status -h", "/status -t=MIN -g=MIN", "/stop", "/notes", "está de pé", "só neste chat"):
+    assert cmd in sent[1]["text"], (cmd, sent[1]["text"])    # accents and newlines arrive intact through curl
 polls = [r["form"] for r in reqs if r["method"] == "getUpdates"]
-assert polls[0]["offset"] == "0" and polls[1]["offset"] == "13", polls[:2]   # past update 12, the one without a message
+assert polls[0]["offset"] == "0" and polls[1]["offset"] == "14", polls[:2]   # past update 13; 12 had no message
 PY
 ! grep -q SECRET "$tmp/bot.err" || fail "the token showed in the bot's error output"
 
