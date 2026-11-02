@@ -1,0 +1,6 @@
+#!/sbin/openrc-run
+# Feeds the software watchdog and lets it reset the phone when the network stays down, see /usr/bin/hanoip-watchdog.
+command=/usr/bin/hanoip-watchdog
+supervisor=supervise-daemon
+respawn_delay=5
+respawn_max=0

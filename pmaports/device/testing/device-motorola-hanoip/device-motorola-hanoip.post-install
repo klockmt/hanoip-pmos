@@ -14,6 +14,7 @@ rc-update add hanoip-qgd default >/dev/null 2>&1 || true
 rc-update add hanoip-charge-limit default >/dev/null 2>&1 || true
 rc-update add hanoip-thermal default >/dev/null 2>&1 || true
 rc-update add hanoip-bot default >/dev/null 2>&1 || true
+rc-update add hanoip-watchdog default >/dev/null 2>&1 || true
 # The Tailscale rule used to be a hand-made file that accepted UDP 41641 on every interface; the package ships its own.
 grep -q "comment \"Tailscale direct connections\"$" /etc/nftables.d/52_tailscale.nft 2>/dev/null && rm -f /etc/nftables.d/52_tailscale.nft
 exit 0

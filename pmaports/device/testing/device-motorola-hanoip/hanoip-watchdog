@@ -1,0 +1,76 @@
+#!/bin/sh
+# Feeds /dev/watchdog (the kernel's software watchdog) every INTERVAL seconds, and stops feeding when the phone has
+# been out of reach for FAILS checks in a row, so the watchdog resets it. That covers a userspace hang (this script
+# is not scheduled, nothing feeds) and a network that does not come back. A check passes when the default gateway
+# answers or a usb* link is up (someone is at the cable).
+# To keep a dead router from turning into a boot loop: nothing is checked in the first GRACE seconds of the uptime, at
+# most MAX resets in a row are caused this way (the count goes to zero after HEALTHY good checks in a row), and
+# the phone says on Telegram, when it can, that the watchdog reset it. State is in STATE, which survives a reset.
+# Closing the device without the magic character would leave the watchdog armed, so TERM writes it first.
+# The HANOIP_* variables override paths and limits, for tests (scripts/test-watchdog).
+# shortcut: the check is one ping to the gateway; upgrade to a second target if a router that drops pings shows up.
+dev=${HANOIP_WATCHDOG_DEV:-/dev/watchdog}
+state=${HANOIP_WATCHDOG_STATE:-/var/lib/hanoip/watchdog}
+net=${HANOIP_NET_DIR:-/sys/class/net}
+uptime_file=${HANOIP_UPTIME_FILE:-/proc/uptime}
+ping=${HANOIP_PING_CMD:-ping -c 1 -W 2}
+alert=${HANOIP_ALERT_CMD:-timeout 20 /usr/bin/hanoip-bot --alert}
+reboot=${HANOIP_REBOOT_CMD:-reboot -f}
+interval=${HANOIP_WATCHDOG_INTERVAL:-10}
+fails_max=${HANOIP_WATCHDOG_FAILS:-30}
+grace=${HANOIP_WATCHDOG_GRACE:-900}
+healthy_for=${HANOIP_WATCHDOG_HEALTHY:-60}
+max=${HANOIP_WATCHDOG_MAX:-3}
+wait_reset=${HANOIP_WATCHDOG_RESET_WAIT:-120}
+loops=${HANOIP_WATCHDOG_LOOPS:-}
+
+mkdir -p "$state"
+count=0
+[ -f "$state/count" ] && read -r count < "$state/count"
+pending=
+if [ -e "$state/starved" ]; then
+	count=$((count + 1)); echo "$count" > "$state/count"; rm -f "$state/starved"
+	pending="the watchdog reset the phone ($count in a row, at most $max): the network did not come back"
+fi
+
+exec 3>"$dev" || { echo "hanoip-watchdog: cannot open $dev" >&2; exit 1; }
+close() { printf V >&3; exit 0; }
+trap close TERM INT
+# sleep in the background so a signal is handled at once, not when the sleep ends
+nap() { sleep "$1" & wait $!; }
+
+reachable() {
+	gw=${HANOIP_GATEWAY-$(ip route show default 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="via") {print $(i+1); exit}}')}
+	[ -n "$gw" ] && $ping "$gw" >/dev/null 2>&1 && return 0
+	for c in "$net"/usb*/carrier; do [ "$(cat "$c" 2>/dev/null)" = 1 ] && return 0; done
+	return 1
+}
+
+fails=0 good=0 n=0 told=
+while :; do
+	printf x >&3
+	up=$(cut -d. -f1 "$uptime_file")
+	if [ "$up" -lt "$grace" ]; then
+		fails=0
+	elif reachable; then
+		fails=0; good=$((good + 1))
+		if [ -n "$pending" ]; then $alert "$pending" >/dev/null 2>&1; pending=; fi
+		if [ "$good" -ge "$healthy_for" ] && [ "$count" -ne 0 ]; then count=0; echo 0 > "$state/count"; fi
+	else
+		good=0; fails=$((fails + 1))
+		if [ "$fails" -ge "$fails_max" ]; then
+			if [ "$count" -ge "$max" ]; then
+				[ -n "$told" ] || { $alert "the network is down and the watchdog already reset the phone $max times: not resetting again" >/dev/null 2>&1; told=1; }
+			else
+				# stop feeding: the watchdog resets the phone. Reset-wait is the fallback if it does not.
+				: > "$state/starved"; sync
+				nap "$wait_reset"
+				$reboot
+				exit 0
+			fi
+		fi
+	fi
+	n=$((n + 1))
+	if [ -n "$loops" ] && [ "$n" -ge "$loops" ]; then close; fi
+	nap "$interval"
+done

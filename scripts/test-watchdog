@@ -1,0 +1,87 @@
+#!/bin/sh
+# Checks hanoip-watchdog against a fake device, gateway and uptime (no phone): it feeds while the network is fine, stops
+# feeding once the gateway has been silent for FAILS checks and falls back to a reboot, never does that in the grace
+# period or with a usb link up, stops after MAX resets in a row, counts a reset it caused on the next start, forgets the
+# count after a healthy spell, and writes the magic close on TERM. Also that the package installs and enables it.
+set -eu
+cd "$(dirname "$0")/.."
+pkg=pmaports/device/testing/device-motorola-hanoip
+script=$pkg/hanoip-watchdog
+dir=$(mktemp -d)
+trap 'rm -rf "$dir"' EXIT
+fail() { echo "FAIL: $*" >&2; exit 1; }
+[ -f "$script" ] || fail "$script is missing"
+
+mkdir -p "$dir/net/usb0" "$dir/net/eth0"
+printf '#!/bin/sh\n[ -e "%s/gw-down" ] && exit 1\nexit 0\n' "$dir" > "$dir/ping"
+printf '#!/bin/sh\necho "$1" >> "%s/alerts"\n' "$dir" > "$dir/alert"
+printf '#!/bin/sh\necho reboot >> "%s/reboots"\n' "$dir" > "$dir/reboot"
+chmod +x "$dir/ping" "$dir/alert" "$dir/reboot"
+export HANOIP_WATCHDOG_DEV=$dir/dev HANOIP_WATCHDOG_STATE=$dir/state HANOIP_NET_DIR=$dir/net HANOIP_UPTIME_FILE=$dir/uptime
+export HANOIP_PING_CMD=$dir/ping HANOIP_ALERT_CMD=$dir/alert HANOIP_REBOOT_CMD=$dir/reboot HANOIP_GATEWAY=192.0.2.1
+export HANOIP_WATCHDOG_INTERVAL=1 HANOIP_WATCHDOG_RESET_WAIT=0 HANOIP_WATCHDOG_FAILS=3 HANOIP_WATCHDOG_GRACE=900 HANOIP_WATCHDOG_HEALTHY=2
+export HANOIP_WATCHDOG_MAX=2
+# run <loops> [env...]: one run of the script that ends after <loops> checks; fresh device file, alerts and reboots.
+run() {
+	n=$1; shift
+	rm -f "$dir/dev" "$dir/alerts" "$dir/reboots"
+	echo 2000.00 > "$dir/uptime"; echo 0 > "$dir/net/usb0/carrier"
+	env HANOIP_WATCHDOG_INTERVAL=0.05 HANOIP_WATCHDOG_LOOPS=$n "$@" sh "$script" || fail "the script exited non-zero"
+}
+fed() { tr -cd x < "$dir/dev" | wc -c | tr -d ' '; }
+count() { cat "$dir/state/count" 2>/dev/null || echo none; }
+reboots() { [ -e "$dir/reboots" ] && wc -l < "$dir/reboots" | tr -d ' ' || echo 0; }
+
+rm -f "$dir/gw-down"; rm -rf "$dir/state"
+run 5
+[ "$(fed)" = 5 ] || fail "a healthy network: fed $(fed) times, expected 5"
+[ "$(tail -c1 "$dir/dev")" = V ] || fail "no magic close at the end"
+[ "$(reboots)" = 0 ] || fail "rebooted with a healthy network"
+
+touch "$dir/gw-down"; rm -rf "$dir/state"
+run 10
+[ "$(fed)" = 3 ] || fail "gateway down: fed $(fed) times, expected 3 (it stops at the 3rd failed check)"
+[ "$(reboots)" = 1 ] || fail "gateway down: expected the reboot fallback once"
+[ -e "$dir/state/starved" ] || fail "the starve flag was not left for the next boot"
+
+# next start: the reset it caused is counted, and told once the network is back
+rm -f "$dir/gw-down"
+run 1
+[ "$(count)" = 1 ] || fail "count after a reset caused by the watchdog: $(count), expected 1"
+[ ! -e "$dir/state/starved" ] || fail "the starve flag survived the next start"
+grep -q 'reset the phone' "$dir/alerts" || fail "the reset was not told"
+
+# the second reset is allowed, the third is not
+touch "$dir/gw-down"
+run 10; run 1 HANOIP_GATEWAY=
+[ "$(count)" = 2 ] || fail "count: $(count), expected 2"
+touch "$dir/gw-down"
+run 10
+[ "$(reboots)" = 0 ] || fail "reset a third time in a row (MAX=2)"
+[ "$(fed)" = 10 ] || fail "past MAX it must keep feeding: fed $(fed)"
+grep -q 'not resetting again' "$dir/alerts" || fail "the stop was not told"
+
+# a healthy spell of 2 checks clears the count
+rm -f "$dir/gw-down"
+run 60 HANOIP_WATCHDOG_INTERVAL=0.05 HANOIP_WATCHDOG_HEALTHY=2
+[ "$(count)" = 0 ] || fail "count after a healthy spell: $(count), expected 0"
+
+# no check during the grace period, and a usb link counts as reachable
+touch "$dir/gw-down"; rm -rf "$dir/state"
+run 10 HANOIP_WATCHDOG_GRACE=99999
+[ "$(reboots)" = 0 ] || fail "acted during the grace period"
+rm -rf "$dir/state"
+rm -f "$dir/dev"; echo 2000.00 > "$dir/uptime"; echo 1 > "$dir/net/usb0/carrier"
+HANOIP_WATCHDOG_INTERVAL=0.05 HANOIP_WATCHDOG_LOOPS=10 sh "$script"
+[ "$(reboots)" = 0 ] || fail "reset with a usb link up"
+
+# TERM closes the device properly
+rm -f "$dir/dev" "$dir/gw-down"; echo 2000.00 > "$dir/uptime"
+HANOIP_WATCHDOG_INTERVAL=5 sh "$script" & pid=$!
+sleep 0.5; kill -TERM $pid; wait $pid || true
+[ "$(tail -c1 "$dir/dev")" = V ] || fail "TERM did not write the magic close"
+
+grep -q '"\$srcdir/hanoip-watchdog" "\$pkgdir/usr/bin/hanoip-watchdog"' $pkg/APKBUILD || fail "the APKBUILD does not install the script"
+grep -q '"\$srcdir/hanoip-watchdog.initd" "\$pkgdir/etc/init.d/hanoip-watchdog"' $pkg/APKBUILD || fail "the APKBUILD does not install the service"
+for h in post-install post-upgrade; do grep -q 'rc-update add hanoip-watchdog default' $pkg/device-motorola-hanoip.$h || fail "$h does not enable the service"; done
+echo "watchdog: ok"
