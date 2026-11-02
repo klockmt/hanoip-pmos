@@ -22,6 +22,19 @@ case $last in *drop*) ;; *) fail "the last port 22 rule must drop everything els
 # Anything that accepts port 22 from every interface must come after the drop, never before it.
 if grep -v '^[[:space:]]*#' "$rule" | grep 'tcp dport 22' | grep -v iifname | grep -q accept; then fail "an accept without iifname opens port 22 to all"; fi
 
+# Tailscale's own file: UDP 41641 (direct connections) only on the local interfaces, never everywhere.
+ts=$pkg/hanoip-tailscale.nft
+if [ ! -f "$ts" ]; then fail "$ts is missing"; else
+	grep -q 'iifname "tailscale0" accept' "$ts" || fail "the tailnet interface is not accepted"
+	grep -v '^[[:space:]]*#' "$ts" | grep 'udp dport 41641' | grep -q 'iifname' || fail "UDP 41641 is accepted on every interface"
+	for i in 'eth\*' 'wlan\*'; do grep -v '^[[:space:]]*#' "$ts" | grep "iifname \"$i\" udp dport 41641 accept" >/dev/null || fail "UDP 41641 is not accepted on $i"; done
+	[ "$(grep -v '^[[:space:]]*#' "$ts" | grep -c 'udp dport 41641')" = 2 ] || fail "UDP 41641 must be accepted on exactly eth* and wlan*"
+	grep -q '"\$pkgdir/etc/nftables.d/52_hanoip-tailscale.nft"' $pkg/APKBUILD || fail "the APKBUILD does not install hanoip-tailscale.nft"
+	sed -n '/^depends="/,/"/p' $pkg/APKBUILD | grep -qx '[[:space:]]*tailscale' || fail "the package does not depend on tailscale"
+	grep -q 'rm -f /etc/nftables.d/52_tailscale.nft' $pkg/device-motorola-hanoip.post-install || fail "the hand-made 52_tailscale.nft (UDP 41641 everywhere) is not removed on install"
+	if unshare -rn true 2>/dev/null; then unshare -rn nft -c -f "$ts" || fail "nft rejects $ts"; fi
+fi
+
 # The syntax, checked by nft in a throwaway network namespace (skipped when the host cannot do that).
 if unshare -rn true 2>/dev/null; then
 	unshare -rn nft -c -f "$rule" || fail "nft rejects $rule"

@@ -1,0 +1,10 @@
+# Tailscale: everything that arrives over the tailnet, and UDP 41641 (what lets two peers connect directly) only on
+# Ethernet and Wi-Fi, not on every interface (the hand-made file this replaces accepted it everywhere). Two rules, not a
+# set: wildcard names in sets need a newer kernel than 4.14. SSH is still limited by 02_hanoip-ssh.nft, which loads first.
+table inet filter {
+	chain input {
+		iifname "tailscale0" accept comment "Allow traffic over the tailnet"
+		iifname "eth*" udp dport 41641 accept comment "Tailscale direct connections over Ethernet"
+		iifname "wlan*" udp dport 41641 accept comment "Tailscale direct connections over Wi-Fi"
+	}
+}

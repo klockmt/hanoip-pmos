@@ -4,7 +4,7 @@
 pkgname=device-motorola-hanoip
 pkgdesc="Motorola Moto G (60)"
 pkgver=0
-pkgrel=31
+pkgrel=32
 _qrtr_rev=29e36ae164389580a0f8ea7a7fdb728140ae978d
 _pdmapper_rev=5ecd2fe926aca7abfe40724177f63b942cff3947
 url="https://postmarketos.org"
@@ -19,6 +19,7 @@ depends="
 	postmarketos-base
 	soc-qcom
 	soc-qcom-qbootctl
+	tailscale
 "
 makedepends="devicepkg-dev linux-headers rust"
 install="$pkgname.post-install $pkgname-modem.post-install"
@@ -47,6 +48,7 @@ source="
 	hanoip-ssh.nft
 	hanoip-sshd.conf
 	hanoip-status
+	hanoip-tailscale.nft
 	hanoip-thermal
 	hanoip-thermal.initd
 	hanoip-tqftpserv.initd
@@ -99,6 +101,7 @@ package() {
 	install -Dm644 "$srcdir/hanoip-ssh.nft" "$pkgdir/etc/nftables.d/02_hanoip-ssh.nft"
 	install -Dm644 "$srcdir/hanoip-sshd.conf" "$pkgdir/etc/ssh/sshd_config.d/60-hanoip-keys-only.conf"
 	install -Dm755 "$srcdir/hanoip-status" "$pkgdir/usr/bin/hanoip-status"
+	install -Dm644 "$srcdir/hanoip-tailscale.nft" "$pkgdir/etc/nftables.d/52_hanoip-tailscale.nft"
 	install -Dm755 "$srcdir/hanoip-thermal" "$pkgdir/usr/bin/hanoip-thermal"
 	install -Dm755 "$srcdir/hanoip-thermal.initd" "$pkgdir/etc/init.d/hanoip-thermal"
 
@@ -155,6 +158,7 @@ d053952c44b67385f7adc7153df5bd95e970956a839380192a8c1d2bc4254be479711ac1833a1504
 ca6c611b6e2509e9116604586233c665eba858f7dce9329d08a072e79a67b8f00c11effcc47c53f8d5f8c28527a84d7664d270bfddea82c26202bc2eae112566  hanoip-ssh.nft
 e9ca1358374ffd74680d371dd99bfce32d51940e9ed1f60dcae301a85808fb4e46af01f8ddc13a2c1ed57777c1989a8c672178714f8d8b466ea695780ef3a974  hanoip-sshd.conf
 1df54a6c47e7c50bdda934a6d74ff573334086dec27d634fd79a90da15a880f38abb0493c12502bda519fa6e853eeb618e2ddffedb5426f87d4cf89fd6b1072d  hanoip-status
+cd448c113f43af2cbf745d486c6754d9da469a401365d5f1d406a66f192cd46d0c10836a8077fccf994e766411aa3a19580d8e47c7dc0f97926235ef78a69d76  hanoip-tailscale.nft
 6d9367494b27aca76b2a68f82d06f6b11d2fe3c8ba3a28cfee4391d216ad730af0071d3229a375f7a823bf2bee82bdd9bf650616974fc89f38fd2f9dab66e1ef  hanoip-thermal
 e2718a5060419afccb775e70f07e91cd28df068b59e7712c9d1caa490869726f24655d9e22dc1b8c7dceee18b2671741980e65b7a8d778a2eb78c88154b01a9c  hanoip-thermal.initd
 9aa163137d78b802f924cb38341102abd7c36129689220587a1b4a26bc528c23ac27de7cff6c85f266d059a30d41df3a25c45b2f03cbdaaffacb083fee619619  hanoip-tqftpserv.initd
