@@ -13,6 +13,8 @@ case " $cmd " in *" console=tty0 "*) fail "console=tty0 is in the command line (
 for a in hanoip_splashfb.screen_off=1 ignore_loglevel lpm_levels.sleep_disabled=1 loop.max_part=7; do
 	case " $cmd " in *" $a "*) ;; *) fail "$a is missing from the command line" ;; esac
 done
-# Until issue #21 is understood, a package update must not regenerate and flash boot/vendor_boot by itself.
-grep -qx 'deviceinfo_flash_kernel_on_update="false"' "$f" || fail "deviceinfo_flash_kernel_on_update must be \"false\""
+# Issue #21 is explained (console=tty0) and the images boot-deploy makes from this file boot on the phone, so a package
+# update flashes them again. The check above is what keeps that safe: a command line that does not start with the
+# working console must never reach a flash.
+grep -qx 'deviceinfo_flash_kernel_on_update="true"' "$f" || fail "deviceinfo_flash_kernel_on_update must be \"true\""
 echo "deviceinfo: ok"
