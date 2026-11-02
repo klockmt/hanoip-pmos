@@ -54,6 +54,9 @@ Every bug gets an automated test that fails before the fix and passes after (see
 | Package build died before abuild, installing `firmware-qcom-sm7150` in the x86_64 chroot | `rust` in `makedepends` makes pmbootstrap use crossdirect, which installs every dependency natively | Keep `options=!pmb:crossdirect` on a package that builds Rust (checked by `scripts/test-apkbuild-depends`) |
 | `flash-boot-ssh` stopped at its first root command, and pushed 64 MB with no rate limit | Plain `sudo` over the BatchMode login cannot ask for the password; no `pv` | Root commands go through `hanoip-sudo`, transfers through `pv -L 1m` (`scripts/test-flash-boot-ssh`) |
 | `postmarketos-zram-swap` never started | No `CRYPTO_ZSTD`, no `/lib/modules` for `modprobe zram`, and `vm.swappiness=180` rejected over 100 | Keep `CRYPTO_ZSTD=y`, the module tree in the kernel package and patch 0008 (`scripts/test-kernel-config`); `scripts/push-modules` for a phone that already runs the kernel |
+| `BTRFS_FS=y` stopped the kernel build in `fs/btrfs/inode.c` | This tree has `timespec64` inode times and `fs/btrfs` did not | Keep patch 0009 (`scripts/test-kernel-config`) |
+| `modprobe br_netfilter` fails with "Required key not available" | Unknown; the module is signed with the build's certificate and `MODULE_SIG_FORCE=y` | Keep `BRIDGE_NETFILTER=y`; do not count on loading a module on this kernel until the cause is found |
+| `runc` panics on the phone (`/proc/thread-self` candidate) | The libpathrs in current runc needs newer kernel APIs than 4.14 | Use `crun` |
 | A boot's log missing from `logbookd.db` | logbookd writes only on a clean shutdown; the raw `reboot()` syscall skips it | Use `reboot` when the log matters |
 | "Not charging" with `usb/online=0` read as no power | In the limiter's hold the input still feeds the phone | Check `usb/input_current_now`, not `usb/online` |
 
