@@ -13,9 +13,10 @@
 # fails without it, with zram built in).
 # btrfs for the NAS disk (issue #19) needs patch 0009: this tree has timespec64 inode times, fs/btrfs did not.
 # User/PID namespaces and the cgroups Docker needs (issue #4), and a software watchdog (/dev/watchdog).
+# Patch 0010: modules load again (the vendor tree forced the ignore-vermagic flags: signature never checked, vermagic refused).
 pkgname=linux-motorola-hanoip
 pkgver=4.14.357
-pkgrel=11
+pkgrel=12
 pkgdesc="Motorola Moto G (60) downstream kernel (cool585 Cybertron v18)"
 arch="aarch64"
 _carch="arm64"
@@ -41,6 +42,7 @@ source="
 	0007-qpnp-qg-let-cycle_counts-be-written.patch
 	0008-sysctl-allow-vm.swappiness-up-to-200.patch
 	0009-btrfs-use-timespec64-for-the-inode-times.patch
+	0010-module-stop-forcing-the-ignore-vermagic-flags.patch
 "
 builddir="$srcdir/$_repository-$_commit"
 
@@ -90,4 +92,5 @@ c8d71af7e443467e1800cb6fe3892c5aa44b1c4d841d80aa9e4cd99eab137a1abed6407e533548ca
 6a3a056d3c178e10e7728e321fb03faaf3d982bada65a4fc9b72c09d75eed2a046e9390b7b0b375deb28597697de99587759e0cfb11033273e320e839c47b8c3  0007-qpnp-qg-let-cycle_counts-be-written.patch
 ed20107581bfd4b2f20552ed5fc7f521ef1f9233c2123b72c877c5cc6335fc8d9d174b1ef0863f0bbfeac16de5ac08b4499871ce3bbd9c720e548d5a7e7fec63  0008-sysctl-allow-vm.swappiness-up-to-200.patch
 62a40aedfcde6e6985cf82f198c6e41279b68b2e72ec420958811eda31ab11b78600f76e186ba8e6e004592307babd71f752e3db1696fcb6570cec2457dcaa3f  0009-btrfs-use-timespec64-for-the-inode-times.patch
+4c50e26c9723132bd16838e759bdebc43a2bdb9695a49fc04b6905a05727a3793ffaf61d3e66ad11ff050ca8b60a936bd2035fc0bf1e8461d3dfb64bf392aec2  0010-module-stop-forcing-the-ignore-vermagic-flags.patch
 "

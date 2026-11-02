@@ -1,0 +1,33 @@
+module: stop forcing the ignore-vermagic and ignore-modversions flags
+
+load_module() ORed MODULE_INIT_IGNORE_MODVERSIONS and
+MODULE_INIT_IGNORE_VERMAGIC into the caller's flags (a "FIXME" of the
+vendor tree, there for prebuilt modules from another build). With
+CONFIG_MODULE_SIG_FORCE=y and CONFIG_MODULE_FORCE_LOAD off that refused
+every module, in two steps:
+
+- module_sig_check() verifies the signature only when flags == 0 (a
+  module with its version information removed is no longer the module
+  that was signed), so with the forced flags it never verified, its
+  initial -ENOKEY stood and modprobe said "Required key not available",
+  silently, even for a valid signature made by the kernel's own key;
+- check_modinfo() turns the vermagic check into try_to_force_load()
+  when IGNORE_VERMAGIC is set, and that returns -ENOEXEC unless
+  CONFIG_MODULE_FORCE_LOAD is on ("Exec format error").
+
+Every module of this kernel is built with it, so vermagic and the
+symbol versions match; the checks are the stock ones again.
+
+--- a/kernel/module.c
++++ b/kernel/module.c
+@@ -3759,10 +3759,6 @@
+ 	long err;
+ 	char *after_dashes;
+ 
+-	//FIXME
+-	flags |= MODULE_INIT_IGNORE_MODVERSIONS;
+-	flags |= MODULE_INIT_IGNORE_VERMAGIC;
+-
+ 	err = module_sig_check(info, flags);
+ 	if (err)
+ 		goto free_copy;
