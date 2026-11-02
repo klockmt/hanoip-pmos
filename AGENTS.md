@@ -30,35 +30,7 @@ The rules are here. Before touching anything read `docs/STATUS.md` (what works),
 - On the phone, `/etc/deviceinfo` sets `deviceinfo_flash_kernel_on_update="false"` until the vendor_boot boot failure of 2026-10-30 is understood (`NOTES.md`). Never flash `boot`/`vendor_boot` without a backup on the PC (`$HANOIP_BACKUP_DIR`).
 
 ## Bugs found, and what to remember
-Every bug gets an automated test that fails before the fix and passes after (see below). They live in `scripts/test-*` and `scripts/check-repo` runs them all.
-
-| Bug | Cause | Rule |
-|---|---|---|
-| Battery stuck at 100 % for days, charge limit never cut, battery died, PMIC lost SDAM | `qpnp-qg` does not compute SoC after boot; a userspace daemon must write it back | `hanoip-qgd` must keep running; the charge limit must not trust the percentage alone (a stale file, older than 15 min except while holding on the cable, or < 3.75 V resumes charging) |
-| Percentage frozen at 100 % with the cable suspended | Charger keeps reporting `Full` while discharging | `Full` sets 100 % only when the batch shows no discharge (< 100 mA) or no samples |
-| Gauge scale off | Profile table is the cell's scale, kernel maps 3.4 V to 0 % and 4.45 V to 100 % | Pull toward the OCV on the kernel's scale |
-| SSH dropped, load 3-4, conntrack full (65,536) | Tailscale rewrote `resolv.conf` to its own MagicDNS and looped | `tailscale set --accept-dns=false`, then `resolvconf -u` |
-| Phone gone after ~7 reboots | pmOS never marks the A/B slot successful; ABL makes slot b unbootable and flips to a | `qbootctl -m` at every boot (from `/etc/local.d`); recovery `fastboot set_active b` + `fastboot reboot` (check the slot flags first and say what was done) |
-| nftables rules with `{ ... }` fail with "Not supported" | Set backends missing | Keep `NFT_SET_HASH/RBTREE/BITMAP` as `=y` (the kernel package installs no modules) |
-| `losetup -P --sector-size 4096` makes no `loopNpX` | Loop does not rescan after `LOOP_SET_BLOCK_SIZE` | Keep kernel patch 0001 |
-| ABL never ran the mainline kernel | ABL only runs header v3 and only `Image`/`Image.gz`, not EFI zboot | `EFI_ZBOOT` off; v3 `vendor_boot`; earlier v0 tests are invalid |
-| `fastboot flash userdata` refused | Motorola fastboot | Write the rootfs through the Lineage recovery with `dd` and verify the hash |
-| Every boot took ~3 min | Each missing firmware file waited 60 s | Keep `FW_LOADER_USER_HELPER_FALLBACK` off |
-| `dtc` segfaults | The tree's own `dtc` built with clang 23 | Build with `DTC=/usr/bin/dtc` |
-| Cycle counter lost (8 buckets) | A fully drained battery clears PMIC SDAM | Never let the battery die; if it happens, `scripts/restore-cycle-counts` (needs kernel patch 0007, which makes `bms/cycle_counts` writable; keep it) |
-| Wi-Fi firmware crashed ~0.7 s after WLFW connected (`EX:kernel:0x0:tmr_slave1`) | Modem reads SMEM item 134, created by `mmi_info`, which was off | Keep `CONFIG_MMI_INFO=y` and `CONFIG_MMI_ANNOTATE=y` (`scripts/test-kernel-config`) |
-| Kernel upgrade would flash an old cmdline | Device subpackage `-kernel-downstream` (owner of `deviceinfo`) left at r0 | Install the main device apk and its subpackage together |
-| Phone hung at boot after `boot-deploy` regenerated `vendor_boot` | Unconfirmed; only the cmdline changed (`console=tty0` instead of `console=ttyMSM0,...`) | Back up to the PC first; test a new `vendor_boot` before trusting package updates |
-| `hanoip-qgd` and `hanoip-bot` missing on a fresh image | `python3` was not in the device package's `depends`; it ran only because the phone already had it | Declare the interpreter of every shipped script, and drop it once none is shipped (`scripts/test-apkbuild-depends`); both daemons are Rust now, so the package needs `curl` and not `python3` |
-| `abuild` called `deviceinfo` corrupted | `sha512sums` was not in the order of `source=`; abuild pairs them by position | Keep the same order (`scripts/test-apkbuild-sums`; `update-apkbuild-sums` keeps the lines in place) |
-| Package build died before abuild, installing `firmware-qcom-sm7150` in the x86_64 chroot | `rust` in `makedepends` makes pmbootstrap use crossdirect, which installs every dependency natively | Keep `options=!pmb:crossdirect` on a package that builds Rust (checked by `scripts/test-apkbuild-depends`) |
-| `flash-boot-ssh` stopped at its first root command, and pushed 64 MB with no rate limit | Plain `sudo` over the BatchMode login cannot ask for the password; no `pv` | Root commands go through `hanoip-sudo`, transfers through `pv -L 1m` (`scripts/test-flash-boot-ssh`) |
-| `postmarketos-zram-swap` never started | No `CRYPTO_ZSTD`, no `/lib/modules` for `modprobe zram`, and `vm.swappiness=180` rejected over 100 | Keep `CRYPTO_ZSTD=y`, the module tree in the kernel package and patch 0008 (`scripts/test-kernel-config`); `scripts/push-modules` for a phone that already runs the kernel |
-| `BTRFS_FS=y` stopped the kernel build in `fs/btrfs/inode.c` | This tree has `timespec64` inode times and `fs/btrfs` did not | Keep patch 0009 (`scripts/test-kernel-config`) |
-| `modprobe` fails with "Required key not available", then "Exec format error" | The vendor `load_module()` forced `IGNORE_MODVERSIONS`/`IGNORE_VERMAGIC`: the signature was never checked (`-ENOKEY` with `MODULE_SIG_FORCE`) and `check_modinfo()` refused the vermagic (`-ENOEXEC`) | Keep patch 0010; load only modules from the same build as the kernel. The kernel log buffer drops what the kernel prints after boot, so an empty `dmesg` proves nothing |
-| `runc` panics on the phone (`/proc/thread-self` candidate) | The libpathrs in current runc needs newer kernel APIs than 4.14 | Use `crun` |
-| A boot's log missing from `logbookd.db` | logbookd writes only on a clean shutdown; the raw `reboot()` syscall skips it | Use `reboot` when the log matters |
-| "Not charging" with `usb/online=0` read as no power | In the limiter's hold the input still feeds the phone | Check `usb/input_current_now`, not `usb/online` |
+What broke on this phone, why, and the test or file that keeps it from breaking again is in [`docs/PITFALLS.md`](docs/PITFALLS.md). Read it before changing the kernel config, the device package, the charge limit, the firewall or a flashing script. Add a row there with every bug you fix.
 
 ## Tests for every bug
 - Add the regression test before or with the fix. Prefer extending the matching `scripts/test-*` (they run without the phone); create a new `scripts/test-<thing>` in the same style when none fits.

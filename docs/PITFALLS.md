@@ -1,0 +1,76 @@
+# Pitfalls: what broke on this phone, why, and where it is kept from breaking again
+
+One home for these. Each row is a problem that really happened. **Where enforced** names the test or the file that
+fails or protects when the rule is broken; "docs only" means nothing checks it and the rule is the only guard.
+Every bug gets an automated test that fails before the fix and passes after (`scripts/test-*`, all run by
+`scripts/check-repo`). The log of how each was found is in [`NOTES.md`](../NOTES.md).
+
+## Battery and power
+
+| Symptom | Cause | Rule | Where enforced |
+|---|---|---|---|
+| Battery stuck at 100 % for days, charge limit never cut, battery died, PMIC lost its SDAM | `qpnp-qg` does not compute the charge after boot; a userspace daemon must write it back | `hanoip-qgd` must keep running. The charge limit must not trust the percentage alone: a stale gauge file (older than 15 min, except while holding on the cable) or under 3.75 V resumes charging | `scripts/test-qgd`, `scripts/test-charge-limit` |
+| Percentage frozen at 100 % with the cable suspended | The charger keeps saying `Full` while the battery discharges | `Full` sets 100 % only when the batch shows no discharge (under 100 mA) or no samples, and the voltage is at least 4.30 V | `scripts/test-qgd` |
+| Gauge scale off | The profile table is the cell's own scale; the kernel maps 3.4 V to 0 % and 4.45 V to 100 % | Pull toward the OCV on the kernel's scale | `scripts/test-qgd` |
+| Cycle counter lost (8 buckets) | A fully drained battery clears the PMIC SDAM | Never let the battery die. If it happens, `scripts/restore-cycle-counts` (needs kernel patch 0007, which makes `bms/cycle_counts` writable) | `scripts/test-cycle-counts`, `scripts/test-restore-cycle-counts`, `scripts/test-status` |
+| "Not charging" with `usb/online=0` read as no power | In the limiter's hold the input still feeds the phone | Look at `usb/input_current_now`, not `usb/online` | `scripts/test-status` (the bypass line) |
+
+## Network, firewall and Tailscale
+
+| Symptom | Cause | Rule | Where enforced |
+|---|---|---|---|
+| SSH dropped, load 3-4, conntrack full (65,536) | Tailscale rewrote `resolv.conf` to its own MagicDNS and looped | `tailscale set --accept-dns=false`, then `resolvconf -u` | docs only (see HOMELAB) |
+| nftables rules with `{ ... }` fail with "Not supported" | The set backends were missing | Keep `NFT_SET_HASH/RBTREE/BITMAP` as `=y` | `scripts/test-kernel-config` |
+| SSH answered on Ethernet and Wi-Fi too | pmOS's `50_sshd.nft` accepts port 22 from every interface | `02_hanoip-ssh.nft` loads first and accepts only `usb*` and `tailscale0` | `scripts/test-firewall` |
+| Tailscale on a relay, long copies dropping | Cloudflare WARP on the PC takes Tailscale's UDP when the PC is on another network | Pause WARP off the LAN; keep transfers short over a relay | docs only (see HOMELAB) |
+| Large transfers over the USB (NCM) network take it down until a reboot | Cause not found (issue #2) | Throttle to 1 MB/s (`pv -L 1m`) | `scripts/test-flash-boot-ssh` (its transfers), docs for the rest |
+
+## Boot, slots and flashing
+
+| Symptom | Cause | Rule | Where enforced |
+|---|---|---|---|
+| Phone gone after about 7 reboots | pmOS never marks the A/B slot successful; the ABL makes slot b unbootable and flips to a | `qbootctl -m` at every boot (from `/etc/local.d`). Recovery: `fastboot getvar slot-unbootable:b` (check first), `fastboot set_active b`, `fastboot reboot`, and say what was done | docs only (needs the phone) |
+| ABL never ran the mainline kernel | The ABL only runs header v3 and only `Image`/`Image.gz`, not EFI zboot | `EFI_ZBOOT` off, a v3 `vendor_boot`; the earlier v0 tests are invalid | docs only (mainline is long term, issue #6) |
+| `fastboot flash userdata` refused | Motorola's fastboot | Write the rootfs through the Lineage recovery with `dd` and verify the hash | docs only |
+| Kernel upgrade would flash an old cmdline | The subpackage `-kernel-downstream` owns `deviceinfo` and was left at r0 | Install the main device apk and its subpackage together | docs only |
+| Phone hung at boot after `boot-deploy` regenerated `vendor_boot` | Unconfirmed; only the cmdline changed (issue #21) | `deviceinfo_flash_kernel_on_update="false"` on the phone; back up to the PC before any flash; check `boot_b` and `vendor_boot_b` after an `apk add` | the flag on the phone; hashes checked by hand |
+| `flash-boot-ssh` stopped at its first root command and pushed 64 MB with no limit | Plain `sudo` over the BatchMode login cannot ask for a password; no `pv` | Root commands through `hanoip-sudo`, transfers through `pv -L 1m` | `scripts/test-flash-boot-ssh` |
+| A boot's log missing from `logbookd.db` | logbookd writes only on a clean shutdown; the raw `reboot()` syscall skips it | Use `reboot` when the log matters | docs only |
+| `dmesg` empty after a failure | This kernel's log buffer drops what the kernel prints after boot (a write to `/dev/kmsg` returns success and never shows) | An empty `dmesg` proves nothing here; a throwaway build that returns a different errno at each point worked | docs only |
+
+## Kernel
+
+| Symptom | Cause | Rule | Where enforced |
+|---|---|---|---|
+| Every boot took about 3 minutes | Each missing firmware file waited 60 s | Keep `FW_LOADER_USER_HELPER_FALLBACK` off | `scripts/test-kernel-config` |
+| `dtc` segfaults | The tree's own `dtc` built with clang 23 | Build with `DTC=/usr/bin/dtc` | `scripts/build-kernel` |
+| `losetup -P --sector-size 4096` makes no `loopNpX` | The loop device does not rescan after `LOOP_SET_BLOCK_SIZE` | Keep kernel patch 0001 | `scripts/check-repo` (the patch copies are identical); no behavioural test |
+| Wi-Fi firmware crashed about 0.7 s after WLFW connected (`EX:kernel:0x0:tmr_slave1`) | The modem reads SMEM item 134, created by `mmi_info`, which was off | Keep `CONFIG_MMI_INFO=y` and `CONFIG_MMI_ANNOTATE=y` | `scripts/test-kernel-config` |
+| `postmarketos-zram-swap` never started | No `CRYPTO_ZSTD`, no `/lib/modules` for `modprobe zram`, and `vm.swappiness=180` rejected over 100 | Keep `CRYPTO_ZSTD=y`, the module tree in the kernel package and patch 0008; `scripts/push-modules` for a phone that already runs the kernel | `scripts/test-kernel-config` |
+| `BTRFS_FS=y` stopped the build in `fs/btrfs/inode.c` | This tree has `timespec64` inode times and `fs/btrfs` did not | Keep patch 0009 | `scripts/test-kernel-config` |
+| `modprobe` fails with "Required key not available", then "Exec format error" | The vendor `load_module()` forced `IGNORE_MODVERSIONS` and `IGNORE_VERMAGIC`: the signature was never checked (`-ENOKEY` with `MODULE_SIG_FORCE`) and `check_modinfo()` refused the vermagic (`-ENOEXEC`) | Keep patch 0010; load only modules from the same build as the kernel | `scripts/test-kernel-config` |
+| `runc` panics (`/proc/thread-self` candidate) | The libpathrs in current runc needs newer kernel APIs than 4.14 | Use `crun` | docs only |
+
+## Packaging
+
+| Symptom | Cause | Rule | Where enforced |
+|---|---|---|---|
+| `hanoip-qgd` and `hanoip-bot` missing on a fresh image | `python3` was not in the package's `depends`; the phone only had it by chance | Declare the interpreter of every shipped script, and drop it once none is shipped. Both daemons are Rust now: the package needs `curl`, not `python3` | `scripts/test-apkbuild-depends` |
+| `abuild` called `deviceinfo` corrupted | `sha512sums` was not in the order of `source=`; abuild pairs them by position | Keep the same order | `scripts/test-apkbuild-sums` |
+| Package build died before abuild, installing `firmware-qcom-sm7150` in the x86_64 chroot | `rust` in `makedepends` makes pmbootstrap use crossdirect, which installs every dependency natively | `options=!pmb:crossdirect` on a package that builds Rust | `scripts/test-apkbuild-depends` |
+| Modem/Wi-Fi userspace missing on a fresh image, `fsg` linked to `fsg_b` only | The files were installed by hand and the udev rule hard-coded the slot | The `-modem` subpackage; the rule reads `androidboot.slot_suffix` | `scripts/test-modem-package` |
+| A private value in a tracked file | Nothing looked for it | A 15-digit number (IMEI-like) and the login user are flagged, along with MACs, serials and home paths | `scripts/check-repo`, `scripts/test-check-repo` |
+| A script that changes state ran without a dry run | Four scripts had no `DRY_RUN` | Every state-changing script takes `DRY_RUN=1` | `scripts/test-dry-run` |
+
+## The pmOS flow (found on 2026-10-18)
+
+| Symptom | Cause | Rule | Where enforced |
+|---|---|---|---|
+| Conflicting `deviceinfo` and `machine-info` files | The device package depended on the generic `device-qcom-sm7150` | Do not depend on it. What works: `android-tools`, `firmware-qcom-sm7150`, `mkbootimg-osm0sis`, `postmarketos-base`, `soc-qcom` (the old `soc-qcom-sm7150` no longer exists) | docs only |
+| `boot-deploy` fails | It needs `android-tools` in the rootfs when `deviceinfo_generate_bootimg="true"` | Keep `android-tools` in `depends` | docs only |
+| pmOS generated a header v0 `boot.img` | `deviceinfo_header_version` was not set | Set it (3 for this phone) | docs only |
+| The generated `boot.img` does not boot | `CONFIG_EFI_ZBOOT` on packs `vmlinuz.efi`, which the ABL cannot load | Check `$PMB_WORK/chroot_rootfs_motorola-hanoip/boot/boot.img`: the kernel starts with `1f8b` (gzip) | docs only |
+| The build is wiped when packaging | Packaging **with** envkernel active runs `mrproper` | Package without activating envkernel (`pmbootstrap build --envkernel <pkg>`, nothing else) | docs only |
+| A change to `deviceinfo` or the APKBUILD is ignored | The checksums and the built package were stale | `scripts/update-apkbuild-sums` (or `pmbootstrap checksum`), then `build --force`, then `install`. On `umount ... exit 32`, repeat `shutdown` or use `zap` | `scripts/test-apkbuild-sums` |
+| `git clone` from GitHub fails here (`SSL_read unexpected eof`) | Unknown | Use `curl` with tarballs from `codeload.github.com` | docs only |
+| The recovery shows up, or `misc` sends the phone to the bootloader once | The `misc` backup starts with `bootonce-bootloader` | Do not write the `misc` backup back as it is; zero those bytes first. Zeroing the in-use slot's `dtbo` stops that slot's Android: restore it before `fastboot continue` or any reboot | docs only |

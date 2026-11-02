@@ -117,14 +117,7 @@ The screen used to stay on the Motorola logo for the whole boot. What was found 
 
 ## pmOS flow: pitfalls already solved (2026-10-18)
 
-- The device package **must not** depend on `device-qcom-sm7150` (a generic package that installs `deviceinfo` and `machine-info`, which conflict). Dependencies that work: `android-tools`, `firmware-qcom-sm7150`, `mkbootimg-osm0sis`, `postmarketos-base`, `soc-qcom`. The old `soc-qcom-sm7150` no longer exists.
-- `boot-deploy` requires `android-tools` in the rootfs when `deviceinfo_generate_bootimg="true"`.
-- `deviceinfo` (mainline attempts): `console=tty0 loglevel=7 ignore_loglevel`, pagesize 4096, offsets `0x8000`/`0x1000000`/`0x100`, appended DTB `qcom/sm7150-motorola-hanoip`. Without `deviceinfo_header_version` pmOS generates v0.
-- **Booting straight through the ABL requires `CONFIG_EFI_ZBOOT` off.** With it on (the default in the pmOS 7.1 config), the APKBUILD packs `vmlinuz.efi` (EFI zboot, `zimg` signature, no `ARMd` at `0x38`) into `boot.img`, and the ABL cannot load it: tests 8 to 11 of the matrix ran with that kernel and are **invalid**. Zboot is for the EFI flow (U-Boot/systemd-boot), which is what the generic `device-qcom-sm7150` package uses. For the ABL: `scripts/config --file .output/.config --disable EFI_ZBOOT`, delete `.output/arch/arm64/boot/vmlinuz*` and build `Image.gz dtbs modules`; the APKBUILD then falls back to `Image.gz`.
-- Check the generated `boot.img` before testing: `$PMB_WORK/chroot_rootfs_motorola-hanoip/boot/boot.img`; the kernel must start with `1f8b` (gzip) and have the hanoip DTB appended at the end.
-- Build outside envkernel: `make O=.output ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- ...` (needs a clean tree via `make ARCH=arm64 mrproper`), and package **without** activating envkernel: it runs `mrproper` and wipes the build.
-- After changing `deviceinfo` or the APKBUILD: `pmbootstrap checksum`, `build --force device-motorola-hanoip`, `install`. On `umount ... exit 32`, repeat `shutdown` or use `zap`.
-- `git clone` from GitHub fails on this host (`SSL_read unexpected eof`); use `curl` with tarballs from `codeload.github.com`.
+Moved to [`docs/PITFALLS.md`](docs/PITFALLS.md), section "The pmOS flow".
 
 ## UART
 
