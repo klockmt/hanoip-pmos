@@ -1,0 +1,11 @@
+#!/sbin/openrc-run
+# Power indicator on the front LED, see /usr/bin/hanoip-led.
+command=/usr/bin/hanoip-led
+supervisor=supervise-daemon
+respawn_delay=5
+respawn_max=0
+
+stop_post() {
+	# The timer turns the LED off while the on-time is 0.
+	echo 0 > /sys/class/leds/charging/delay_on
+}

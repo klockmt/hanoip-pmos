@@ -1,0 +1,27 @@
+#!/bin/sh
+# Checks hanoip-led against a fake LED and fake power supplies (no hardware needed). Each step runs one pass
+# of the loop (the timeout stops it before the sleep ends) and reads what the script left in the LED files.
+set -eu
+cd "$(dirname "$0")/.."
+script=pmaports/device/testing/device-motorola-hanoip/hanoip-led
+dir=$(mktemp -d)
+trap 'rm -rf "$dir"' EXIT
+mkdir -p "$dir/led" "$dir/ps/pc_port" "$dir/ps/usb"
+export HANOIP_LED_DIR=$dir/led HANOIP_PSU_DIR=$dir/ps HANOIP_LED_ON_MS=500 HANOIP_LED_GAP_MS=3000 HANOIP_LED_SOLID_MS=600000
+
+fail() { echo "FAIL: $*" >&2; exit 1; }
+# step <pc_port online> <usb online> <trigger> <delay_on> <delay_off>
+step() {
+	echo "$1" > "$dir/ps/pc_port/online"
+	echo "$2" > "$dir/ps/usb/online"
+	rm -f "$dir/led/trigger" "$dir/led/delay_on" "$dir/led/delay_off"
+	{ timeout -s KILL 1 sh "$script" >/dev/null 2>&1 || true; } 2>/dev/null
+	for f in trigger:$3 delay_on:$4 delay_off:$5; do
+		name=${f%%:*} want=${f#*:}
+		[ "$(cat "$dir/led/$name" 2>/dev/null)" = "$want" ] || fail "power $1/$2: $name is '$(cat "$dir/led/$name" 2>/dev/null)', expected '$want'"
+	done
+}
+step 1 0 timer 600000 1      # USB port powered: solid
+step 0 1 timer 600000 1      # USB PD supply powered: solid
+step 0 0 timer 500 3000   # on the battery: flash, 3 s gap
+echo "ok    test-led"

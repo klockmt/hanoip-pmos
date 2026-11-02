@@ -4,4 +4,5 @@
 grep -q "comment \"Tailscale direct connections\"$" /etc/nftables.d/52_tailscale.nft 2>/dev/null && rm -f /etc/nftables.d/52_tailscale.nft
 # The watchdog arrived after the first images: an upgrade enables it too (rc-update add is idempotent).
 rc-update add hanoip-watchdog default >/dev/null 2>&1 || true
+rc-update add hanoip-led default >/dev/null 2>&1 || true
 exit 0
