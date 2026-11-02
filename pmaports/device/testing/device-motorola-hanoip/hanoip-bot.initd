@@ -9,3 +9,11 @@ respawn_max=0
 depend() {
 	after networkmanager tailscale
 }
+
+start_pre() {
+	# A fresh install has no bot secrets; without this check the bot would panic and respawn every 5 s.
+	[ -r "${HANOIP_BOT_ENV:-/etc/hanoip/telegram.env}" ] || {
+		eerror "no ${HANOIP_BOT_ENV:-/etc/hanoip/telegram.env} (TOKEN= and OWNER_ID=): the bot stays off"
+		return 1
+	}
+}
