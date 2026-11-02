@@ -168,8 +168,9 @@ scripts/hanoip-sudo 'apk add --allow-untrusted /tmp/<apk> ...'
 
 - Install the main apk **together with its subpackages**: the subpackage `-kernel-downstream` owns
   `/usr/share/deviceinfo/deviceinfo`, and a stale one makes a kernel upgrade regenerate the boot images from an old file.
-- `apk add` runs `boot-deploy` and `mkinitfs`. `/etc/deviceinfo` on the phone sets
-  `deviceinfo_flash_kernel_on_update="false"`, so nothing is flashed to `boot` or `vendor_boot`. Check anyway: compare
+- `apk add` runs `boot-deploy` and `mkinitfs`, and the device package's `deviceinfo` says
+  `deviceinfo_flash_kernel_on_update="true"`, so a kernel or device package update writes `boot` and `vendor_boot`
+  (there is no `/etc/deviceinfo` override any more). Check after each one: compare
   `head -c <size> /dev/disk/by-partlabel/boot_b | sha256sum` with the image you flashed, and the hash of
   `vendor_boot_b` with your backup.
 - **A new kernel**: `scripts/build-kernel` (applies `kernel/downstream-patches` to the pinned source, builds `Image.gz`

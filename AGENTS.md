@@ -28,7 +28,7 @@ The rules are here. Before touching anything read `docs/STATUS.md` (what works),
 - Services (OpenRC): `hanoip-qgd` (battery percentage, see below), `hanoip-charge-limit` (needs `hanoip-qgd`), `hanoip-bot`, `hanoip-thermal`, `hanoip-modem` (Wi-Fi), Tailscale. `qbootctl -m` runs from `/etc/local.d` (keep `local` in `default`).
 - Pending: `systemd-tmpfiles`/`sysusers` cannot read their `.d` directories on 4.14 (`openat2`), which is harmless here (`NOTES.md`). Open work lives in the GitHub issues (roadmap #20).
 - Kernel direction (2026-11-02): our own hardened 4.14 kernel, forked from the pinned cool585 tree, with our own patches; mainline is parked (`docs/STATUS.md`, section 5). Enforce every hardening option in `scripts/test-kernel-config`.
-- The device package's `deviceinfo` sets `deviceinfo_flash_kernel_on_update="false"` (`scripts/test-deviceinfo`) until the vendor_boot boot failure of 2026-10-30 is understood (`NOTES.md`). Never flash `boot`/`vendor_boot` without a backup on the PC (`$HANOIP_BACKUP_DIR`).
+- A package update flashes `boot` and `vendor_boot` (`deviceinfo_flash_kernel_on_update="true"`): the 2026-10-30 hang was `console=tty0` in the command line, and `scripts/test-deviceinfo` keeps `console=ttyMSM0,115200n8` first (`NOTES.md`). Never flash by hand `boot`/`vendor_boot` without a backup on the PC (`$HANOIP_BACKUP_DIR`).
 
 ## Bugs found, and what to remember
 What broke on this phone, why, and the test or file that keeps it from breaking again is in [`docs/PITFALLS.md`](docs/PITFALLS.md). Read it before changing the kernel config, the device package, the charge limit, the firewall or a flashing script. Add a row there with every bug you fix.
