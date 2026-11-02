@@ -14,6 +14,7 @@ Every bug gets an automated test that fails before the fix and passes after (`sc
 | Gauge scale off | The profile table is the cell's own scale; the kernel maps 3.4 V to 0 % and 4.45 V to 100 % | Pull toward the OCV on the kernel's scale | `scripts/test-qgd` |
 | Cycle counter lost (8 buckets) | A fully drained battery clears the PMIC SDAM | Never let the battery die. If it happens, `scripts/restore-cycle-counts` (needs kernel patch 0007, which makes `bms/cycle_counts` writable) | `scripts/test-cycle-counts`, `scripts/test-restore-cycle-counts`, `scripts/test-status` |
 | "Not charging" with `usb/online=0` read as no power | In the limiter's hold the input still feeds the phone | Look at `usb/input_current_now`, not `usb/online` | `scripts/test-status` (the bypass line) |
+| Writing `none` to the front LED's `trigger` fails with `Invalid argument`, so a script cannot hand the LED back to manual control | This LED driver (`/sys/class/leds/charging`) rejects `none`, and the kernel timer turns the LED off if either delay is 0 | `hanoip-led` uses only the `timer` trigger: solid is a very long `delay_on` with `delay_off` 1, off is `delay_on` 0 | `scripts/test-led` |
 
 ## Network, firewall and Tailscale
 
