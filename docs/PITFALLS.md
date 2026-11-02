@@ -53,6 +53,15 @@ Every bug gets an automated test that fails before the fix and passes after (`sc
 | `modprobe` fails with "Required key not available", then "Exec format error" | The vendor `load_module()` forced `IGNORE_MODVERSIONS` and `IGNORE_VERMAGIC`: the signature was never checked (`-ENOKEY` with `MODULE_SIG_FORCE`) and `check_modinfo()` refused the vermagic (`-ENOEXEC`) | Keep patch 0010; load only modules from the same build as the kernel | `scripts/test-kernel-config` |
 | `runc` panics (`/proc/thread-self` candidate) | The libpathrs in current runc needs newer kernel APIs than 4.14 | Use `crun` | docs only |
 
+## Storage (the NAS disk)
+
+| Symptom | Cause | Rule | Where enforced |
+|---|---|---|---|
+| A btrfs disk formatted on the PC mounts read-only on the phone | `mkfs.btrfs` v7 turns on `block-group-tree` (`compat_ro` bit `0x8`); the 4.14 btrfs does not know it and mounts unknown `compat_ro` features read-only | Format with `mkfs.btrfs -O ^block-group-tree`, or `btrfstune --convert-from-block-group-tree` on the unmounted fs. Before plugging it in, `btrfs inspect-internal dump-super <dev>`: `compat_ro_flags` must not have `0x8` | docs only |
+| Reading one area of the USB HD fails with `Input/output error` and the disk drops off the bus (`Synchronize Cache failed`) | A damaged stripe of the platter: SMART `Current_Pending_Sector` rose from 1 to 148 with `UDMA_CRC_Error_Count` flat, so it is not the cable. Every read of the zone stalls the drive and the USB bridge resets | Leave the zone out of every partition (layout in [`HOMELAB.md`](HOMELAB.md)); never repartition it back or scan the gap again; keep only data that is reproducible or has another copy; `btrfs scrub` now and then | docs only |
+| The HD is gone from `lsblk` and `smartctl` says `No such device`, while the kernel log fills with btrfs errors of a `<missing disk>` | The drive or its USB bridge dropped; the old mount stays in the kernel | Power-cycle the drive; `umount -l` the stale mount; read 20 MB with `dd` before starting anything long; check model and serial with `smartctl -i` before writing a partition table | docs only |
+| A SMART self-test ends as `Aborted by host` | The drive was powered off or dropped during the test | Start it again and leave the disk alone until it ends (about 77 minutes for the extended test) | docs only |
+
 ## Packaging
 
 | Symptom | Cause | Rule | Where enforced |
