@@ -12,6 +12,12 @@ grep -q 'pip install pmbootstrap==' README.md && fail "README.md installs pmboot
 # Python 3.10 passes pmbootstrap's own requires-python but then fails on a missing tomli (found on a clean Ubuntu 22.04).
 grep -q 'Python 3.11 or newer' README.md || fail "README.md does not ask for Python 3.11 or newer"
 grep -q -- "--branch $want https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git" README.md || fail "README.md does not install pmbootstrap from the $want tag on gitlab.postmarketos.org"
+# What pmbootstrap itself refuses to start without (pmb/config/__init__.py required_programs); kpartx was missing from
+# both lists and stopped pmb init on a clean Ubuntu 24.04.
+for p in kpartx losetup openssl ps chroot; do
+	grep -q "^need $p " scripts/check-host || fail "check-host does not check for $p, which pmbootstrap needs"
+done
+grep -q 'kpartx' README.md || fail "README.md does not list kpartx among the host tools"
 dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT
 mkdir -p "$dir/scripts" "$dir/pmaports"
 cp scripts/check-host scripts/env.sh "$dir/scripts/"; cp pmaports/PMBOOTSTRAP_VERSION "$dir/pmaports/"
