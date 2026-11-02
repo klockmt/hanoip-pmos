@@ -148,6 +148,7 @@ I want to be clear about what has and has not been run end to end.
 | `kernel/dts/` | Mainline DTS for the hanoip |
 | `userspace/modem/` | Notes on the modem/Wi-Fi userspace for 4.14 (diagnosis history). The files themselves are the `device-motorola-hanoip-modem` subpackage |
 | `scripts/` | All the steps above, `check-repo` (self-check to run before every commit: checksums, patch copies, private-data scan, and every `test-*` regression test; none needs the phone), `push-firmware` and `mount-vendor` for the Wi-Fi investigation, and `collect-device` (runs in Termux on the phone) |
+| `CONTRIBUTING.md`, `.github/ISSUE_TEMPLATE/` | How to report and how to change (what never goes in an issue, the commit and test rules) and the issue forms |
 | `docs/` | What works (`STATUS.md`), what broke and where it is kept from breaking again ([`PITFALLS.md`](docs/PITFALLS.md)), how the phone is run (`HOMELAB.md`), the battery study (`BATTERY.md`), verified device facts and sanitized dumps (`device-info/`) |
 | `NOTES.md` | Detailed working notes: pitfalls already solved, boot test results |
 

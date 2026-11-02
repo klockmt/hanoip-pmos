@@ -1,0 +1,40 @@
+name: Hardware report
+description: What happened when you tried a step on your own Moto G60 (hanoip)
+labels: [needs-device-test]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste an IMEI, serial number, MAC address, battery id, Wi-Fi name, token, key, your user name or a home
+        path, and do not attach a device or partition dump. See CONTRIBUTING.md.
+  - type: input
+    id: model
+    attributes:
+      label: Phone
+      description: Model and codename (this port targets the XT2135-1, `hanoip`), and which slot you booted.
+    validations:
+      required: true
+  - type: textarea
+    id: step
+    attributes:
+      label: What you ran
+      description: The README step or the script, with its arguments, and whether you used `DRY_RUN=1`.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: What happened
+      description: The output (sanitized), or what you saw on the phone. Failures as they are.
+    validations:
+      required: true
+  - type: textarea
+    id: versions
+    attributes:
+      label: Versions
+      description: "`uname -v`, `apk info -v | grep -E 'device-motorola|linux-motorola'`, the commit of this repository."
+  - type: textarea
+    id: unchecked
+    attributes:
+      label: What you did not check
+      description: Anything you skipped or could not test.

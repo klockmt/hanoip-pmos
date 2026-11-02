@@ -1,0 +1,38 @@
+name: Bug
+description: Something on the phone or in this repository does not work
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste an IMEI, serial number, MAC address, battery id, Wi-Fi name, token, key, your user name or a home
+        path, and do not attach a device or partition dump. Say "(removed)" and keep going. See CONTRIBUTING.md.
+  - type: textarea
+    id: symptom
+    attributes:
+      label: Symptom
+      description: What happens, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: The commands you ran and what they printed (sanitized), the versions (`uname -v`, `apk info -v | grep device-motorola`), the file and line if you know it.
+    validations:
+      required: true
+  - type: textarea
+    id: ruled-out
+    attributes:
+      label: Already ruled out
+      description: What you tried that did not change it.
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Workaround
+      description: What you do today to live with it, if anything.
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: How we will know it is fixed.

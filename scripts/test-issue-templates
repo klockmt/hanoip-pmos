@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+# Checks the GitHub issue forms (no phone, no network): each one parses, has the keys GitHub needs, unique field ids,
+# at least one required field, only labels this repository has, and the warning about private values at the top.
+# GitHub ignores a form it cannot read, so a typo would go unnoticed otherwise. Skipped without PyYAML.
+import glob
+import os
+import sys
+
+try:
+    import yaml
+except ImportError:
+    print("skip: PyYAML is not installed, the issue forms were not checked")
+    sys.exit(0)
+
+os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+LABELS = {"bug", "enhancement", "documentation", "needs-device-test"}
+bad = []
+paths = sorted(glob.glob(".github/ISSUE_TEMPLATE/*.yml"))
+if not paths:
+    sys.exit("FAIL: no issue forms found")
+for p in paths:
+    doc = yaml.safe_load(open(p))
+    if os.path.basename(p) == "config.yml":
+        if not isinstance(doc.get("blank_issues_enabled"), bool):
+            bad.append(f"{p}: blank_issues_enabled must be true or false")
+        for link in doc.get("contact_links", []):
+            if not {"name", "url", "about"} <= set(link):
+                bad.append(f"{p}: a contact link needs name, url and about")
+        continue
+    for key in ("name", "description", "body"):
+        if not doc.get(key):
+            bad.append(f"{p}: missing {key}")
+    for label in doc.get("labels", []):
+        if label not in LABELS and not label.startswith("area:"):
+            bad.append(f"{p}: unknown label {label!r}")
+    ids, required = set(), 0
+    body = doc.get("body") or []
+    if not body or body[0].get("type") != "markdown" or "IMEI" not in body[0]["attributes"]["value"]:
+        bad.append(f"{p}: the first block must be the warning about private values")
+    for item in body:
+        if item.get("type") not in ("markdown", "textarea", "input", "dropdown", "checkboxes"):
+            bad.append(f"{p}: unknown block type {item.get('type')!r}")
+        if item.get("type") != "markdown":
+            if item.get("id") in ids or not item.get("id"):
+                bad.append(f"{p}: field id missing or repeated: {item.get('id')!r}")
+            ids.add(item.get("id"))
+            if not item.get("attributes", {}).get("label"):
+                bad.append(f"{p}: field {item.get('id')!r} has no label")
+            required += bool(item.get("validations", {}).get("required"))
+    if not required:
+        bad.append(f"{p}: no required field")
+if bad:
+    sys.exit("FAIL\n" + "\n".join(bad))
+print(f"issue forms: {len(paths)} files ok")
