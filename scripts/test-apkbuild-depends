@@ -25,5 +25,17 @@ for apk in pmaports/device/*/*/APKBUILD; do
 		bad=1
 	done
 done
+# The other way round: python3 stays out of depends once no shipped script needs it (issue #22), so it cannot
+# creep back in as a dependency nothing uses.
+for apk in pmaports/device/*/*/APKBUILD; do
+	d=$(dirname "$apk")
+	sed -n '/^depends="/,/"/p' "$apk" | grep -qw python3 || continue
+	used=0
+	for f in "$d"/*; do
+		[ -f "$f" ] || continue
+		case $(head -1 "$f" 2>/dev/null) in '#!'*python3*) used=1 ;; esac
+	done
+	[ $used -eq 1 ] || { echo "FAIL: $apk depends on python3 but ships no python3 script" >&2; bad=1; }
+done
 [ $bad -eq 0 ] && echo "apkbuild depends: ok"
 exit $bad

@@ -1,16 +1,16 @@
 #!/bin/sh
 # Reboots the running device straight into the bootloader (fastboot) without using the buttons.
-# busybox/openrc reboot takes no argument; this uses the reboot(RESTART2, "bootloader") syscall.
-# sudo may ask for the device user's password, so a terminal is allocated. DRY_RUN=1 only prints.
+# busybox/openrc reboot takes no argument; hanoip-reboot-bootloader (in the device package) calls reboot(RESTART2, "bootloader").
+# Root through hanoip-sudo. DRY_RUN=1 only prints.
 set -eu
 dir=$(dirname "$0")
-cmd='sudo python3 -c "import ctypes,os; os.sync(); ctypes.CDLL(None).syscall(142, 0xfee1dead, 672274793, 0xA1B2C3D4, b\"bootloader\")"'
+cmd=hanoip-reboot-bootloader
 if [ -n "${DRY_RUN:-}" ]; then
-	echo "+ hanoip-ssh '$cmd'"
+	echo "+ hanoip-sudo '$cmd'"
 	echo "+ wait up to 120 s for fastboot to list the device"
 	exit 0
 fi
-HANOIP_SSH_TTY=1 "$dir/hanoip-ssh" "$cmd" || true
+"$dir/hanoip-sudo" "$cmd" || true
 i=0
 until fastboot devices | grep -q .; do
 	i=$((i + 1))

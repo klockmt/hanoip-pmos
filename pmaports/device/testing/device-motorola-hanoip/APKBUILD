@@ -4,7 +4,7 @@
 pkgname=device-motorola-hanoip
 pkgdesc="Motorola Moto G (60)"
 pkgver=0
-pkgrel=29
+pkgrel=30
 _qrtr_rev=29e36ae164389580a0f8ea7a7fdb728140ae978d
 _pdmapper_rev=5ecd2fe926aca7abfe40724177f63b942cff3947
 url="https://postmarketos.org"
@@ -13,10 +13,10 @@ arch="aarch64"
 options="!check !archcheck !pmb:crossdirect"
 depends="
 	android-tools
+	curl
 	firmware-qcom-sm7150
 	mkbootimg-osm0sis
 	postmarketos-base
-	python3
 	soc-qcom
 	soc-qcom-qbootctl
 "
@@ -30,7 +30,7 @@ subpackages="
 source="
 	deviceinfo
 	hanoip-charge-limit
-	hanoip-bot
+	hanoip-bot.rs
 	hanoip-bot.initd
 	hanoip-charge-limit.initd
 	hanoip-console.start
@@ -40,6 +40,7 @@ source="
 	hanoip-pd-mapper.initd
 	hanoip-qbootctl.start
 	hanoip-qgd.rs
+	hanoip-reboot-bootloader.rs
 	hanoip-qgd.initd
 	hanoip-qrtr-ns.initd
 	hanoip-rmtfs.initd
@@ -67,6 +68,8 @@ build() {
 	devicepkg_build $startdir $pkgname
 	# One file, std only: no cargo, crates or network in the build.
 	rustc --edition 2021 -C opt-level=2 -o "$srcdir/hanoip-qgd" "$srcdir/hanoip-qgd.rs"
+	rustc --edition 2021 -C opt-level=2 -o "$srcdir/hanoip-bot" "$srcdir/hanoip-bot.rs"
+	rustc --edition 2021 -C opt-level=2 -o "$srcdir/hanoip-reboot-bootloader" "$srcdir/hanoip-reboot-bootloader.rs"
 
 	# The modem userspace, static so it does not depend on the libraries of the image. qrtr-ns is the v1.0 daemon
 	# (the current qrtr no longer ships one) on its own v1.0 library; the other two use the current libqrtr/libqmi.
@@ -91,6 +94,7 @@ package() {
 	install -Dm755 "$srcdir/hanoip-cpufreq.start" "$pkgdir/etc/local.d/30-hanoip-cpufreq.start"
 	install -Dm755 "$srcdir/hanoip-qbootctl.start" "$pkgdir/etc/local.d/20-hanoip-qbootctl.start"
 	install -Dm755 "$srcdir/hanoip-qgd" "$pkgdir/usr/bin/hanoip-qgd"
+	install -Dm755 "$srcdir/hanoip-reboot-bootloader" "$pkgdir/usr/bin/hanoip-reboot-bootloader"
 	install -Dm755 "$srcdir/hanoip-qgd.initd" "$pkgdir/etc/init.d/hanoip-qgd"
 	install -Dm644 "$srcdir/hanoip-ssh.nft" "$pkgdir/etc/nftables.d/02_hanoip-ssh.nft"
 	install -Dm644 "$srcdir/hanoip-sshd.conf" "$pkgdir/etc/ssh/sshd_config.d/60-hanoip-keys-only.conf"
@@ -134,7 +138,7 @@ kernel_mainline() {
 sha512sums="
 708703849b9d961ac1b112e85f85e1c364bce1b848f527ff16517677c1847c55cd3d9569c31053f2e195459374881a7704e03f9c126af1ddb9ff453c5f531ebf  deviceinfo
 743097f8b5390e7a1b409c000dc896d6eadb7c61d2e99492c5de0382bf4a8efa2b85dedb4f08a18e90cc20694403f2c9ee15da626f6a29d97a8eb520725c503a  hanoip-charge-limit
-6c9d99352bf5bacedd0ea24ff475584f0a356881f5e7043a313260a5b9bd01e4c2b0843ec3990de26894a3d250ae80cb069a699a00e0603b25d30a0fc7621f84  hanoip-bot
+d89fa78c2c68db6e5452c6f621f457d134dc4eeda8f3216f4474802dfcd25eb701501567246c067e13bf1f14c2bed77bcd696ae1aa902fbb6990b05da0494360  hanoip-bot.rs
 d211b14464ad74fe9e79cdd1d4ecf59c8701dd5689bf5138d436cf47ebf4fb6f886d411f9ff08f13c4ada470bbccb1c42917628157f64c46d58f78d94e1669aa  hanoip-bot.initd
 514860f64c0094e8bdadee4e33e9f37219d9e59e5c35c1adab87697b757bec430d8cac91ccb6d8357b318b60c2538848f65a0f54c50289280013cd042af6fe22  hanoip-charge-limit.initd
 856a5b5efcee9a5b47d0671eacf09a9b7c0f88142ff1a705789c4a9503e1bcd7409f2d355731701b4fd2f96dcbc9061403aebff803210c849919e2274f1ea5b9  hanoip-console.start
@@ -144,6 +148,7 @@ d211b14464ad74fe9e79cdd1d4ecf59c8701dd5689bf5138d436cf47ebf4fb6f886d411f9ff08f13
 5cb137405cbe1c1c93fde4bcc826183edff9e64e40b00d1e0d0b13247e6145545b41641d7cdb8d4130c0a87975ee9a13398da48b0122558050fe57fb55231c82  hanoip-pd-mapper.initd
 f08301d2d0b6d4e2488fc257d627a99f84c69c6af387f07aa343d64f25e3328c109d8a3a09f2b9a7b4c0d1c9a9914f8a0cf60e6ded8d43ac2b4c772ee009fad2  hanoip-qbootctl.start
 5fec69566c8b93c8d8e63dbea0cb0a1801d77e833f768cb2474bfeb37e12be65c423147a5b61d47feeb19bcf81c2a5fba7b1e0a15e3530c0f1b2c5a761e58690  hanoip-qgd.rs
+1c0bd6b0b6f82d1b69b886bbb1c40b53302f68b593939f5d21f84b968d3a40450e08880f44bdcecd15b3472d2ee986ad5b3377951d16b10c89440f1a63c70681  hanoip-reboot-bootloader.rs
 088ef67651ebb1673a87184c690f25109e1f4693cf10c9c70d478e7f45c96ccaa6509f1191d9171e085fe6e8a9d74cdddfeb9275c504e3f9df19e1261713d3be  hanoip-qgd.initd
 79896969a29b0fe7f65bf07eb94f78202d3728096c0254e58d8b2e55bc8bbc746dca8c2ac94ed45e3de0726142a4588796ce8cf21ac77cfa58d4a0c0a0ac41ae  hanoip-qrtr-ns.initd
 d053952c44b67385f7adc7153df5bd95e970956a839380192a8c1d2bc4254be479711ac1833a150490b3c47f2ec3fdccf138f4757cf3b7d80a7643b3190e0f4e  hanoip-rmtfs.initd
