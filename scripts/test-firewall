@@ -31,7 +31,18 @@ if [ ! -f "$ts" ]; then fail "$ts is missing"; else
 	[ "$(grep -v '^[[:space:]]*#' "$ts" | grep -c 'udp dport 41641')" = 2 ] || fail "UDP 41641 must be accepted on exactly eth* and wlan*"
 	grep -q '"\$pkgdir/etc/nftables.d/52_hanoip-tailscale.nft"' $pkg/APKBUILD || fail "the APKBUILD does not install hanoip-tailscale.nft"
 	sed -n '/^depends="/,/"/p' $pkg/APKBUILD | grep -qx '[[:space:]]*tailscale' || fail "the package does not depend on tailscale"
-	grep -q 'rm -f /etc/nftables.d/52_tailscale.nft' $pkg/device-motorola-hanoip.post-install || fail "the hand-made 52_tailscale.nft (UDP 41641 everywhere) is not removed on install"
+	# apk runs post-install only on a fresh install; a phone that already has the hand-made file upgrades.
+	for h in post-install post-upgrade; do
+		f=$pkg/device-motorola-hanoip.$h
+		grep -q 'rm -f /etc/nftables.d/52_tailscale.nft' "$f" 2>/dev/null || fail "$h does not remove the hand-made 52_tailscale.nft (UDP 41641 everywhere)"
+		# the real hand-made file must match the pattern the script looks for, and the new file must not
+		old_file='iifname "tailscale0" accept comment "Allow traffic over the tailnet"
+	udp dport 41641 accept comment "Tailscale direct connections"'
+		pat=$(sed -n 's/^grep -q "\(.*\)" \/etc.*/\1/p' "$f" | sed 's/\\"/"/g')
+		printf '%s\n' "$old_file" | grep -q "$pat" || fail "$h looks for a line the hand-made file does not have: $pat"
+		grep -q "$pat" "$ts" && fail "$h would also delete the packaged file's rule"
+	done
+	grep -q 'post-upgrade' $pkg/APKBUILD || fail "the APKBUILD does not list the post-upgrade script in install="
 	if unshare -rn true 2>/dev/null; then unshare -rn nft -c -f "$ts" || fail "nft rejects $ts"; fi
 fi
 

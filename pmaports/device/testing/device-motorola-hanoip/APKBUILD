@@ -4,7 +4,7 @@
 pkgname=device-motorola-hanoip
 pkgdesc="Motorola Moto G (60)"
 pkgver=0
-pkgrel=32
+pkgrel=33
 _qrtr_rev=29e36ae164389580a0f8ea7a7fdb728140ae978d
 _pdmapper_rev=5ecd2fe926aca7abfe40724177f63b942cff3947
 url="https://postmarketos.org"
@@ -22,7 +22,7 @@ depends="
 	tailscale
 "
 makedepends="devicepkg-dev linux-headers rust"
-install="$pkgname.post-install $pkgname-modem.post-install"
+install="$pkgname.post-install $pkgname.post-upgrade $pkgname-modem.post-install"
 subpackages="
 	$pkgname-kernel-downstream:kernel_downstream
 	$pkgname-kernel-mainline:kernel_mainline
