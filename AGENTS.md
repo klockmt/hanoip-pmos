@@ -27,6 +27,7 @@ The rules are here. Before touching anything read `docs/STATUS.md` (what works),
 - The screen is off by design and only comes back with a reboot on an image built without `hanoip_splashfb.screen_off=1`. Do not use `fb0/blank` (`docs/HOMELAB.md`).
 - Services (OpenRC): `hanoip-qgd` (battery percentage, see below), `hanoip-charge-limit` (needs `hanoip-qgd`), `hanoip-bot`, `hanoip-thermal`, `hanoip-modem` (Wi-Fi), Tailscale. `qbootctl -m` runs from `/etc/local.d` (keep `local` in `default`).
 - Pending: `systemd-tmpfiles`/`sysusers` cannot read their `.d` directories on 4.14 (`openat2`), which is harmless here (`NOTES.md`). Open work lives in the GitHub issues (roadmap #20).
+- Kernel direction (2026-11-02): our own hardened 4.14 kernel, forked from the pinned cool585 tree, with our own patches; mainline is parked (`docs/STATUS.md`, section 5). Enforce every hardening option in `scripts/test-kernel-config`.
 - On the phone, `/etc/deviceinfo` sets `deviceinfo_flash_kernel_on_update="false"` until the vendor_boot boot failure of 2026-10-30 is understood (`NOTES.md`). Never flash `boot`/`vendor_boot` without a backup on the PC (`$HANOIP_BACKUP_DIR`).
 
 ## Bugs found, and what to remember

@@ -6,6 +6,9 @@ invalid (see the correction under the matrix). The phone runs the downstream 4.1
 [`STATUS.md`](STATUS.md) and the roadmap is GitHub issue #6. The pitfalls of the pmOS flow itself are in
 [`PITFALLS.md`](PITFALLS.md).
 
+**Parked on 2026-11-02.** The plan now is our own hardened 4.14 kernel, forked from the downstream one
+([`STATUS.md`](STATUS.md), section 5). This file is kept as the record of the attempt.
+
 ## 1. What was done
 1. **Backup** of the critical partitions and extraction of the running DTB (`/sys/firmware/fdt`) and of the Android kernel config.
 2. **hanoip DTS.** fuyuki's fork stub did not compile (a nonexistent `tz_memmpss_mem` label and a syntax error). It was rewritten in `kernel/dts/sm7150-motorola-hanoip.dts`: identity and `board-id` from the stock DTB, peripherals adapted from `sweet` (UFS, USB, WCN3990 Wi-Fi, SD, regulators), reserved memory overriding only what differs from upstream (`tz_mem`, `cont_splash`, ramoops, wdog, tzlog, mmi), 1080×2460 simplefb with `clocks`, `gpio-reserved-ranges = <59 4>` and `dr_mode = "peripheral"`. It builds without warnings of our own on the 6.6, 6.13.4 and 7.1_rc3 trees.

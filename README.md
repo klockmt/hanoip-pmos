@@ -10,7 +10,7 @@ Work-in-progress port of postmarketOS to the **Motorola Moto G60** (`hanoip`, XT
 | --- | --- |
 | Downstream kernel (4.14, cool585 Cybertron) | **Works.** postmarketOS edge boots on its own with openrc, SSH over the USB network gadget, a 104 GB root on `userdata` and an nftables firewall |
 | Wi-Fi (WCN3990) | **Works (2026-10-30).** 2.4 and 5 GHz, WPA3 (SAE) through NetworkManager, back by itself after a reboot. It needed `CONFIG_MMI_INFO` (the modem crashed without the SMEM item that driver creates). The modem userspace is still installed by hand: see [`userspace/modem/README.md`](userspace/modem/README.md) |
-| Mainline kernel | **No boot yet.** The DTS builds; the bootloader (ABL) only runs header-v3 boot images, which invalidated the early tests. See [`docs/MAINLINE.md`](docs/MAINLINE.md) |
+| Mainline kernel | **Parked.** The plan is our own hardened 4.14 kernel, forked from the one above ([`docs/STATUS.md`](docs/STATUS.md), section 5). Mainline never booted: the bootloader (ABL) only runs header-v3 boot images, which invalidated the early tests. See [`docs/MAINLINE.md`](docs/MAINLINE.md) |
 
 The phone is reachable over Wi-Fi, the USB cable (network gadget) or a USB Ethernet adapter (RTL8152, ASIX, CDC). With a hub the phone is USB host: the PC on the hub cannot reach it over USB, so use Wi-Fi then.
 

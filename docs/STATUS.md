@@ -1,9 +1,9 @@
 # Moto G60 (hanoip) on postmarketOS: where it stands
 
-State on 2026-11-01. The goal is to run postmarketOS on the Moto G60 (hanoip) as a headless server and to publish everything
+State on 2026-11-02. The goal is to run postmarketOS on the Moto G60 (hanoip) as a headless server and to publish everything
 on GitHub with reproducible instructions and a way to update the kernel. How the phone is run: [`HOMELAB.md`](HOMELAB.md).
-What broke and where it is kept from breaking again: [`PITFALLS.md`](PITFALLS.md). The mainline attempt:
-[`MAINLINE.md`](MAINLINE.md). Open work: the GitHub issues, roadmap #20.
+What broke and where it is kept from breaking again: [`PITFALLS.md`](PITFALLS.md). The kernel plan: section 5 below; the
+parked mainline attempt: [`MAINLINE.md`](MAINLINE.md). Open work: the GitHub issues, roadmap #20.
 
 | Area | State | Since | Evidence |
 |---|---|---|---|
@@ -22,7 +22,7 @@ What broke and where it is kept from breaking again: [`PITFALLS.md`](PITFALLS.md
 | USB host through a hub | Ethernet, a UAS disk at 24.6 MB/s and PD charging in bypass work (issue #3) | 2026-10-30 | NOTES |
 | Not supported | WireGuard (not in 4.14; Tailscale instead), a hardware watchdog (no device node), `CFS_BANDWIDTH` (needs `!SCHED_WALT`), swarm/overlay networks | | NOTES |
 | Open problem | a `vendor_boot` regenerated from the current deviceinfo did not boot (issue #21) | 2026-10-30 | NOTES |
-| Mainline kernel | no boot yet: the ABL only runs header-v3 images, so the early tests were invalid (issue #6) | | [`MAINLINE.md`](MAINLINE.md) |
+| Mainline kernel | parked (2026-11-02, section 5). No boot yet: the ABL only runs header-v3 images, so the early tests were invalid (issue #6) | | [`MAINLINE.md`](MAINLINE.md) |
 
 ## 1. Device
 | Item | Value |
@@ -63,3 +63,19 @@ What broke and where it is kept from breaking again: [`PITFALLS.md`](PITFALLS.md
 - **Firewall:** nftables with all set backends built in.
 - **Boot test sequence:** stock kernel + own initramfs (first signs of life), then the pmOS initramfs, then `fastboot boot` of the full image, then flashing `boot_b`/`vendor_boot_b`/`userdata`. Details and pitfalls in `NOTES.md`.
 - **Wi-Fi:** see `userspace/modem/README.md`.
+
+
+## 5. Kernel plan (2026-11-02)
+
+The phone stays on the downstream 4.14 kernel, and that kernel becomes ours. Nothing of this is done yet.
+
+- **Our own kernel.** Fork the tree we build today (cool585's `android_kernel_motorola_sm6150`, commit `b92cb6cd`) into a
+  repository of our own, so the phone no longer depends on cool585's Cybertron releases. `scripts/build-kernel` and the
+  `linux-motorola-hanoip` APKBUILD then point at the fork.
+- **Our own patches.** `kernel/downstream-patches/0001-0010` become the first commits of the fork; new fixes go there, each
+  with its test, as now.
+- **Hardened for a server.** Turn off what a headless server does not use and turn on the hardening the 4.14 tree offers
+  (candidates to check: stack protector, hardened usercopy, `FORTIFY_SOURCE`, freelist hardening, module signature
+  enforcement, `kptr_restrict`/`dmesg_restrict`). Check each option against the running config first and enforce it in
+  `scripts/test-kernel-config`.
+- **Mainline is parked**, far in the background. [`MAINLINE.md`](MAINLINE.md) stays as the record of what was tried.
