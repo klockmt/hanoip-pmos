@@ -1,4 +1,4 @@
-# hanoip-mainline
+# hanoip-pmos
 
 postmarketOS on the Moto G60 (hanoip, SM7150), run as a **headless server reached over SSH**. The repo is public. Reply to the user in Portuguese; commits, code and docs are in English.
 

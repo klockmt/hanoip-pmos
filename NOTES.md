@@ -1,6 +1,6 @@
-# hanoip-mainline
+# hanoip-pmos
 
-postmarketOS port for the **Moto G60 (hanoip, XT2135-1)**: a working downstream-kernel (4.14) build and a mainline-kernel effort.
+postmarketOS port for the **Moto G60 (hanoip, XT2135-1)**: a working downstream-kernel (4.14) build, to become our own hardened server kernel; the mainline-kernel effort is parked (`docs/STATUS.md`, section 5).
 
 The rules (commits, personal data, flashing, SSH and security, tests for bugs) are in `AGENTS.md`. This file is the log of the device and its investigations; what works is in `docs/STATUS.md`.
 
