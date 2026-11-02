@@ -2,7 +2,7 @@
 
 postmarketOS on the Moto G60 (hanoip, SM7150), run as a **headless server reached over SSH**. The repo is public. Reply to the user in Portuguese; commits, code and docs are in English.
 
-Read `NOTES.md` (state, pitfalls, working rules) and `docs/STATUS.md` before touching anything. This file is the short version.
+The rules are here. Before touching anything read `docs/STATUS.md` (what works), then `NOTES.md` (the log of the investigations); `docs/PITFALLS.md` and `docs/HOMELAB.md` say what broke and how the phone is run.
 
 ## Rules that always apply
 - Run `scripts/check-repo` before every commit and push.
@@ -34,7 +34,7 @@ Every bug gets an automated test that fails before the fix and passes after (see
 
 | Bug | Cause | Rule |
 |---|---|---|
-| Battery stuck at 100 % for days, charge limit never cut, battery died, PMIC lost SDAM | `qpnp-qg` does not compute SoC after boot; a userspace daemon must write it back | `hanoip-qgd` must keep running; the charge limit must not trust the percentage alone (stale file > 15 min or < 3.75 V resumes charging) |
+| Battery stuck at 100 % for days, charge limit never cut, battery died, PMIC lost SDAM | `qpnp-qg` does not compute SoC after boot; a userspace daemon must write it back | `hanoip-qgd` must keep running; the charge limit must not trust the percentage alone (a stale file, older than 15 min except while holding on the cable, or < 3.75 V resumes charging) |
 | Percentage frozen at 100 % with the cable suspended | Charger keeps reporting `Full` while discharging | `Full` sets 100 % only when the batch shows no discharge (< 100 mA) or no samples |
 | Gauge scale off | Profile table is the cell's scale, kernel maps 3.4 V to 0 % and 4.45 V to 100 % | Pull toward the OCV on the kernel's scale |
 | SSH dropped, load 3-4, conntrack full (65,536) | Tailscale rewrote `resolv.conf` to its own MagicDNS and looped | `tailscale set --accept-dns=false`, then `resolvconf -u` |

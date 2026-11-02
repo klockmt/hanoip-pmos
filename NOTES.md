@@ -2,7 +2,7 @@
 
 postmarketOS port for the **Moto G60 (hanoip, XT2135-1)**: a working downstream-kernel (4.14) build and a mainline-kernel effort.
 
-The rules (commits, personal data, flashing, SSH and security, tests for bugs) are in `AGENTS.md`. This file is the detailed record of the device, the pitfalls and the investigations.
+The rules (commits, personal data, flashing, SSH and security, tests for bugs) are in `AGENTS.md`. This file is the log of the device and its investigations; what works is in `docs/STATUS.md`.
 
 ## Device
 
@@ -50,7 +50,7 @@ The rules (commits, personal data, flashing, SSH and security, tests for bugs) a
 ## Modem and Wi-Fi (works since 2026-10-30)
 
 Details, files and build in `userspace/modem/README.md`. **Solved on 2026-10-30:** the modem firmware reads SMEM item 134 (`mmi_unit_info`), written by Motorola's `mmi_info` driver, which our config had off (`CONFIG_MMI_INFO`, which also needs `CONFIG_MMI_ANNOTATE`; the stock `hanoip_defconfig` has both). With them `icnss` reaches `FW_READY` and `wlan0` associates through NetworkManager, WPA3 included. `hanoip-modem` is now in the `default` runlevel. Summary of the investigation before that:
-- Kernel with `QCA_CLD_WLAN=y` and `FW_LOADER_USER_HELPER_FALLBACK` off: the package `linux-motorola-hanoip` is now `pkgrel=3` with exactly the config and patches `0001`-`0003` of test kernel #10 and correct `sha512sums` (the old checksum was stale), but it was never built by pmbootstrap itself, only through `scripts/build-kernel` + `--envkernel`; tested only with `fastboot boot` (`$HANOIP_TEST_DIR/pmos-wlan/boot-wlan.img`). `boot_b` still holds build #4, without WLAN.
+- Kernel with `QCA_CLD_WLAN=y` and `FW_LOADER_USER_HELPER_FALLBACK` off: the package `linux-motorola-hanoip` then was `pkgrel=3` (it is at 12 now) with exactly the config and patches `0001`-`0003` of test kernel #10 and correct `sha512sums` (the old checksum was stale), but it was never built by pmbootstrap itself, only through `scripts/build-kernel` + `--envkernel`; tested only with `fastboot boot` (`$HANOIP_TEST_DIR/pmos-wlan/boot-wlan.img`). `boot_b` still holds build #4, without WLAN.
 - On the device (before 2026-11-01 by hand, now from the `device-motorola-hanoip-modem` subpackage): Alpine's `rmtfs` (read-only, `-r`); `qrtr-ns` v1.0, `pd-mapper` and `tqftpserv` with patches; the udev and openrc files. Still from the phone itself: firmware in `/lib/firmware` and `/var/lib/tqftpserv` copied from `persist` (ro,noload).
 - Requirements found: a userspace QRTR name server; remoteproc fallback to `/lib/firmware`; `fsg` → `fsg_b` link (without it, `rmts_get_buffer api failed`); IPA up (`echo 1 > /dev/ipa`) and ready (`rmnet_ipa0`) **before** the modem; `restart_level` set to `RELATED`.
 - Result: modem `ONLINE`, `wlan_pd` comes up and WLFW connects, but the Wi-Fi firmware crashes 0.7 s later (`early crash indication`, `EX:kernel:0x0:tmr_slave1:0x1d1`), in a loop, before `FW_READY` and without ever asking for `bdwlan`. DT, IPA order and `/readwrite` are already ruled out. (That crash was the missing SMEM item; see above.) Every test needs a clean boot (the modem does not restart well within the same session).
@@ -141,7 +141,7 @@ Active slot `b`. **Lineage was replaced by pmOS** (the user's choice on 24/10): 
 1. Update the kernel on the device: new `boot.img` → `fastboot flash boot_b ...`; initramfs/cmdline/DTB changes → also `fastboot flash vendor_boot_b ...`.
 2. (done 24/10) `boot_b` flashed with the firewall kernel (build #4): autonomous boot with `nftables` active.
 3. (done 30/10 and 01/11) Wi-Fi works; its userspace ships in the device package (`device-motorola-hanoip-modem`, issue #10).
-4. Server tuning: whatever services the user wants to run (zram is done). `sudo` keeps asking for a password.
+4. Server tuning: whatever services the user wants to run (zram is done). `sudo` asks for a password; `scripts/hanoip-sudo` supplies it from `.env`.
 5. Repository: public on GitHub; open problems live in its issues (roadmap: issue #20).
 6. Mainline (long term): v3 `vendor_boot` with our own DTB on slot `b` (the slot `a` tests do not count). Mainline Wi-Fi uses `ath10k`, which works on sweet/sunfish with this same chip.
 7. Battery cycle count: done on 2026-11-01 (patch `0007`, `scripts/restore-cycle-counts`, see "Battery cycle count" below). Issue #5.

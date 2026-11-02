@@ -131,7 +131,7 @@ I want to be clear about what has and has not been run end to end.
 | Step | How it was checked |
 | --- | --- |
 | `check-host` | Ran on the author's machine |
-| `build-kernel` | **Ran from scratch** in an empty directory from the official download: the 3 patches applied, the kernel built (4 min 19 s) and the result **booted pmOS to SSH** with `fastboot boot` |
+| `build-kernel` | **Ran from scratch** in an empty directory from the official download: the 3 patches that existed then applied (there are 10 now), the kernel built (4 min 19 s) and the result **booted pmOS to SSH** with `fastboot boot` |
 | `setup-pmaports` | **Ran for real**; the checkout it builds is byte-identical to the author's pmaports that produced the working image |
 | `mkbootimg-kernel`, `reboot-bootloader`, `hanoip-ssh` | Used on the real phone in that boot test |
 | `build-image`, `configure-pmbootstrap` | Dry-run only (they need `sudo` and an interactive `init`). The commands are the ones the author ran to produce the images that boot. The package build **without** `--envkernel` (letting pmbootstrap compile the kernel itself) was never tried |
