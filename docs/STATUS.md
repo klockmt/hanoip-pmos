@@ -13,7 +13,7 @@ parked mainline attempt: [`MAINLINE.md`](MAINLINE.md). Open work: the GitHub iss
 | Wi-Fi (WCN3990) | works: 2.4/5 GHz, WPA3, back after a reboot; the userspace is the `-modem` subpackage. A 24 h hold was not measured | 2026-10-30, packaged 2026-11-01 | `scripts/test-modem-package`; `userspace/modem/README.md` |
 | Battery percentage, charge limit, heat | `hanoip-qgd` (Rust), `hanoip-charge-limit` (holds 80-82 % on the cable), `hanoip-thermal` | 2026-10-28 | `scripts/test-qgd`, `test-charge-limit`, `test-thermal`; `BATTERY.md` |
 | Cycle counters | restored (`bms/cycle_counts` writable), kept across reboots | 2026-11-01 | `scripts/test-cycle-counts`, `test-restore-cycle-counts` |
-| Telegram bot and `/status` | Rust since 2026-11-01; the package no longer needs `python3`. Not checked: the commands on Telegram itself (issue #22) | 2026-11-01 | `scripts/test-bot`, `scripts/test-status` |
+| Telegram bot and `/status` | Rust since 2026-11-01; the package no longer needs `python3`. Not checked: the commands on Telegram itself (issue #22, closed without that check) | 2026-11-01 | `scripts/test-bot`, `scripts/test-status` |
 | A/B slot | `qbootctl -m` at every boot marks slot b successful | 2026-10-24 | PITFALLS (docs only) |
 | zram | zstd, 5.3 GB, priority 300 | 2026-11-01 | `scripts/test-kernel-config` |
 | Containers | namespaces, `pids`/`devices` cgroups, NAT/bridge; use `crun` (the `runc` of Alpine edge panics on 4.14) | 2026-11-01 | NOTES; `scripts/test-kernel-config` |
@@ -21,7 +21,7 @@ parked mainline attempt: [`MAINLINE.md`](MAINLINE.md). Open work: the GitHub iss
 | btrfs | built in, mounts with `compress=zstd`; tested on a loop image, not on the NAS disk (issue #19) | 2026-11-01 | `scripts/test-kernel-config`; NOTES |
 | USB host through a hub | Ethernet, a UAS disk at 24.6 MB/s and PD charging in bypass work (issue #3) | 2026-10-30 | NOTES |
 | Not supported | WireGuard (not in 4.14; Tailscale instead), a hardware watchdog (no device node), `CFS_BANDWIDTH` (needs `!SCHED_WALT`), swarm/overlay networks | | NOTES |
-| Open problem | a `vendor_boot` regenerated from the current deviceinfo did not boot (issue #21) | 2026-10-30 | NOTES |
+| Package update flashes `boot` and `vendor_boot` | boot-deploy's images from the repo's deviceinfo boot; the 2026-10-30 hang was `console=tty0` first in the command line, now `console=ttyMSM0,115200n8` first; a package update flashed both partitions and booted (issue #21, v0.1.13) | 2026-11-02 | `scripts/test-deviceinfo`; NOTES |
 | Mainline kernel | parked (2026-11-02, section 5). No boot yet: the ABL only runs header-v3 images, so the early tests were invalid (issue #6) | | [`MAINLINE.md`](MAINLINE.md) |
 
 ## 1. Device
