@@ -1,104 +1,94 @@
-#!/usr/bin/env python3
-# Checks hanoip-bot's replies without the Telegram API: only the owner's private chat is answered,
-# the two commands are fixed, and the status output is cut to fit a Telegram message.
-import sys
-import importlib.machinery
-import importlib.util
-import os
-import stat
-import tempfile
+#!/bin/sh
+# Checks hanoip-bot without Telegram or the phone. The unit tests inside hanoip-bot.rs (rustc --test) cover the
+# commands, who is answered, the watch schedule, the status runner, the JSON reader and the curl config. This script
+# then builds the real binary and runs it against a fake Telegram on localhost, with the real curl: the text arrives
+# byte for byte (quotes, newlines, accents), the token never shows in curl's arguments, a stranger is ignored, the
+# owner's /up is answered, and a network error does not print the token.
+set -eu
+cd "$(dirname "$0")/.."
+src=pmaports/device/testing/device-motorola-hanoip/hanoip-bot.rs
+tmp=$(mktemp -d)
+srv= bot=
+trap '[ -z "$srv" ] || kill "$srv" 2>/dev/null; [ -z "$bot" ] || kill "$bot" 2>/dev/null; rm -rf "$tmp"' EXIT
+fail() { echo "FAIL: $*" >&2; exit 1; }
 
-sys.dont_write_bytecode = True  # keep the package directory free of __pycache__
-here = os.path.dirname(os.path.abspath(__file__))
-path = os.path.join(here, "..", "pmaports", "device", "testing", "device-motorola-hanoip", "hanoip-bot")
-loader = importlib.machinery.SourceFileLoader("hanoip_bot", path)
-spec = importlib.util.spec_from_loader("hanoip_bot", loader)
-bot = importlib.util.module_from_spec(spec)
-loader.exec_module(bot)
+rustc --edition 2021 --test -o "$tmp/unit" "$src"
+"$tmp/unit" -q
+rustc --edition 2021 -o "$tmp/bot" "$src"
 
-OWNER = 1234
-real_run_status = bot.run_status
+cat > "$tmp/server.py" <<'PY'
+import json, sys, time, urllib.parse
+from http.server import BaseHTTPRequestHandler, HTTPServer
+tmp = sys.argv[1]
+state = {"polls": 0}
+class H(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def do_POST(self):
+        body = self.rfile.read(int(self.headers.get("Content-Length", 0))).decode()
+        form = {k: v[0] for k, v in urllib.parse.parse_qs(body, keep_blank_values=True).items()}
+        method = self.path.rsplit("/", 1)[-1]
+        with open(tmp + "/requests.log", "a") as f:
+            f.write(json.dumps({"path": self.path, "method": method, "form": form}, ensure_ascii=False) + "\n")
+        result = {}
+        if method == "getUpdates":
+            state["polls"] += 1
+            if state["polls"] == 1:
+                msg = lambda uid, who, text: {"update_id": uid, "message": {"from": {"id": who}, "chat": {"id": who}, "text": text}}
+                result = [msg(10, 99, "/up"), msg(11, 1234, "/up"), {"update_id": 12, "edited_message": {}}]
+            else:
+                time.sleep(0.2)
+                result = []
+        out = json.dumps({"ok": True, "result": result}).encode()
+        self.send_response(200); self.send_header("Content-Length", str(len(out))); self.end_headers(); self.wfile.write(out)
+srv = HTTPServer(("127.0.0.1", 0), H)
+open(tmp + "/port", "w").write(str(srv.server_port))
+srv.serve_forever()
+PY
+python3 -I "$tmp/server.py" "$tmp" &
+srv=$!
+i=0; while [ ! -s "$tmp/port" ]; do i=$((i + 1)); [ $i -lt 50 ] || fail "the fake Telegram did not start"; sleep 0.1; done
+port=$(cat "$tmp/port")
+printf 'TOKEN=123:SECRETTOKEN\nOWNER_ID=1234\n' > "$tmp/telegram.env"
+# curl through a wrapper that records the arguments it gets
+printf '#!/bin/sh\necho "$*" >> "%s/curl-args.log"\nexec curl "$@"\n' "$tmp" > "$tmp/curlwrap"
+chmod +x "$tmp/curlwrap"
+export HANOIP_BOT_ENV=$tmp/telegram.env HANOIP_API=http://127.0.0.1:$port HANOIP_CURL=$tmp/curlwrap
 
+# 1. --alert: the text arrives intact
+text=$(printf 'linha "1" com \\ barra\nlinha 2 ação ✓')
+"$tmp/bot" --alert "$text"
+python3 -I - "$tmp" "$text" <<'PY' || fail "the alert did not arrive intact"
+import json, sys
+tmp, text = sys.argv[1], sys.argv[2]
+reqs = [json.loads(l) for l in open(tmp + "/requests.log")]
+sent = [r for r in reqs if r["method"] == "sendMessage"]
+assert len(sent) == 1, reqs
+assert sent[0]["path"] == "/bot123:SECRETTOKEN/sendMessage", sent[0]["path"]
+assert sent[0]["form"] == {"chat_id": "1234", "text": text}, sent[0]["form"]
+PY
+[ "$(cat "$tmp/curl-args.log")" = "-K -" ] || fail "curl got arguments other than -K -: $(cat "$tmp/curl-args.log")"
+! grep -q SECRET "$tmp/curl-args.log" || fail "the token showed in curl's arguments"
 
-def msg(text, sender=OWNER, chat=OWNER):
-    return {"from": {"id": sender}, "chat": {"id": chat}, "text": text}
+# 2. the polling loop: a stranger's /up is ignored, the owner's is answered, an update without message is skipped
+: > "$tmp/requests.log"
+"$tmp/bot" 2> "$tmp/bot.err" &
+bot=$!
+i=0; while ! grep -q '"sendMessage"' "$tmp/requests.log"; do i=$((i + 1)); [ $i -lt 100 ] || fail "the bot did not answer /up"; sleep 0.1; done
+sleep 0.5
+kill "$bot" 2>/dev/null || true; wait "$bot" 2>/dev/null || true; bot=
+python3 -I - "$tmp" <<'PY' || fail "the polling loop did something else than expected"
+import json, sys
+reqs = [json.loads(l) for l in open(sys.argv[1] + "/requests.log")]
+sent = [r["form"] for r in reqs if r["method"] == "sendMessage"]
+assert sent == [{"chat_id": "1234", "text": "de pé"}], sent
+polls = [r["form"] for r in reqs if r["method"] == "getUpdates"]
+assert polls[0]["offset"] == "0" and polls[1]["offset"] == "13", polls[:2]   # past update 12, the one without a message
+PY
+! grep -q SECRET "$tmp/bot.err" || fail "the token showed in the bot's error output"
 
-
-def check(name, got, want):
-    if got != want:
-        raise SystemExit(f"FAIL {name}: got {got!r}, want {want!r}")
-
-
-def fake_status(*args):
-    fake_status.calls += 1
-    return "help ok" if args == ("-h",) else "status ok"
-
-
-fake_status.calls = 0
-bot.run_status = fake_status
-
-check("owner /up", bot.reply_for(msg("/up"), OWNER), ("de pé", None))
-check("owner /status runs the status", bot.reply_for(msg("/status"), OWNER), ("status ok", None))
-check("owner /status@bot", bot.reply_for(msg("/status@hanoip_bot"), OWNER), ("status ok", None))
-check("stranger ignored", bot.reply_for(msg("/status", sender=99), OWNER), (None, None))
-check("group chat ignored", bot.reply_for(msg("/status", chat=-100), OWNER), (None, None))
-check("stranger cannot start a watch", bot.reply_for(msg("/status -t=30 -g=1", sender=99), OWNER), (None, None))
-check("unknown text answered with help", bot.reply_for(msg("; rm -rf /"), OWNER), (bot.HELP, None))
-check("unknown text does not run the status", fake_status.calls, 2)
-
-# /status -t=MIN -g=MIN starts an automatic status; /stop ends it.
-text, watch = bot.reply_for(msg("/status -t=30 -g=1"), OWNER)
-check("watch request", watch, (30, 1))
-check("watch replies with the status now", text.endswith("status ok") and "a cada 1 min por 30 min" in text, True)
-check("/stop", bot.reply_for(msg("/stop"), OWNER), ("envio automático parado", "stop"))
-check("/status -h explains each line", bot.reply_for(msg("/status -h"), OWNER), ("help ok", None))
-check("/status -h with more words is the usage", bot.reply_for(msg("/status -h x"), OWNER), (bot.USAGE, None))
-check("bad watch gives the usage and starts nothing", bot.reply_for(msg("/status -t=abc"), OWNER), (bot.USAGE, None))
-check("parse both", bot.parse_watch(["-g=5", "-t=60"]), (60, 5))
-check("parse defaults", bot.parse_watch(["-t=10"]), (10, 1))
-check("parse default time", bot.parse_watch(["-g=2"]), (30, 2))
-for bad in (["-t=0"], ["-g=0"], ["-g=61"], ["-t=1441"], ["-t=5", "-g=10"], ["-t=-1"], ["-t=1.5"], ["-t"],
-            ["-t=30", "-t=30"], ["-x=1"], ["-t=²"], ["-t=30;reboot"]):
-    check(f"parse rejects {bad}", bot.parse_watch(bad), None)
-
-# Schedule: /status -t=3 -g=1 at t=0 sends now (in the reply), then at 1, 2 and 3 minutes, the last marked.
-w = bot.start_watch(3, 1, 0)
-check("not due before the gap", bot.due(w, 59), (False, w, False))
-sent = []
-for now in range(0, 400, 10):
-    send_now, w, last = bot.due(w, now)
-    if send_now:
-        sent.append((now, last))
-check("sends at 1, 2 and 3 minutes, the last one at 3", sent, [(60, False), (120, False), (180, True)])
-check("nothing after the end", w, None)
-missed = bot.start_watch(10, 1, 0)
-send_now, missed, last = bot.due(missed, 300)  # offline for 5 minutes: one send, no burst
-check("missed sends are skipped", (send_now, missed[0], last), (True, 360, False))
-
-# The real runner, with a temporary command so the test does not depend on the phone.
-tmp = tempfile.mkdtemp()
-script = os.path.join(tmp, "status")
-with open(script, "w") as f:
-    f.write("#!/bin/sh\nhead -c 5000 /dev/zero | tr '\\0' a\n")
-os.chmod(script, os.stat(script).st_mode | stat.S_IEXEC)
-bot.STATUS = script
-check("long output is cut", len(real_run_status()), bot.MAX_TEXT)
-
-with open(script, "w") as f:
-    f.write("#!/bin/sh\necho \"$@\"\n")
-check("-h reaches the command as a fixed argument", real_run_status("-h"), "-h\n")
-
-bot.STATUS = os.path.join(tmp, "missing")
-check("missing command is text, not a crash", real_run_status(), "erro ao rodar hanoip-status: FileNotFoundError")
-
-# --alert sends one fixed text to the owner, cut to a Telegram message.
-env = os.path.join(tmp, "telegram.env")
-with open(env, "w") as f:
-    f.write("TOKEN=t\nOWNER_ID=1234\n")
-bot.ENV = env
-sent_to = []
-bot.send = lambda token, owner, text: sent_to.append((token, owner, text))
-bot.alert("a" * 5000)
-check("alert goes to the owner, cut", sent_to, [("t", 1234, "a" * bot.MAX_TEXT)])
-
-print("bot replies: all checks pass")
+# 3. a network error is reported without the token, and the bot keeps going
+kill "$srv"; wait "$srv" 2>/dev/null || true; srv=
+timeout 3 "$tmp/bot" 2> "$tmp/down.err" || true
+grep -q "getUpdates failed" "$tmp/down.err" || fail "no error line when the network is down"
+! grep -q SECRET "$tmp/down.err" || fail "the token showed in the error line"
+echo "bot: all checks pass"
