@@ -16,6 +16,7 @@ One line each, in this order:
 8. Battery power: the battery's own flow, |current_now| x voltage_now (as btop shows it), then charging or not charging, plus bypass when the charge limit stopped charging and the cable powers the phone.
 9. Energy drain: what the whole phone draws, and from where: cable (usb input_current_now x voltage_now) or battery (the same figure as line 8).
 10. Body: temperature of the quiet_therm sensor, the closest to the case.
+Warning: an 11th line, shown only when /etc/resolv.conf points at Tailscale's DNS (100.100.100.100): the start of the DNS loop, fixed by tailscale set --accept-dns=false and resolvconf -u.
 EOF
 	exit 0
 fi
@@ -69,3 +70,7 @@ echo "Battery - $(cat $bat/capacity) % | $(awk -v v=$volt 'BEGIN{printf "%.2f", 
 echo "$batw | $charging"
 echo "Energy drain - $total"
 echo "Body - $(zones quiet_therm) °C"
+# HANOIP_RESOLV_CONF replaces /etc/resolv.conf, for tests.
+if grep -q '100\.100\.100\.100' "${HANOIP_RESOLV_CONF:-/etc/resolv.conf}" 2>/dev/null; then
+	echo "Warning - resolv.conf uses Tailscale's DNS (100.100.100.100): tailscale set --accept-dns=false, then resolvconf -u"
+fi

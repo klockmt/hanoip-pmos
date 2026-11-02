@@ -77,3 +77,13 @@ echo 120 > "$b/cycle_count"
 state "Not charging" 0 0 0 1
 expect "cycles are the kernel's count as it is" "$(line 7)" "Battery - 81 % | 4.33 V | 120 cycles | 31.6 °C"
 echo "status: all checks pass"
+
+# A resolv.conf that points at Tailscale's MagicDNS is the start of the DNS loop (docs/HOMELAB.md): warn in an 11th line.
+# A normal one adds nothing, so the ten lines -h describes stay ten.
+printf 'nameserver 192.168.10.1\n' > "$dir/resolv.conf"
+expect "no warning with the router's DNS" "$(HANOIP_RESOLV_CONF=$dir/resolv.conf sh "$script" | wc -l)" "10"
+printf 'nameserver 100.100.100.100\n' > "$dir/resolv.conf"
+w=$(HANOIP_RESOLV_CONF=$dir/resolv.conf sh "$script")
+expect "warning with MagicDNS" "$(echo "$w" | wc -l)" "11"
+expect "warning text" "$(echo "$w" | sed -n 11p)" "Warning - resolv.conf uses Tailscale's DNS (100.100.100.100): tailscale set --accept-dns=false, then resolvconf -u"
+expect "warning is explained by -h" "$(sh "$script" -h | grep -c '^Warning')" "1"
