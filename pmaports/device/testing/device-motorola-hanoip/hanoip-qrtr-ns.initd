@@ -1,5 +1,5 @@
 #!/sbin/openrc-run
-# The 4.14 kernel has no QRTR name server; qrtr-ns v1.0 is built separately.
+# The 4.14 kernel has no QRTR name server; qrtr-ns v1.0 is built into the package as hanoip-qrtr-ns.
 supervisor=supervise-daemon
-command=/usr/local/bin/qrtr-ns
+command=/usr/bin/hanoip-qrtr-ns
 command_args="${command_args:--f}"

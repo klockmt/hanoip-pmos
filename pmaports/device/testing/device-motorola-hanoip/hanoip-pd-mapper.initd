@@ -1,7 +1,8 @@
 #!/sbin/openrc-run
+# pd-mapper with a /lib/firmware fallback for the .jsn files: 4.14 has no remoteproc (it has msm_subsys).
 supervisor=supervise-daemon
-command=/usr/local/bin/pd-mapper
+command=/usr/bin/hanoip-pd-mapper
 
 depend() {
-	need qrtr-ns
+	need hanoip-qrtr-ns
 }

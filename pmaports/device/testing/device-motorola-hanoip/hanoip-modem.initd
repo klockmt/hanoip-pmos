@@ -8,7 +8,7 @@ pidfile=/run/hanoip-modem.pid
 retry="TERM/30/KILL/5"
 
 depend() {
-	need qrtr-ns pd-mapper tqftpserv-legacy rmtfs
+	need hanoip-qrtr-ns hanoip-pd-mapper hanoip-tqftpserv hanoip-rmtfs
 }
 
 start_pre() {

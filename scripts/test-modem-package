@@ -1,0 +1,50 @@
+#!/bin/sh
+# Checks the modem/Wi-Fi subpackage of the device package without a phone: its services exist and point at files the
+# package installs, depend on each other by names it ships, the udev rule follows the active slot instead of fsg_b,
+# both patches are applied before the build, and installing it turns hanoip-modem on.
+set -eu
+cd "$(dirname "$0")/.."
+d=pmaports/device/testing/device-motorola-hanoip
+apk=$d/APKBUILD
+bad=0
+fail() { echo "FAIL: $*" >&2; bad=1; }
+
+grep -q '^subpackages=' "$apk" && sed -n '/^subpackages="/,/"/p' "$apk" | grep -q '$pkgname-modem:modem' || fail "the APKBUILD has no modem subpackage"
+code=$(grep -v '^[[:space:]]*#' "$apk")
+
+for s in hanoip-modem hanoip-qrtr-ns hanoip-pd-mapper hanoip-tqftpserv hanoip-rmtfs; do
+	f=$d/$s.initd
+	[ -f "$f" ] || { fail "$f is missing"; continue; }
+	[ "$(head -1 "$f")" = '#!/sbin/openrc-run' ] || fail "$f is not an openrc-run script"
+	sh -n "$f" 2>/dev/null || fail "$f does not parse"
+	echo "$code" | grep -q "\$srcdir/$s.initd\" \"\$pkgdir/etc/init.d/$s\"" || fail "$s.initd is not installed as /etc/init.d/$s"
+	cmd=$(sed -n 's/^command=//p' "$f" | head -1)
+	case $cmd in
+	/usr/bin/hanoip-*) echo "$code" | grep -q "\"\$pkgdir$cmd\"" || fail "$f runs $cmd, which the package does not install" ;;
+	/usr/bin/rmtfs) sed -n '/^modem()/,/^}/p' "$apk" | grep -q 'depends=.*rmtfs' || fail "$f runs $cmd but the subpackage does not depend on rmtfs" ;;
+	/bin/sh) ;;
+	*) fail "$f runs $cmd, not a path this check knows" ;;
+	esac
+	# what it needs must be a service the package ships
+	for n in $(sed -n 's/^[[:space:]]*\(need\|use\) //p' "$f"); do
+		case $n in hanoip-*) [ -f "$d/$n.initd" ] || fail "$f needs $n, which the package does not ship" ;; esac
+	done
+done
+
+rules=$d/hanoip-modem.rules
+[ -f "$rules" ] || fail "$rules is missing"
+! grep -qE 'fsg_[ab]' "$rules" 2>/dev/null || fail "the udev rule hard-codes a slot (fsg_a or fsg_b)"
+grep -q 'slot_suffix' "$rules" 2>/dev/null || fail "the udev rule does not read the active slot"
+echo "$code" | grep -q "hanoip-modem.rules\" \"\$pkgdir/usr/lib/udev/rules.d/90-hanoip-modem.rules\"" || fail "the udev rule is not installed"
+
+for p in pd-mapper-subsys-fallback tqftpserv-subsys-fallback; do
+	[ -f "$d/$p.patch" ] || fail "$p.patch is missing"
+	sed -n '/^prepare()/,/^}/p' "$apk" | grep -q "$p.patch" || fail "prepare() does not apply $p.patch"
+done
+sed -n '/^prepare()/,/^}/p' "$apk" | grep -q 'hanoip-qgd\|patch' || fail "no prepare() in the APKBUILD"
+
+pi=$d/device-motorola-hanoip-modem.post-install
+[ -f "$pi" ] && grep -q 'rc-update add hanoip-modem default' "$pi" || fail "installing the subpackage does not enable hanoip-modem"
+grep -q 'install=.*-modem.post-install' "$apk" || fail "the APKBUILD does not list the subpackage's post-install script"
+[ $bad -eq 0 ] && echo "modem package: ok"
+exit $bad

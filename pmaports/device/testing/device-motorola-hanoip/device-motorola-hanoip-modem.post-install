@@ -1,0 +1,4 @@
+#!/bin/sh
+# The Wi-Fi runs inside the modem, which has to be brought up at every boot.
+rc-update add hanoip-modem default >/dev/null 2>&1 || true
+exit 0

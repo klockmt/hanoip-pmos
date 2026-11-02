@@ -1,0 +1,15 @@
+#!/sbin/openrc-run
+# Alpine's rmtfs with the options this kernel needs: no -s (4.14 has no remoteproc to sync with), -P (read the EFS
+# from the partitions) and -r (read-only: never writes to modemst1/2/fsg).
+supervisor=supervise-daemon
+name="RMTFS"
+description="Qualcomm remote file system service"
+command=/usr/bin/rmtfs
+command_args="${command_args:--P -r -v}"
+respawn_delay=1
+
+depend() {
+	before networkmanager
+	after udev-settle
+	need hanoip-qrtr-ns
+}

@@ -1,4 +1,12 @@
 # rmtfs looks for the EFS shared memory at /dev/qcom_rmtfs_uio1 (4.14 exposes it as the uio device named "rmtfs").
 SUBSYSTEM=="uio", ATTR{name}=="rmtfs", SYMLINK+="qcom_rmtfs_uio1"
-# The modem asks for the "fsg" partition, which on the hanoip only exists per slot; pmOS runs on slot b.
-SUBSYSTEM=="block", ENV{ID_PART_ENTRY_NAME}=="fsg_b", SYMLINK+="disk/by-partlabel/fsg"
+
+# The modem asks for the "fsg" partition, which on the hanoip only exists per slot: link the one of the active slot,
+# read from the kernel command line (androidboot.slot_suffix=_a or _b). A rule cannot match against a substitution,
+# so PROGRAM does the comparison.
+SUBSYSTEM!="block", GOTO="hanoip_modem_end"
+ENV{ID_PART_ENTRY_NAME}!="fsg_?", GOTO="hanoip_modem_end"
+IMPORT{cmdline}="androidboot.slot_suffix"
+ENV{androidboot.slot_suffix}=="", GOTO="hanoip_modem_end"
+PROGRAM="/bin/sh -c '[ \"$env{ID_PART_ENTRY_NAME}\" = \"fsg$env{androidboot.slot_suffix}\" ]'", SYMLINK+="disk/by-partlabel/fsg"
+LABEL="hanoip_modem_end"
