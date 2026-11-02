@@ -95,4 +95,10 @@ kill "$srv"; wait "$srv" 2>/dev/null || true; srv=
 timeout 3 "$tmp/bot" 2> "$tmp/down.err" || true
 grep -q "getUpdates failed" "$tmp/down.err" || fail "no error line when the network is down"
 ! grep -q SECRET "$tmp/down.err" || fail "the token showed in the error line"
+
+# 4. without telegram.env (a fresh install) the service refuses to start, instead of panicking every 5 s
+initd=pmaports/device/testing/device-motorola-hanoip/hanoip-bot.initd
+pre() { HANOIP_BOT_ENV=$1 sh -c '. "$1"; eerror() { :; }; start_pre' sh "$initd" 2>/dev/null; }
+! pre "$tmp/none" || fail "the service starts without telegram.env"
+pre "$tmp/telegram.env" || fail "the service refuses to start with telegram.env"
 echo "bot: all checks pass"
