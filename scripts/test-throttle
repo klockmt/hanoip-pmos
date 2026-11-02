@@ -1,0 +1,44 @@
+#!/bin/sh
+# A transfer over the USB (NCM) network that runs at full speed takes the link down until a reboot (issue #2, cause
+# unknown), so every script that feeds data to a command on the phone through hanoip-ssh must go through `pv -L`.
+# A small config file is exempt with a `# small` comment on the line. Lines that only echo a dry run, comments and
+# tests are skipped; hanoip-sudo is not a data path (it sends the command and the password, nothing else).
+set -eu
+cd "$(dirname "$0")/.."
+bad=0
+# unthrottled <file>...: prints "file: line" for each logical line (backslash continuations joined) that pipes into or
+# redirects a file into hanoip-ssh or ssh_ with no `pv -L` and no `# small`.
+unthrottled() {
+	for f in "$@"; do
+		awk -v f="$f" '
+			{ line = line $0; if (sub(/\\$/, "", line)) next
+			  if (line !~ /^[ \t]*(#|echo)/ && line ~ /(hanoip-ssh|ssh_)([ "'"'"']|$)/ && line !~ /pv -L/ && line !~ /# small/ &&
+			      (line ~ /\|[ \t]*("?[^|]*\/)?(hanoip-ssh|ssh_)/ || line ~ /[^<]<[ \t]*[^<(]/))
+			      print f ": " line
+			  line = "" }' "$f"
+	done
+}
+out=$(unthrottled $(ls scripts/* | grep -v '/test-\|/check-repo$'))
+[ -z "$out" ] || { echo "FAIL: data goes into hanoip-ssh with no pv -L (or a # small comment):" >&2; echo "$out" >&2; bad=1; }
+
+# The check itself: it must flag each of these and let each of the others pass.
+dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT
+cat > "$dir/bad" <<'FIX'
+cat big.img | "$dir/hanoip-ssh" 'cat > /tmp/x'
+tar -cf - lib | hanoip-ssh 'tar -x'
+ssh_ 'cat > /tmp/x' < "$img"
+"$d/hanoip-ssh" 'tee /x' \
+	< "$f"
+FIX
+cat > "$dir/good" <<'FIX'
+pv -L 1m < "$img" | ssh_ 'cat > /tmp/x'
+tar -cf - lib | pv -L 1m | "$dir/hanoip-ssh" 'cat > /tmp/m'
+hanoip-ssh 'tee /x' < "$conf"  # small
+echo "+ tar x | hanoip-ssh 'tar -x'"
+hanoip-ssh 'cat /etc/os-release' | head -1
+hanoip-ssh 'uptime'
+FIX
+[ "$(unthrottled "$dir/bad" | wc -l | tr -d ' ')" = 4 ] || { echo "FAIL: the check misses an unthrottled transfer" >&2; unthrottled "$dir/bad" >&2; bad=1; }
+[ -z "$(unthrottled "$dir/good")" ] || { echo "FAIL: the check flags a throttled or harmless line" >&2; unthrottled "$dir/good" >&2; bad=1; }
+[ $bad -eq 0 ] && echo "throttle: ok"
+exit $bad

@@ -13,4 +13,4 @@ cd "$img"
 files=$(ls | grep -E '^(modem\.(mdt|b[0-9]+)|wlanmdsp\.mbn|.*\.jsn|mcfg_(hw|sw)\.mbn|mbn_(hw|sw)\.(dig|txt)|qdsp6m\.qdb|regdb\.bin|bdwlan.*|ipa_fws\..*|adsp\..*|cdsp\..*)$')
 tar -cf - $files | pv -L 1m | "$(dirname "$0")/hanoip-ssh" 'sudo tar -xf - -C /lib/firmware'
 "$(dirname "$0")/hanoip-ssh" 'sudo mkdir -p /lib/firmware/wlan/qca_cld && sudo tee /lib/firmware/wlan/qca_cld/WCNSS_qcom_cfg.ini >/dev/null' \
-	< "$HANOIP_COLLECTION_DIR/firmware/vendor/etc/wifi/WCNSS_qcom_cfg.ini"
+	< "$HANOIP_COLLECTION_DIR/firmware/vendor/etc/wifi/WCNSS_qcom_cfg.ini" # small: one config file

@@ -5,4 +5,4 @@
 set -eu
 . "$(dirname "$0")/env.sh"
 src=$HANOIP_ROOT/pmaports/device/testing/device-motorola-hanoip/hanoip-console.start
-run "$(dirname "$0")/hanoip-ssh" 'sudo tee /etc/local.d/10-hanoip-console.start >/dev/null && sudo chmod 755 /etc/local.d/10-hanoip-console.start && echo "installed /etc/local.d/10-hanoip-console.start"' < "$src"
+run "$(dirname "$0")/hanoip-ssh" 'sudo tee /etc/local.d/10-hanoip-console.start >/dev/null && sudo chmod 755 /etc/local.d/10-hanoip-console.start && echo "installed /etc/local.d/10-hanoip-console.start"' < "$src" # small: one script

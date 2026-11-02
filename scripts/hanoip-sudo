@@ -6,4 +6,4 @@
 [ -n "${HANOIP_SUDO_PASSWORD:-}" ] || { echo "HANOIP_SUDO_PASSWORD is not set in .env" >&2; exit 1; }
 [ $# -eq 1 ] || { echo "usage: $0 'command'" >&2; exit 2; }
 cmd=$(printf '%s' "$1" | base64 -w0)
-printf '%s\n' "$HANOIP_SUDO_PASSWORD" | "$(dirname "$0")/hanoip-ssh" "sudo -S -p '' sh -c 'echo $cmd | base64 -d | sh'"
+printf '%s\n' "$HANOIP_SUDO_PASSWORD" | "$(dirname "$0")/hanoip-ssh" "sudo -S -p '' sh -c 'echo $cmd | base64 -d | sh'" # small: the password and the command
