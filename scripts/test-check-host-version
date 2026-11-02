@@ -7,7 +7,9 @@ cd "$(dirname "$0")/.."
 fail() { echo "FAIL: $*" >&2; exit 1; }
 [ -f pmaports/PMBOOTSTRAP_VERSION ] || fail "pmaports/PMBOOTSTRAP_VERSION is missing"
 want=$(cat pmaports/PMBOOTSTRAP_VERSION)
-grep -q "pmbootstrap==$want" README.md || fail "README.md does not install pmbootstrap==$want"
+# 3.x is not on PyPI (the newest there is 2.1.0): pip install pmbootstrap==3.12.1 cannot work, found on a clean machine.
+grep -q 'pip install pmbootstrap==' README.md && fail "README.md installs pmbootstrap from PyPI, which has no $want"
+grep -q -- "--branch $want https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git" README.md || fail "README.md does not install pmbootstrap from the $want tag on gitlab.postmarketos.org"
 dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT
 mkdir -p "$dir/scripts" "$dir/pmaports"
 cp scripts/check-host scripts/env.sh "$dir/scripts/"; cp pmaports/PMBOOTSTRAP_VERSION "$dir/pmaports/"

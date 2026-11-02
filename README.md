@@ -26,7 +26,7 @@ Everything is scripted. Steps marked **[manual]** need your hands on the phone o
 | On the phone | Root `adb` for the backup (KernelSU or Magisk), and a **recovery with adb that can write `userdata`**. The author's phone ran **LineageOS 22.1** and used its recovery, so install that first. Motorola's fastboot refuses to flash `userdata`, which is why a recovery is needed |
 | Host | x86-64 Linux, internet, a USB cable, about 11 GB of free disk (4.5 GB kernel tree + 6 GB pmbootstrap), `sudo`. 16 threads recommended |
 | Host tools | adb, fastboot, mkbootimg (android-tools), clang, lld, llvm, make, bc, bison, flex, dtc, openssl headers, pv, python3 (host scripts and the fake Telegram of `scripts/test-bot`), rustc (for `scripts/test-qgd` and `scripts/test-bot`), curl, NetworkManager (optional). `scripts/check-host` lists what is missing |
-| pmbootstrap | 3.12.1: `python3 -m venv ~/.local/share/pmbs-venv && ~/.local/share/pmbs-venv/bin/pip install pmbootstrap==3.12.1` |
+| pmbootstrap | 3.12.1 (Python 3.10 or newer), from its git tag, because PyPI stops at 2.1.0: `git clone --depth 1 --branch 3.12.1 https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git ~/.local/src/pmbootstrap && python3 -m venv ~/.local/share/pmbs-venv && ~/.local/share/pmbs-venv/bin/pip install ~/.local/src/pmbootstrap`. `scripts/check-host` checks the version against `pmaports/PMBOOTSTRAP_VERSION` |
 
 ### 1. Get the repo and configure
 
