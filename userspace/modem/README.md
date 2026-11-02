@@ -8,12 +8,15 @@ The hanoip Wi-Fi (WCN3990, `qcacld-3.0` driver + `icnss`) runs as a protection d
 | `/sys/class/remoteproc` (here it is `msm_subsys`) | `pd-mapper` cannot find the `.jsn` files; `tqftpserv` rejects `/readonly/...` | patches with a fallback to `/lib/firmware` |
 | nothing starts the modem by itself | the subsystem only comes up while `/dev/subsys_modem` is open | `hanoip-modem` service |
 
-## Files
+## Install
 
-- `build.sh`: builds static (aarch64) `qrtr-ns`, `pd-mapper` and `tqftpserv` from the linux-msm sources plus `patches/`. Install them in `/usr/local/bin/`.
-- `etc/init.d/`: `qrtr-ns`, `pd-mapper`, `tqftpserv-legacy` (replaces Alpine's `tqftpserv`; take Alpine's out of the `boot` runlevel) and `hanoip-modem`.
-- `etc/conf.d/rmtfs`: Alpine's `rmtfs` (`apk add rmtfs rmtfs-openrc`) without `-s` and with `-r` (read-only: never writes to `modemst1/2`/`fsg`).
-- `etc/udev/rules.d/90-hanoip-modem.rules`: the `/dev/qcom_rmtfs_uio1` and `by-partlabel/fsg` (to `fsg_b`) links.
+The device package has a subpackage, `device-motorola-hanoip-modem`, that ships all of this (since 2026-11-01, issue #10). `apk add device-motorola-hanoip-modem` installs it and its post-install adds `hanoip-modem` to the `default` runlevel; `rmtfs` comes from Alpine. What it contains:
+
+- `/usr/bin/hanoip-qrtr-ns`, `hanoip-pd-mapper`, `hanoip-tqftpserv`: static aarch64 builds from sources pinned in the APKBUILD (qrtr v1.0 for the name server, qrtr 29e36ae for the libraries, pd-mapper 5ecd2fe and tqftpserv v1.3), with `pd-mapper-subsys-fallback.patch` and `tqftpserv-subsys-fallback.patch` applied. They carry the `hanoip-` prefix so they do not collide with Alpine's own packages.
+- `/etc/init.d/hanoip-qrtr-ns`, `hanoip-pd-mapper`, `hanoip-tqftpserv`, `hanoip-rmtfs` (Alpine's `rmtfs` without `-s`, with `-P -r`: read-only, never writes to `modemst1/2`/`fsg`) and `hanoip-modem`.
+- `/usr/lib/udev/rules.d/90-hanoip-modem.rules`: the `/dev/qcom_rmtfs_uio1` link, and the `by-partlabel/fsg` link for the **active** slot, read from `androidboot.slot_suffix` (it used to be fixed to `fsg_b`).
+
+The sources of all of this are in `pmaports/device/testing/device-motorola-hanoip/`; `scripts/test-modem-package` checks that the services point at files the package installs.
 
 ## Data that comes from the device (never goes in the repo)
 
@@ -30,7 +33,7 @@ The hanoip Wi-Fi (WCN3990, `qcacld-3.0` driver + `icnss`) runs as a protection d
 
 - **Fixed by `CONFIG_MMI_INFO=y` (+ `CONFIG_MMI_ANNOTATE=y`)** in the kernel config. Motorola's `mmi_info` driver writes SMEM item 134 (`mmi_unit_info`), which the modem firmware reads as the WLAN protection domain starts; our config had it off, the stock `hanoip_defconfig` has it on. Patch `0006` keeps the serial out of that driver's log line. `scripts/test-kernel-config` fails if either option goes off again. The same crash and fix were found on a mainline port of this phone (eng-brener/hanoip-mainline).
 - Result after an unattended reboot: `icnss: WLAN FW is ready` about 16 s into boot (2.6 s after WLFW connects, as on Android), `wlan0` appears, NetworkManager associates to a WPA3 (SAE) network on 2.4 or 5 GHz and gets DHCP and a default route. No `early crash` lines.
-- `hanoip-modem` must be in the `default` runlevel (`rc-update add hanoip-modem default`); the device package does not install this userspace yet (GitHub issue #10).
+- `hanoip-modem` is in the `default` runlevel, put there by the subpackage's post-install (issue #10). Checked on the phone on 2026-11-01 after a clean reboot with the packaged files: the five services start, none crashes, `icnss: WLAN FW is ready` appears at 16.3 s and `wlan0` scans 21 networks. An association was not repeated that day (the only saved network was out of range).
 
 ## Diagnosis history (2026-10-24, before the fix)
 

@@ -146,7 +146,7 @@ I want to be clear about what has and has not been run end to end.
 | `pmaports/` | `device-motorola-hanoip` and `linux-motorola-hanoip` packages, and `PMAPORTS_COMMIT`, the official pmaports commit they were built on |
 | `kernel/downstream-patches/` | Patches for the 4.14 kernel (loop partition rescan, `clk.c` for `DEBUG_FS`, `icnss` BDF/REGDB/`host_cap`, console on the screen, splash framebuffer, serial kept out of the `mmi_info` log) |
 | `kernel/dts/` | Mainline DTS for the hanoip |
-| `userspace/modem/` | Modem/Wi-Fi userspace for 4.14 (installed by hand for now): `qrtr-ns`, `pd-mapper`, `tqftpserv` (patched), openrc and udev files |
+| `userspace/modem/` | Notes on the modem/Wi-Fi userspace for 4.14 (diagnosis history). The files themselves are the `device-motorola-hanoip-modem` subpackage |
 | `scripts/` | All the steps above, `check-repo` (self-check to run before every commit: checksums, patch copies, private-data scan, and every `test-*` regression test; none needs the phone), `push-firmware` and `mount-vendor` for the Wi-Fi investigation, and `collect-device` (runs in Termux on the phone) |
 | `docs/` | Project state and test matrix (`STATUS.md`), verified device facts and sanitized dumps (`device-info/`) |
 | `NOTES.md` | Detailed working notes: pitfalls already solved, boot test results |
