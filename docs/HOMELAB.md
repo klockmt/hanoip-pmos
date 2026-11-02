@@ -32,6 +32,7 @@ All OpenRC, on by default, started by the device package.
 | `hanoip-qgd` | The battery percentage: the kernel gauge only measures, this daemon computes the charge and writes it back | `cat /run/hanoip-qgd.soc` moves about once a minute |
 | `hanoip-charge-limit` (needs `hanoip-qgd`) | Holds the battery near 80 % on the cable (bypass), resumes below 60 %, one charge to 100 % every 10 cycles | `hanoip-status` line 8 says `bypass` |
 | `hanoip-thermal` | From 40 °C pauses charging, from 45 °C caps the CPU, at 55 °C warns on Telegram and powers off | `docs/BATTERY.md` |
+| `hanoip-watchdog` | Feeds `/dev/watchdog` and lets it reset the phone if the network stays down (below, "Getting it back") | `ls /var/lib/hanoip/watchdog` (`count` is the resets in a row) |
 | `hanoip-bot` | The Telegram bot: `/up`, `/status`, `/status -h`, `/status -t=MIN -g=MIN`, `/stop`, `/notes` (lists them); only the owner's private chat | `hanoip-bot --alert TEXT` sends one message |
 | `hanoip-modem` and its helpers (`hanoip-qrtr-ns`, `-pd-mapper`, `-tqftpserv`, `-rmtfs`) | Brings the modem up, which runs the Wi-Fi firmware (subpackage `device-motorola-hanoip-modem`) | `dmesg` shows `icnss: WLAN FW is ready` about 16 s after boot |
 | `postmarketos-zram-swap` | A zstd zram swap, 150 % of RAM, priority 300, above the 1 GB swapfile | `swapon --show` |
@@ -167,5 +168,14 @@ scripts/hanoip-sudo 'apk add --allow-untrusted /tmp/<apk> ...'
   `scripts/restore-cycle-counts` puts the counters back.
 - **Rebooting with the raw `reboot()` syscall** (`scripts/reboot-bootloader` does) skips the clean shutdown, so the boot's
   log is not written. Use `reboot` when the log matters.
-- A hang of userspace can be turned into a restart by feeding `/dev/watchdog` (not set up yet); a kernel hang or a
-  power cut still needs the power key (issue #17).
+- **What recovers by itself, and what does not** (issue #17):
+
+  | Failure | Recovers? | How |
+  |---|---|---|
+  | Userspace hang | yes | `hanoip-watchdog` feeds `/dev/watchdog` (the kernel's software watchdog, 60 s); when nothing feeds it the phone resets. Tested once: the feeder stopped, the phone reset about a minute later and was back in about 30 s with the services up, slot b successful |
+  | Network lost (gateway silent for 5 minutes, no USB link) | yes, up to 3 times in a row | The same service stops feeding on purpose. Not in the first 15 minutes of uptime. After a reset it tells you on Telegram once the network is back; the count clears after 10 minutes of a good network. Tested like the line above, with the gateway forced unreachable; a real router outage was not |
+  | Kernel hang | no | A software watchdog needs the kernel; the Qualcomm hardware watchdog has no device node. Power key or fastboot |
+  | Power cut | no, not tested | The battery keeps the phone on, so a plug does not reset it. Whether a plugged-in charger turns the phone on from off is untested (needs the phone in hand) |
+
+  Stopping the service is safe: it writes the watchdog's magic close first (tested: the phone stayed up 100 s after a
+  stop). Killing it with `kill -9` leaves the watchdog armed and the phone resets in a minute.

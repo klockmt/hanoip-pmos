@@ -30,6 +30,7 @@ Every bug gets an automated test that fails before the fix and passes after (`sc
 
 | Symptom | Cause | Rule | Where enforced |
 |---|---|---|---|
+| Userspace hang or a network that never came back needed someone at the phone | Nothing fed `/dev/watchdog` | `hanoip-watchdog` feeds it and stops on purpose when the gateway is silent for 5 minutes; at most 3 resets in a row and none in the first 15 minutes, so a dead router is not a boot loop. Never `kill -9` it: the watchdog stays armed | `scripts/test-watchdog` |
 | Phone gone after about 7 reboots | pmOS never marks the A/B slot successful; the ABL makes slot b unbootable and flips to a | `qbootctl -m` at every boot (from `/etc/local.d`). Recovery: `fastboot getvar slot-unbootable:b` (check first), `fastboot set_active b`, `fastboot reboot`, and say what was done | docs only (needs the phone) |
 | ABL never ran the mainline kernel | The ABL only runs header v3 and only `Image`/`Image.gz`, not EFI zboot | `EFI_ZBOOT` off, a v3 `vendor_boot`; the earlier v0 tests are invalid | docs only (mainline is long term, issue #6) |
 | `fastboot flash userdata` refused | Motorola's fastboot | Write the rootfs through the Lineage recovery with `dd` and verify the hash | docs only |
