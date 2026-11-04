@@ -10,11 +10,23 @@ Up to v0.1.14 the notes lived only in the message of each annotated tag; this fi
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-04
+
 ### Changed
 - The Samba share is confirmed working from Nautilus on the PC over the tailnet (`docs/STATUS.md`); large copies and a reboot with the disk are still open (#27).
+- `docs/STATUS.md` and `NOTES.md` record that SSH access (USB cable and tailnet only) was checked again after a clean reboot (#23).
 
 ### Fixed
-- `hanoip-led`: the front LED now stays lit while a cable is in. Solid was a 600000 ms timer, which left the LED dark with USB power present; it is now a neutral trigger plus a direct brightness write (`docs/PITFALLS.md`). Checked by eye on the phone: solid with the cable in, flashing when it is pulled, solid again when it is put back.
+- `hanoip-led`: the front LED now stays lit while a cable is in. Solid was a 600000 ms timer, which left the LED dark with USB power present; it is now a neutral trigger plus a direct brightness write (`docs/PITFALLS.md`). `scripts/test-led` covers it and passes.
+- `device-motorola-hanoip` `pkgrel` 40: the LED change shipped without a bump, so a package update would have kept the old script.
+
+### Tested
+- `scripts/check-repo` passes. On the phone: the LED is solid with the cable in, flashes when it is pulled and is solid again when it is put back (checked by eye); after a clean `reboot` the three `02_hanoip-ssh.nft` rules load ahead of pmOS's `accept SSH`, SSH answers over USB and the tailnet and port 22 is closed from the LAN.
+
+### Known issues
+- The package was not rebuilt or installed from `pkgrel` 40 on the phone; the LED fix was checked with the script in place.
+- Before a saved Wi-Fi profile existed the phone stayed offline after a boot; with the profile it reconnects by itself.
+- Open from 0.2.0: the USB hub re-enumerates now and then and the mounted disk goes read-only until remounted (`docs/PITFALLS.md`).
 
 ## [0.2.0] - 2026-11-04
 
