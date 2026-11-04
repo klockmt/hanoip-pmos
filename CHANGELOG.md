@@ -10,6 +10,9 @@ Up to v0.1.14 the notes lived only in the message of each annotated tag; this fi
 
 ## [Unreleased]
 
+### Fixed
+- `hanoip-led`: the front LED now stays lit while a cable is in. Solid was a 600000 ms timer, which left the LED dark with USB power present; it is now a neutral trigger plus a direct brightness write (`docs/PITFALLS.md`). Checked by eye on the phone: solid with the cable in, flashing when it is pulled, solid again when it is put back.
+
 ## [0.2.0] - 2026-11-04
 
 ### Added
