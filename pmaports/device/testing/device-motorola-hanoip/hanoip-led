@@ -1,15 +1,14 @@
 #!/bin/sh
 # Front LED as a power indicator: solid while external power is present over USB, a short flash every few
-# seconds while the phone runs on the battery. Only the kernel's timer trigger is used: this LED driver
-# rejects writing "none" to trigger (EINVAL) and the timer turns the LED off if either delay is 0, so
-# "solid" is a very long on-time with a 1 ms off-time. The state is
-# the USB supply, not battery/status: the charge limit keeps that at "Not charging" with the cable in.
+# seconds while the phone runs on the battery. This LED driver rejects writing "none" to trigger (EINVAL), and
+# its timer trigger with a very long on-time (600000 ms) leaves the LED dark while a cable is in. So "solid" is
+# a trigger that never fires (kbd-scrolllock) plus a direct brightness write, and only the flash uses the timer.
+# The state is the USB supply, not battery/status: the charge limit keeps that at "Not charging" with the cable in.
 # The HANOIP_* variables override the paths and timings, for tests (scripts/test-led).
 led=${HANOIP_LED_DIR:-/sys/class/leds/charging}
 ps=${HANOIP_PSU_DIR:-/sys/class/power_supply}
 on_ms=${HANOIP_LED_ON_MS:-500}
 gap_ms=${HANOIP_LED_GAP_MS:-3000}
-solid_ms=${HANOIP_LED_SOLID_MS:-600000}
 interval=${HANOIP_LED_INTERVAL:-2}
 
 mode=
@@ -21,11 +20,11 @@ while :; do
 	fi
 	if [ "$new" != "$mode" ]; then
 		mode=$new
-		echo timer > "$led/trigger"
 		if [ "$mode" = solid ]; then
-			echo "$solid_ms" > "$led/delay_on"
-			echo 1 > "$led/delay_off"
+			echo kbd-scrolllock > "$led/trigger"
+			cat "$led/max_brightness" > "$led/brightness" 2>/dev/null || echo 255 > "$led/brightness"
 		else
+			echo timer > "$led/trigger"
 			echo "$on_ms" > "$led/delay_on"
 			echo "$gap_ms" > "$led/delay_off"
 		fi

@@ -7,21 +7,28 @@ script=pmaports/device/testing/device-motorola-hanoip/hanoip-led
 dir=$(mktemp -d)
 trap 'rm -rf "$dir"' EXIT
 mkdir -p "$dir/led" "$dir/ps/pc_port" "$dir/ps/usb"
-export HANOIP_LED_DIR=$dir/led HANOIP_PSU_DIR=$dir/ps HANOIP_LED_ON_MS=500 HANOIP_LED_GAP_MS=3000 HANOIP_LED_SOLID_MS=600000
+export HANOIP_LED_DIR=$dir/led HANOIP_PSU_DIR=$dir/ps HANOIP_LED_ON_MS=500 HANOIP_LED_GAP_MS=3000
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
-# step <pc_port online> <usb online> <trigger> <delay_on> <delay_off>
+# step <pc_port online> <usb online> <trigger> <brightness or -> <delay_on or -> <delay_off or ->
+# "-" means the file must not be written (a timer delay in solid mode would let the timer take the LED over).
 step() {
 	echo "$1" > "$dir/ps/pc_port/online"
 	echo "$2" > "$dir/ps/usb/online"
-	rm -f "$dir/led/trigger" "$dir/led/delay_on" "$dir/led/delay_off"
+	rm -f "$dir/led/trigger" "$dir/led/brightness" "$dir/led/delay_on" "$dir/led/delay_off"
 	{ timeout -s KILL 1 sh "$script" >/dev/null 2>&1 || true; } 2>/dev/null
-	for f in trigger:$3 delay_on:$4 delay_off:$5; do
+	for f in trigger:$3 brightness:$4 delay_on:$5 delay_off:$6; do
 		name=${f%%:*} want=${f#*:}
-		[ "$(cat "$dir/led/$name" 2>/dev/null)" = "$want" ] || fail "power $1/$2: $name is '$(cat "$dir/led/$name" 2>/dev/null)', expected '$want'"
+		if [ "$want" = - ]; then
+			[ ! -e "$dir/led/$name" ] || fail "power $1/$2: $name was written ('$(cat "$dir/led/$name")')"
+		else
+			[ "$(cat "$dir/led/$name" 2>/dev/null)" = "$want" ] || fail "power $1/$2: $name is '$(cat "$dir/led/$name" 2>/dev/null)', expected '$want'"
+		fi
 	done
 }
-step 1 0 timer 600000 1      # USB port powered: solid
-step 0 1 timer 600000 1      # USB PD supply powered: solid
-step 0 0 timer 500 3000   # on the battery: flash, 3 s gap
+# Solid is a neutral trigger plus brightness 255: on the phone the timer trigger with a 600000 ms on-time leaves the
+# LED dark whenever a cable is in (checked by eye, docs/PITFALLS.md), while a direct brightness write lights it.
+step 1 0 kbd-scrolllock 255 - -      # USB port powered: solid
+step 0 1 kbd-scrolllock 255 - -      # USB PD supply powered: solid
+step 0 0 timer - 500 3000            # on the battery: flash, 3 s gap
 echo "ok    test-led"
