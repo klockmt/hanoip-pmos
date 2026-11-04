@@ -19,7 +19,7 @@ parked mainline attempt: [`MAINLINE.md`](MAINLINE.md). Open work: the GitHub iss
 | Containers | namespaces, `pids`/`devices` cgroups, NAT/bridge; use `crun` (the `runc` of Alpine edge panics on 4.14) | 2026-11-01 | NOTES; `scripts/test-kernel-config` |
 | Watchdog | software `/dev/watchdog`; left unfed it restarted the phone in about 45 s; nothing feeds it at boot (issue #17) | 2026-11-01 | NOTES |
 | btrfs | built in, mounts with `compress=zstd`; the NAS disk's two partitions, converted with `btrfstune`, mount read-write on the phone and `btrfs scrub` finds no errors (issue #19) | 2026-11-04 | `scripts/test-kernel-config`; `docs/HOMELAB.md` |
-| Samba on the tailnet | port 445 answers over `tailscale0` and times out on the LAN; the share needs a client test with a password set | 2026-11-04 | `scripts/test-firewall`; `docs/HOMELAB.md` |
+| Samba on the tailnet | port 445 answers over `tailscale0` and times out on the LAN; the `cloud` share works from Nautilus on the PC (large copies and a reboot with the disk: #27) | 2026-11-04 | `scripts/test-firewall`; `docs/HOMELAB.md` |
 | Front LED as a power indicator | solid with the cable in, a short flash every 3 s on the battery; checked by eye after the fix | 2026-11-04 | `scripts/test-led`; `docs/PITFALLS.md` |
 | USB host through a hub | Ethernet, a UAS disk at 24.6 MB/s and PD charging in bypass work (issue #3) | 2026-10-30 | NOTES |
 | Not supported | WireGuard (not in 4.14; Tailscale instead), a hardware watchdog (no device node), `CFS_BANDWIDTH` (needs `!SCHED_WALT`), swarm/overlay networks | | NOTES |
