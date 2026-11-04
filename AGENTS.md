@@ -1,18 +1,17 @@
 # hanoip-pmos
 
-postmarketOS on the Moto G60 (hanoip, SM7150), run as a **headless server reached over SSH**. The repo is public. Reply to the user in Portuguese; commits, code and docs are in English.
+postmarketOS on the Moto G60 (hanoip, SM7150), run as a **headless server reached over SSH**. The repo is public.
 
 The rules are here. Before touching anything read `docs/STATUS.md` (what works), then `NOTES.md` (the log of the investigations); `docs/PITFALLS.md` and `docs/HOMELAB.md` say what broke and how the phone is run.
 
 ## Rules that always apply
-- Run `scripts/check-repo` before every commit and push.
+- The repo check is `scripts/check-repo`: run it before every commit and push.
 - Local paths and personal data live in `.env` (copy of `.env.example`). Scripts source `scripts/env.sh`; docs use `$HANOIP_*` variables. To resolve one, read `.env`.
 - Never write an IMEI, serial, MAC, battery id, home path or the user name in any tracked file, test fixture, log or commit message. Device dumps and partition backups stay in `$HANOIP_BACKUP_DIR` / `$HANOIP_COLLECTION_DIR`, outside the repo.
-- Scripts that change something accept `DRY_RUN=1`. Keep `README.md` honest about which were run end to end.
+- Keep `README.md` honest about which scripts were run end to end.
 - Do not flash partitions beyond what the user asked for, never wipe or factory reset. Inspect the target and compare with `SHA256SUMS` first. `fastboot set_active b` + `reboot` is pre-authorized only to recover the A/B slot (see below).
 - `pmbootstrap` asks for the `sudo` password and needs interactive input, so **the user runs it**: hand over ready-made commands and wait. It is not on PATH; use `$PMBOOTSTRAP`.
 - When zeroing the in-use slot's `dtbo` for a test, restore the backup right afterwards, before `fastboot continue` or any reboot.
-- Report test results as they are, failures included.
 
 ## Working over SSH, securely
 - Use `scripts/hanoip-ssh '<cmd>'`. It uses the dedicated key from `.env` with `IdentitiesOnly` and `BatchMode`; `HANOIP_SSH_TTY=1` only when a password prompt is needed.
@@ -31,14 +30,10 @@ The rules are here. Before touching anything read `docs/STATUS.md` (what works),
 - A package update flashes `boot` and `vendor_boot` (`deviceinfo_flash_kernel_on_update="true"`): the 2026-10-30 hang was `console=tty0` in the command line, and `scripts/test-deviceinfo` keeps `console=ttyMSM0,115200n8` first (`NOTES.md`). Never flash by hand `boot`/`vendor_boot` without a backup on the PC (`$HANOIP_BACKUP_DIR`).
 
 ## Bugs found, and what to remember
-What broke on this phone, why, and the test or file that keeps it from breaking again is in [`docs/PITFALLS.md`](docs/PITFALLS.md). Read it before changing the kernel config, the device package, the charge limit, the firewall or a flashing script. Add a row there with every bug you fix.
+What broke on this phone, why, and the test or file that keeps it from breaking again is in [`docs/PITFALLS.md`](docs/PITFALLS.md). Read it before changing the kernel config, the device package, the charge limit, the firewall or a flashing script.
 
 ## Tests for every bug
-- Add the regression test before or with the fix. Prefer extending the matching `scripts/test-*` (they run without the phone); create a new `scripts/test-<thing>` in the same style when none fits.
-- Run the test and show it failing on the old behavior, then passing.
-- Commit the test with the fix, or right before it.
+Prefer extending the matching `scripts/test-*` (they run without the phone); create a new `scripts/test-<thing>` in the same style when none fits.
 
-## Commits
-Small, one per specific change, `type(scope): summary` with a body saying why. Never mention AI, no trailers. Author is always the git config identity; contributors on GitHub must show only `klockmt` (`gh api repos/klockmt/hanoip-pmos/contributors` before pushing).
-
-Push to the `beta` branch first. Move commits to `main` only after they were tested and the user approved; never push straight to `main`.
+## Commits and releases
+Before pushing, check the contributors with `gh api repos/klockmt/hanoip-pmos/contributors`: only `klockmt` may show. The beta branch is `beta`.
