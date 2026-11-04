@@ -10,6 +10,17 @@ Up to v0.1.14 the notes lived only in the message of each annotated tag; this fi
 
 ## [Unreleased]
 
+### Added
+- `03_hanoip-samba.nft`: Samba (139/445) is accepted on the tailnet only and dropped on every other interface, USB included.
+- `docs/HOMELAB.md`: how the NAS disk is shared (Syncthing on `hd-a`, a Samba share on `hd-b`).
+
+### Changed
+- The NAS disk's two partitions were converted away from `block-group-tree` and mount read-write on the phone.
+
+### Known issues
+- The USB hub re-enumerates now and then and the mounted disk goes read-only until remounted (`docs/PITFALLS.md`).
+- Not tested yet: the share and the Syncthing folder from a real client, a reboot with the disk attached.
+
 ## [0.1.14] - 2026-11-02
 
 ### Added
