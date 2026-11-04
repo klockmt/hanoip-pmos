@@ -11,7 +11,7 @@ Up to v0.1.14 the notes lived only in the message of each annotated tag; this fi
 ## [Unreleased]
 
 ### Changed
-- The Samba share is confirmed working from Nautilus on the PC (`docs/STATUS.md`); large copies and a reboot with the disk are still open (#27).
+- The Samba share is confirmed working from Nautilus on the PC over the tailnet (`docs/STATUS.md`); large copies and a reboot with the disk are still open (#27).
 
 ### Fixed
 - `hanoip-led`: the front LED now stays lit while a cable is in. Solid was a 600000 ms timer, which left the LED dark with USB power present; it is now a neutral trigger plus a direct brightness write (`docs/PITFALLS.md`). Checked by eye on the phone: solid with the cable in, flashing when it is pulled, solid again when it is put back.
