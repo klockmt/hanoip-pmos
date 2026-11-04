@@ -10,12 +10,16 @@ Up to v0.1.14 the notes lived only in the message of each annotated tag; this fi
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-04
+
 ### Added
 - `03_hanoip-samba.nft`: Samba (139/445) is accepted on the tailnet only and dropped on every other interface, USB included.
 - `docs/HOMELAB.md`: how the NAS disk is shared (Syncthing on `hd-a`, a Samba share on `hd-b`).
+- `CHANGELOG.md`, condensed from the v0.1.x tag messages.
 
 ### Changed
 - The NAS disk's two partitions were converted away from `block-group-tree` and mount read-write on the phone.
+- `AGENTS.md` keeps only the phone-specific rules; the generic working rules moved to the global instructions.
 
 ### Known issues
 - The USB hub re-enumerates now and then and the mounted disk goes read-only until remounted (`docs/PITFALLS.md`).
@@ -170,7 +174,8 @@ Up to v0.1.14 the notes lived only in the message of each annotated tag; this fi
 ### Added
 - First release: a working phone with boot, screen, kernel and device package only.
 
-[Unreleased]: https://github.com/klockmt/hanoip-pmos/compare/v0.1.14...HEAD
+[Unreleased]: https://github.com/klockmt/hanoip-pmos/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/klockmt/hanoip-pmos/compare/v0.1.14...v0.2.0
 [0.1.14]: https://github.com/klockmt/hanoip-pmos/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/klockmt/hanoip-pmos/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/klockmt/hanoip-pmos/compare/v0.1.11...v0.1.12
