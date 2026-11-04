@@ -8,7 +8,7 @@ parked mainline attempt: [`MAINLINE.md`](MAINLINE.md). Open work: the GitHub iss
 | Area | State | Since | Evidence |
 |---|---|---|---|
 | Downstream kernel (4.14, cool585 Cybertron v18) | pmOS edge boots on its own from `boot_b` + `vendor_boot_b`, 104 GB root on `userdata`; package `pkgrel 12` with patches 0001-0010 | 2026-10-24 | `scripts/test-kernel-config`; section 4 below |
-| Access | SSH over the USB cable and the tailnet only, keys only | 2026-11-01 | `scripts/test-firewall`; HOMELAB |
+| Access | SSH over the USB cable and the tailnet only, keys only | 2026-11-04 | `scripts/test-firewall`; HOMELAB |
 | Kernel modules | load (patch 0010); the tree must come from the running kernel's build | 2026-11-01 | `scripts/test-kernel-config`; PITFALLS |
 | Wi-Fi (WCN3990) | works: 2.4/5 GHz, WPA3, back after a reboot; the userspace is the `-modem` subpackage. A 24 h hold was not measured | 2026-10-30, packaged 2026-11-01 | `scripts/test-modem-package`; `userspace/modem/README.md` |
 | Battery percentage, charge limit, heat | `hanoip-qgd` (Rust), `hanoip-charge-limit` (holds 80-82 % on the cable), `hanoip-thermal` | 2026-10-28 | `scripts/test-qgd`, `test-charge-limit`, `test-thermal`; `BATTERY.md` |
