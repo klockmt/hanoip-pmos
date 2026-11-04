@@ -223,8 +223,8 @@ Three attempts, each typing the README steps as written from the `beta` branch w
 
 ## SSH firewall after a boot, USB and tailnet (2026-11-04, issue #23)
 
-Checked on the phone about 40 minutes after a normal boot (the boot was not triggered by the check):
+Checked on the phone after a clean `reboot` (slot `_b` before and after):
 - `nft list ruleset` shows the three `02_hanoip-ssh.nft` rules (USB accept, tailnet accept, drop for any other interface) ahead of pmOS's `accept SSH`, and Tailscale's own tables still there.
-- SSH answers over the USB cable and over the tailnet, with the key only.
+- SSH answers over the USB cable and over the tailnet, with the key only. The tailnet answered about 20 s after the SSH on USB came back, with no manual step.
 - Port 22 is closed from the LAN: a TCP connect from the PC on the same network times out.
-- The Wi-Fi did not connect after that boot (no usable profile for the networks in range); once it did, `tailscaled` went from `NoState` to `Running` by itself, with no manual step.
+- The Wi-Fi reconnected by itself to the saved profile; before that profile existed it stayed down after a boot, and `tailscaled` sat in `NoState` until the Wi-Fi was up.
