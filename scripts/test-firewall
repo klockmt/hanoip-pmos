@@ -46,6 +46,20 @@ if [ ! -f "$ts" ]; then fail "$ts is missing"; else
 	if unshare -rn true 2>/dev/null; then unshare -rn nft -c -f "$ts" || fail "nft rejects $ts"; fi
 fi
 
+# Samba: 51_usb_inet.nft accepts all of USB, so the share needs its own drop, loaded before it, and only the tailnet in.
+smb=$pkg/hanoip-samba.nft
+if [ ! -f "$smb" ]; then fail "$smb is missing"; else
+	sdest=$(sed -n 's|.*"\$pkgdir\(/etc/nftables.d/[^"]*\)".*|\1|p' $pkg/APKBUILD | grep -F hanoip-samba || true)
+	[ -n "$sdest" ] || fail "the APKBUILD does not install hanoip-samba.nft into /etc/nftables.d"
+	[ "$(printf '%s\n%s\n' "$(basename "${sdest:-x}")" 51_usb_inet.nft | sort | head -1)" = "$(basename "${sdest:-x}")" ] ||
+		fail "$sdest loads after 51_usb_inet.nft, whose accept would win"
+	grep -v '^[[:space:]]*#' "$smb" | grep 'dport' | grep -q 'iifname "tailscale0" tcp dport { 139, 445 } accept' || fail "the tailnet is not allowed to reach Samba"
+	last=$(grep -v '^[[:space:]]*#' "$smb" | grep 'dport' | tail -1)
+	case $last in *drop*) ;; *) fail "the last Samba rule must drop everything else" ;; esac
+	if grep -v '^[[:space:]]*#' "$smb" | grep 'dport' | grep -v iifname | grep -q accept; then fail "an accept without iifname opens Samba to all"; fi
+	if unshare -rn true 2>/dev/null; then unshare -rn nft -c -f "$smb" || fail "nft rejects $smb"; fi
+fi
+
 # The syntax, checked by nft in a throwaway network namespace (skipped when the host cannot do that).
 if unshare -rn true 2>/dev/null; then
 	unshare -rn nft -c -f "$rule" || fail "nft rejects $rule"

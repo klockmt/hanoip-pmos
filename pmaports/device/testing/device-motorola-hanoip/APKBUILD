@@ -4,7 +4,7 @@
 pkgname=device-motorola-hanoip
 pkgdesc="Motorola Moto G (60)"
 pkgver=0
-pkgrel=38
+pkgrel=39
 _qrtr_rev=29e36ae164389580a0f8ea7a7fdb728140ae978d
 _pdmapper_rev=5ecd2fe926aca7abfe40724177f63b942cff3947
 url="https://postmarketos.org"
@@ -47,6 +47,7 @@ source="
 	hanoip-qgd.initd
 	hanoip-qrtr-ns.initd
 	hanoip-rmtfs.initd
+	hanoip-samba.nft
 	hanoip-ssh.nft
 	hanoip-sshd.conf
 	hanoip-status
@@ -107,6 +108,7 @@ package() {
 	install -Dm755 "$srcdir/hanoip-reboot-bootloader" "$pkgdir/usr/bin/hanoip-reboot-bootloader"
 	install -Dm755 "$srcdir/hanoip-qgd.initd" "$pkgdir/etc/init.d/hanoip-qgd"
 	install -Dm644 "$srcdir/hanoip-ssh.nft" "$pkgdir/etc/nftables.d/02_hanoip-ssh.nft"
+	install -Dm644 "$srcdir/hanoip-samba.nft" "$pkgdir/etc/nftables.d/03_hanoip-samba.nft"
 	install -Dm644 "$srcdir/hanoip-sshd.conf" "$pkgdir/etc/ssh/sshd_config.d/60-hanoip-keys-only.conf"
 	install -Dm755 "$srcdir/hanoip-status" "$pkgdir/usr/bin/hanoip-status"
 	install -Dm644 "$srcdir/hanoip-tailscale.nft" "$pkgdir/etc/nftables.d/52_hanoip-tailscale.nft"
@@ -167,6 +169,7 @@ f08301d2d0b6d4e2488fc257d627a99f84c69c6af387f07aa343d64f25e3328c109d8a3a09f2b9a7
 088ef67651ebb1673a87184c690f25109e1f4693cf10c9c70d478e7f45c96ccaa6509f1191d9171e085fe6e8a9d74cdddfeb9275c504e3f9df19e1261713d3be  hanoip-qgd.initd
 79896969a29b0fe7f65bf07eb94f78202d3728096c0254e58d8b2e55bc8bbc746dca8c2ac94ed45e3de0726142a4588796ce8cf21ac77cfa58d4a0c0a0ac41ae  hanoip-qrtr-ns.initd
 d053952c44b67385f7adc7153df5bd95e970956a839380192a8c1d2bc4254be479711ac1833a150490b3c47f2ec3fdccf138f4757cf3b7d80a7643b3190e0f4e  hanoip-rmtfs.initd
+808985c9506b74278ce7ab595e51db4aaacabefbfeefbf867efc8909b5847fc76ae6c819619463038925226a3cc7882290594960a7332bf1129a9ae463f91b21  hanoip-samba.nft
 ca6c611b6e2509e9116604586233c665eba858f7dce9329d08a072e79a67b8f00c11effcc47c53f8d5f8c28527a84d7664d270bfddea82c26202bc2eae112566  hanoip-ssh.nft
 e9ca1358374ffd74680d371dd99bfce32d51940e9ed1f60dcae301a85808fb4e46af01f8ddc13a2c1ed57777c1989a8c672178714f8d8b466ea695780ef3a974  hanoip-sshd.conf
 b2ab559ba68d5a6ee089dfc6da5e5740978106b064eabe52314a6a92057b35dc9f08dae2e13734da2858084930d62ab206e59792e807b1e5ea5810c67e1b4655  hanoip-status

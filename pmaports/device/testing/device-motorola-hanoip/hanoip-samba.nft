@@ -1,0 +1,8 @@
+# Samba only over the tailnet. 51_usb_inet.nft accepts everything that comes in over USB, so without this file the
+# share would also answer on the cable; this one loads first (03_) and its drop wins. smb.conf binds to tailscale0 as well.
+table inet filter {
+	chain input {
+		iifname "tailscale0" tcp dport { 139, 445 } accept comment "Samba over the tailnet"
+		tcp dport { 139, 445 } drop comment "Samba from any other interface"
+	}
+}
