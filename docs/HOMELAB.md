@@ -145,14 +145,33 @@ never mapped. See "Storage" in [`PITFALLS.md`](PITFALLS.md) for the symptoms.
 Using it as the homelab storage:
 
 - **Before the first mount on the phone**, check `btrfs inspect-internal dump-super` on each partition: `compat_ro_flags`
-  must not have `0x8` (`block-group-tree`), or the 4.14 kernel mounts it read-only. The disk as formatted today **does**
-  have it; fix it first with `btrfstune --convert-from-block-group-tree` on the unmounted partition.
-- Mount with `compress=zstd,noatime,nofail`, so a missing disk does not hold up the boot.
+  must not have `0x8` (`block-group-tree`), or the 4.14 kernel mounts it read-only. Both partitions had it and were
+  converted on the phone on 2026-11-04 with `btrfstune --convert-from-block-group-tree` (the `btrfs-progs-extra`
+  package) while unmounted; they now read `0x3`.
+- Mount with `compress=zstd,noatime,nofail`, so a missing disk does not hold up the boot. `/etc/fstab` uses
+  `LABEL=hd-a` on `/mnt/hd-a` and `LABEL=hd-b` on `/mnt/hd-b`, and both mount points are `chattr +i` while empty.
 - Keep only data that is reproducible or has a second copy. The disk is wearing out: watch `Current_Pending_Sector` with
   `smartctl -A -d sat <dev>` on the PC now and then (it was 148 on 2026-11-02, `Reallocated_Sector_Ct` 0). If it keeps
   rising, replace the disk.
 - Run `btrfs scrub start <mount point>` regularly: btrfs checksums data, so a bad read is reported instead of passing.
 - Unmount before powering the disk off. After a USB drop, power-cycling the drive is what brings it back.
+
+### Sharing the disk (set up 2026-11-04, not yet tested from a client)
+
+- **`hd-a`, Syncthing**: the `obsidian` folder at `/mnt/hd-a/obsidian`, run by the `syncthing` OpenRC service as the
+  `syncthing` user. Its state stays on the internal flash (`/var/lib/syncthing`), so it survives the disk dropping. The
+  GUI listens on `127.0.0.1:8384` only: reach it with `ssh -L 8384:127.0.0.1:8384`. Global discovery, local discovery,
+  relays and NAT mapping are off; peers use the tailnet address (`tcp://<tailscale address>:22000`) of the phone. A
+  `.stignore` skips Obsidian's per-device `workspace.json`. The service has `rc_need="localmount"`.
+- **`hd-b`, Samba**: the `cloud` share at `/mnt/hd-b/cloud`, `samba.smbd` only (no NetBIOS, no printing), user
+  `hdshare` with no shell. Set its password once, interactively: `HANOIP_SSH_TTY=1 scripts/hanoip-ssh 'sudo smbpasswd -a hdshare'`.
+  Clients connect to `smb://<tailscale address>/cloud` (Windows: `\\<address>\cloud`), with the Tailscale app on.
+  On Android, Material Files (F-Droid) adds an SMB server.
+- **Only the tailnet reaches it**: `03_hanoip-samba.nft` accepts 139/445 on `tailscale0` and drops them elsewhere
+  (`51_usb_inet.nft` would otherwise let the cable in), and `smb.conf` has `hosts allow` for the Tailscale ranges.
+  `smbd` cannot bind to the point-to-point `tailscale0`, so it listens on all addresses and the firewall is the barrier.
+  Checked on 2026-11-04: port 445 opens over the tailnet and times out on the LAN address.
+- The `hd-b` share holds files that exist nowhere else only until the disk fails: keep a second copy of what matters.
 
 ## Updating the phone
 
