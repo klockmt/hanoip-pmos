@@ -10,6 +10,9 @@ Up to v0.1.14 the notes lived only in the message of each annotated tag; this fi
 
 ## [Unreleased]
 
+### Added
+- `docs/MAINLINE.md`, section 7: the base's Linux 7.3 boots on this phone RAM-only through its U-Boot, with our own test initramfs that locks every disk read-only: USB network and serial, cpufreq, battery read in hold on the cable, UFS reads matching the backup, and back to the server with a reboot (#6).
+
 ### Changed
 - Kernel direction: mainline is the goal again, starting from the mainline base (U-Boot plus Linux 7.3, RAM-only); the downstream 4.14 server stays on slot `b` meanwhile (`docs/STATUS.md`, section 5). The 2026-11-02 plan of a hardened 4.14 fork is on hold (#6).
 

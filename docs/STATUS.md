@@ -24,7 +24,7 @@ mainline work: [`MAINLINE.md`](MAINLINE.md). Open work: the GitHub issues, roadm
 | USB host through a hub | Ethernet, a UAS disk at 24.6 MB/s and PD charging in bypass work (issue #3) | 2026-10-30 | NOTES |
 | Not supported | WireGuard (not in 4.14; Tailscale instead), a hardware watchdog (no device node), `CFS_BANDWIDTH` (needs `!SCHED_WALT`), swarm/overlay networks | | NOTES |
 | Package update flashes `boot` and `vendor_boot` | boot-deploy's images from the repo's deviceinfo boot; the 2026-10-30 hang was `console=tty0` first in the command line, now `console=ttyMSM0,115200n8` first; a package update flashed both partitions and booted (issue #21, v0.1.13) | 2026-11-02 | `scripts/test-deviceinfo`; NOTES |
-| Mainline kernel | the goal again since 2026-11-07 (section 5). Not booted on this phone yet; the start is the base's U-Boot + 7.3 chain, RAM-only (issue #6) | | [`MAINLINE.md`](MAINLINE.md) |
+| Mainline kernel | the goal again (section 5). the base's Linux 7.3 boots RAM-only through its U-Boot to our test initramfs: USB network and serial, 8 CPUs with cpufreq, battery read in hold on the cable, UFS read-only with reads matching the backup; not a server yet (issue #6) | 2026-11-07 | [`MAINLINE.md`](MAINLINE.md), section 7 |
 
 ## 1. Device
 | Item | Value |
