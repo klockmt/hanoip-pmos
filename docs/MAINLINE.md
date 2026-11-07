@@ -6,8 +6,9 @@ invalid (see the correction under the matrix). The phone runs the downstream 4.1
 [`STATUS.md`](STATUS.md) and the roadmap is GitHub issue #6. The pitfalls of the pmOS flow itself are in
 [`PITFALLS.md`](PITFALLS.md).
 
-**Parked on 2026-11-02.** The plan now is our own hardened 4.14 kernel, forked from the downstream one
-([`STATUS.md`](STATUS.md), section 5). This file is kept as the record of the attempt.
+**Resumed on 2026-11-07** ([`STATUS.md`](STATUS.md), section 5), after being parked on 2026-11-02. The new start is
+the base's the mainline base: it
+boots Linux 7.3 on a hanoip through its U-Boot, RAM-only. Sections 1 to 7 below are the record of the first attempt.
 
 ## 1. What was done
 1. **Backup** of the critical partitions and extraction of the running DTB (`/sys/firmware/fdt`) and of the Android kernel config.

@@ -3,7 +3,7 @@
 State on 2026-11-02. The goal is to run postmarketOS on the Moto G60 (hanoip) as a headless server and to publish everything
 on GitHub with reproducible instructions and a way to update the kernel. How the phone is run: [`HOMELAB.md`](HOMELAB.md).
 What broke and where it is kept from breaking again: [`PITFALLS.md`](PITFALLS.md). The kernel plan: section 5 below; the
-parked mainline attempt: [`MAINLINE.md`](MAINLINE.md). Open work: the GitHub issues, roadmap #20.
+mainline work: [`MAINLINE.md`](MAINLINE.md). Open work: the GitHub issues, roadmap #20.
 
 | Area | State | Since | Evidence |
 |---|---|---|---|
@@ -24,7 +24,7 @@ parked mainline attempt: [`MAINLINE.md`](MAINLINE.md). Open work: the GitHub iss
 | USB host through a hub | Ethernet, a UAS disk at 24.6 MB/s and PD charging in bypass work (issue #3) | 2026-10-30 | NOTES |
 | Not supported | WireGuard (not in 4.14; Tailscale instead), a hardware watchdog (no device node), `CFS_BANDWIDTH` (needs `!SCHED_WALT`), swarm/overlay networks | | NOTES |
 | Package update flashes `boot` and `vendor_boot` | boot-deploy's images from the repo's deviceinfo boot; the 2026-10-30 hang was `console=tty0` first in the command line, now `console=ttyMSM0,115200n8` first; a package update flashed both partitions and booted (issue #21, v0.1.13) | 2026-11-02 | `scripts/test-deviceinfo`; NOTES |
-| Mainline kernel | parked (2026-11-02, section 5). No boot yet: the ABL only runs header-v3 images, so the early tests were invalid (issue #6) | | [`MAINLINE.md`](MAINLINE.md) |
+| Mainline kernel | the goal again since 2026-11-07 (section 5). Not booted on this phone yet; the start is the base's U-Boot + 7.3 chain, RAM-only (issue #6) | | [`MAINLINE.md`](MAINLINE.md) |
 
 ## 1. Device
 | Item | Value |
@@ -67,17 +67,19 @@ parked mainline attempt: [`MAINLINE.md`](MAINLINE.md). Open work: the GitHub iss
 - **Wi-Fi:** see `userspace/modem/README.md`.
 
 
-## 5. Kernel plan (2026-11-02)
+## 5. Kernel plan (2026-11-07)
 
-The phone stays on the downstream 4.14 kernel, and that kernel becomes ours. Nothing of this is done yet.
+Mainline is the goal again: first make it boot on this phone, then make it the server. Until then the downstream 4.14
+server keeps running on slot `b`, frozen as release v0.2.2.
 
-- **Our own kernel.** Fork the tree we build today (cool585's `android_kernel_motorola_sm6150`, commit `b92cb6cd`) into a
-  repository of our own, so the phone no longer depends on cool585's Cybertron releases. `scripts/build-kernel` and the
-  `linux-motorola-hanoip` APKBUILD then point at the fork.
-- **Our own patches.** `kernel/downstream-patches/0001-0010` become the first commits of the fork; new fixes go there, each
-  with its test, as now.
-- **Hardened for a server.** Turn off what a headless server does not use and turn on the hardening the 4.14 tree offers
-  (candidates to check: stack protector, hardened usercopy, `FORTIFY_SOURCE`, freelist hardening, module signature
-  enforcement, `kptr_restrict`/`dmesg_restrict`). Check each option against the running config first and enforce it in
-  `scripts/test-kernel-config`.
-- **Mainline is parked**, far in the background. [`MAINLINE.md`](MAINLINE.md) stays as the record of what was tried.
+- **Start from what boots.** the base's the mainline base runs Linux
+  7.3 (the `sm7150-mainline` fork plus its patches) on a hanoip, RAM-only: the ABL `fastboot boot`s its U-Boot, which
+  stops the watchdog and `fastboot boot`s the kernel with the DTB built into U-Boot. It is used here with the author's
+  permission. The first step is to reproduce its chain unmodified on this phone (`MAINLINE.md`).
+- **RAM-only until approved.** Every test is a `fastboot boot`; a test initramfs locks every disk read-only and never mounts
+  `userdata`, which holds the server. Nothing is flashed until the user approves it.
+- **Then the server pieces**, each with its test: the charge limit (the PM6150 charger is not upstream yet), a hardware
+  watchdog, Wi-Fi and the modem, the USB network, Tailscale and the firewall. Packaging can move to systemd.
+- **Long term:** Nura's Duranium (immutable, A/B updates with rollback). It needs U-Boot with UEFI, and its mandatory
+  LUKS2 would have to go for an unattended server.
+- The 2026-11-02 plan (our own hardened 4.14 kernel) is on hold; the 4.14 still gets fixes while it is the server.

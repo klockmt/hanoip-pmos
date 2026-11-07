@@ -10,6 +10,9 @@ Up to v0.1.14 the notes lived only in the message of each annotated tag; this fi
 
 ## [Unreleased]
 
+### Changed
+- Kernel direction: mainline is the goal again, starting from the mainline base (U-Boot plus Linux 7.3, RAM-only); the downstream 4.14 server stays on slot `b` meanwhile (`docs/STATUS.md`, section 5). The 2026-11-02 plan of a hardened 4.14 fork is on hold (#6).
+
 ## [0.2.2] - 2026-11-07
 
 The downstream 4.14 server as it runs on the phone, tagged before the mainline work starts on `beta`.
