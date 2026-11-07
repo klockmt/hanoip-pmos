@@ -10,6 +10,23 @@ Up to v0.1.14 the notes lived only in the message of each annotated tag; this fi
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-07
+
+The downstream 4.14 server as it runs on the phone, tagged before the mainline work starts on `beta`.
+
+### Changed
+- `docs/HOMELAB.md` documents AdGuard Home, installed by hand as a secondary DNS: the config written by hand, the `bootstrap_dns` list that makes it refuse to start, and what is still open (#25). It listens on 127.0.0.1 only, so nothing new is reachable from the LAN or the tailnet.
+
+### Tested
+- `scripts/check-repo` passes. On the phone (kernel 4.14.357, device package `0-r39`): `nslookup example.com 127.0.0.1` resolves through AdGuard Home, and `netstat -ltnu` shows it on `127.0.0.1:53` (TCP and UDP) and `127.0.0.1:3000` only.
+
+### Known issues
+- AdGuard Home is not in the device package and does not serve the LAN yet (#25).
+- `/proc/config.gz` on the phone does not describe the running kernel: it shows `BTRFS_FS` and `WATCHDOG` off and has no `MMI_INFO` line, while btrfs is in `/proc/filesystems`, `/dev/watchdog` exists and the Wi-Fi works, which needs `MMI_INFO`. Do not check kernel options with it.
+- The docs describe only `/dev/watchdog` (a device with no parent in sysfs). The kernel also runs the downstream hardware watchdog driver `msm_watchdog` (`QCOM_WATCHDOG_V2`), bound to the APSS block `17c10000.qcom,wdt`, which the docs do not mention; what it does on a kernel hang has not been tested.
+- The phone keeps sourcing VBUS to a USB hub and drains the battery (#30).
+- Open from 0.2.1: the package was not rebuilt or installed from `pkgrel` 40 on the phone (it runs `0-r39`); the USB hub re-enumerates now and then and the mounted disk goes read-only until remounted (#28).
+
 ## [0.2.1] - 2026-11-04
 
 ### Changed
@@ -192,7 +209,9 @@ Up to v0.1.14 the notes lived only in the message of each annotated tag; this fi
 ### Added
 - First release: a working phone with boot, screen, kernel and device package only.
 
-[Unreleased]: https://github.com/klockmt/hanoip-pmos/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/klockmt/hanoip-pmos/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/klockmt/hanoip-pmos/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/klockmt/hanoip-pmos/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/klockmt/hanoip-pmos/compare/v0.1.14...v0.2.0
 [0.1.14]: https://github.com/klockmt/hanoip-pmos/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/klockmt/hanoip-pmos/compare/v0.1.12...v0.1.13
