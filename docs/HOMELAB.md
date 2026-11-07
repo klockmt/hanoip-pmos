@@ -37,6 +37,7 @@ All OpenRC, on by default, started by the device package.
 | `hanoip-modem` and its helpers (`hanoip-qrtr-ns`, `-pd-mapper`, `-tqftpserv`, `-rmtfs`) | Brings the modem up, which runs the Wi-Fi firmware (subpackage `device-motorola-hanoip-modem`) | `dmesg` shows `icnss: WLAN FW is ready` about 16 s after boot |
 | `postmarketos-zram-swap` | A zstd zram swap, 150 % of RAM, priority 300, above the 1 GB swapfile | `swapon --show` |
 | `tailscale` | The tailnet. DNS from the tailnet is off (below) | `tailscale status` |
+| `adguardhome` (not in the device package: `apk add adguardhome adguardhome-openrc` by hand) | Secondary DNS on loopback only, see "AdGuard Home" below | `nslookup example.com 127.0.0.1` |
 | `local` (not a daemon) | Runs `/etc/local.d`: `qbootctl -m` marks the A/B slot successful at every boot, the cpufreq governor, the console | keep `local` in `default` |
 
 `hanoip-status` prints the health of the phone in ten lines, plus a Warning line when `resolv.conf` uses the Tailscale DNS (`hanoip-status -h` says what each is and where it is read).
@@ -65,6 +66,34 @@ tailscale debug prefs | grep CorpDNS # must say false
 boot script `/etc/local.d/40-hanoip-tailscale-dns.start` turns it off and runs `resolvconf -u` at the next boot (it does
 nothing while Tailscale is not running or not signed in). `hanoip-status` still warns if `resolv.conf` shows the
 Tailscale DNS.
+
+## AdGuard Home (secondary DNS, issue #25)
+
+Installed by hand on 2026-11-07 (`apk add adguardhome adguardhome-openrc`, version 0.107.79) and set to start at boot
+(`rc-update add adguardhome default`). Its config is `/var/lib/adguardhome/AdGuardHome.yaml`, owned by `adguardhome`
+and mode 600. The part that was written by hand:
+
+```yaml
+http:
+  address: 127.0.0.1:3000
+dns:
+  bind_hosts:
+    - 127.0.0.1
+  port: 53
+  upstream_dns:
+    - 9.9.9.9
+```
+
+Do not add `bootstrap_dns` as a list in a minimal file: AdGuard rewrote it as a nested list (`- - 9.9.9.9`) and then
+refused to start (`yaml: construct errors: cannot construct !!seq into string`). Remove the line and let AdGuard fill
+its defaults.
+
+It listens on loopback only, so the LAN and Wi-Fi cannot reach it yet. Still to do, in issue #25: bind to the LAN
+address, open port 53 on the LAN in its own `.nft` file (the existing `51_hotspot.nft` already accepts 53 on `wlan*`,
+check that first), test a client, and check a reboot. The checks done so far: `nslookup example.com 127.0.0.1` resolves;
+a test rule `||blocked-test.example^` (set through `/control/filtering/set_rules`, then removed) answered `0.0.0.0`.
+The admin page is `127.0.0.1:3000` (reach it with an SSH tunnel). The default filter list (about 190,000 rules) is
+downloaded from AdGuard on the first run.
 
 ## Firewall
 
