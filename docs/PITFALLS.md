@@ -27,6 +27,8 @@ Every bug gets an automated test that fails before the fix and passes after (`sc
 | Tailscale's firewall file was hand-made and opened UDP 41641 on every interface | Nothing packaged it | `52_hanoip-tailscale.nft` accepts that port only on `eth*` and `wlan*`; the package depends on `tailscale` and removes the old file on install | `scripts/test-firewall` |
 | Tailscale on a relay, long copies dropping | Cloudflare WARP on the PC takes Tailscale's UDP when the PC is on another network | Pause WARP off the LAN; keep transfers short over a relay | docs only (see HOMELAB) |
 | Large transfers over the USB (NCM) network take it down until a reboot | Cause not found (issue #2) | Throttle to 1 MB/s (`pv -L 1m`); a script that feeds a file into `hanoip-ssh` without it needs a `# small` comment | `scripts/test-throttle` (every script), `scripts/test-flash-boot-ssh` |
+| During a mainline RAM test the PC lost `172.16.42.2` a minute after it was set by hand, and the shell went silent | The test initramfs runs no DHCP server; NetworkManager's DHCP on that interface failed and flushed the address (2026-11-07) | Before setting the address, `nmcli device set <if> managed no`; give it back with `managed yes` once the server is up again | docs only |
+| The mainline kernel booted through U-Boot got none of the U-Boot DTB's `bootargs` (`panic=5`, `console=ttyGS0`) | U-Boot hands over only the boot image's command line (2026-11-07) | Put every needed argument in the boot image's command line | docs only |
 
 ## Boot, slots and flashing
 
