@@ -44,6 +44,16 @@ scan "upstream author e-mail in a patch" "From: Kernel Dev <$em>" clean kernel/m
 scan "the same e-mail anywhere else" "From: Kernel Dev <$em>" hit
 scan "MAC placeholder" "parse AA:BB:CC:DD:EE:FF here" clean
 scan "MAC-like value" "mac $mac" hit
+# APKBUILD sources: a local file that is missing is reported; a downloaded tarball (.tar.gz, or the kernel's .tar.xz)
+# is not, since it never sits next to the APKBUILD.
+rm -rf "$dir/a"; mkdir -p "$dir/a/scripts" "$dir/a/pmaports/device/testing/x"
+cp "$src" "$dir/a/scripts/check-repo"
+z=$(printf '0%.0s' $(seq 1 128))
+printf 'sha512sums="\n%s  linux-x.tar.xz\n%s  y.tar.gz\n%s  gone.patch\n"\n' "$z" "$z" "$z" > "$dir/a/pmaports/device/testing/x/APKBUILD"
+(cd "$dir/a" && git init -q && printf '.env\n' > .gitignore && printf 'HANOIP_USER=planteduser\n' > .env && git add -A)
+out=$(cd "$dir/a" && sh scripts/check-repo 2>&1 || true)
+echo "$out" | grep -qF 'missing source: pmaports/device/testing/x/gone.patch' || { echo "FAIL: a missing local source is not reported" >&2; bad=1; }
+if echo "$out" | grep -qE 'missing source: .*\.tar\.(gz|xz)'; then echo "FAIL: a downloaded tarball is reported as a missing source" >&2; bad=1; fi
 # The real .gitignore: what must stay out, and what must stay in (.env.example is the template for .env). Git runs
 # without the user's global ignore file, which would hide a missing pattern.
 rm -rf "$dir/g"; mkdir -p "$dir/g"; cp .gitignore "$dir/g/"; (cd "$dir/g" && git init -q)

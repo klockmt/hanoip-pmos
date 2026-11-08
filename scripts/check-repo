@@ -17,11 +17,11 @@ done
 
 sums=$(mktemp)
 trap 'rm -f "$sums"' EXIT
-# 2. every APKBUILD source exists and its checksum matches (the kernel tarball is skipped: it is downloaded)
+# 2. every APKBUILD source exists and its checksum matches (tarballs are skipped: they are downloaded)
 for d in pmaports/device/*/*/; do
 	[ -f "$d/APKBUILD" ] || continue
 	grep -E '^[0-9a-f]{128}  ' "$d/APKBUILD" | while read -r sum name; do
-		case $name in *.tar.gz) continue;; esac
+		case $name in *.tar.gz|*.tar.xz) continue;; esac
 		[ -f "$d/$name" ] || { echo "missing source: $d$name"; continue; }
 		[ "$(sha512sum "$d/$name" | cut -d' ' -f1)" = "$sum" ] || echo "stale checksum: $d$name"
 	done
