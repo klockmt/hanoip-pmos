@@ -1,8 +1,8 @@
 #!/bin/sh
 # Checks the private-data scan of scripts/check-repo on a throwaway git repository (no phone, no real data):
-# a 15-digit number (IMEI-like) and the login user from .env, planted in a committable file, must each be
-# reported, and a long hex checksum or a longer word that merely contains the user name must not. Upstream
-# authors' e-mails in kernel/mainline/patches are allowed.
+# a 15-digit number (IMEI-like), the login user and the names in HANOIP_PRIVATE_NAMES from .env, planted in a
+# committable file, must each be reported (without echoing them back), and a long hex checksum or a longer word
+# that merely contains one of them must not. Upstream authors' e-mails in kernel/mainline/patches are allowed.
 set -eu
 cd "$(dirname "$0")/.."
 src=$PWD/scripts/check-repo
@@ -16,13 +16,13 @@ scan() {
 	rm -rf "$dir/r"; mkdir -p "$dir/r/scripts" "$dir/r/$(dirname "$f")"
 	cp "$src" "$dir/r/scripts/check-repo"
 	(cd "$dir/r" && git init -q && printf '.env\n' > .gitignore &&
-		printf 'HANOIP_USER=planteduser\nHANOIP_HOST=host\n' > .env &&
+		printf 'HANOIP_USER=planteduser\nHANOIP_HOST=host\nHANOIP_PRIVATE_NAMES="plantedname other-name"\n' > .env &&
 		printf '%s\n' "$2" > "$f" && git add -A)
 	out=$(cd "$dir/r" && sh scripts/check-repo 2>&1 || true)
 	if echo "$out" | grep -qF "FAIL  private-looking data: $f"; then got=hit; else got=clean; fi
 	[ "$got" = "$3" ] || { echo "FAIL $1: $got, expected $3" >&2; bad=1; }
-	# the user name must never be echoed back
-	if echo "$out" | grep -q planteduser; then echo "FAIL $1: the report prints the user name" >&2; bad=1; fi
+	# the user name and the private names must never be echoed back
+	if echo "$out" | grep -qiE 'planteduser|plantedname|other-name'; then echo "FAIL $1: the report prints a name" >&2; bad=1; fi
 }
 n15=$(printf "12345%s" 6789012345)
 scan "15-digit number" "serial $n15 here" hit
@@ -33,8 +33,13 @@ scan "nothing private" "an ordinary line, version 4.14.357, 14 digits $(printf "
 scan "longer word with the user name" "planteduser2 and myplanteduser" clean
 scan "sha512 line" "$(printf 'a%.0s' $(seq 1 60))${n15}$(printf 'b%.0s' $(seq 1 60))  file.patch" clean
 scan "16-digit number" "${n15}6" clean
+scan "private name as a word" "made by plantedname here" hit
+scan "private name in capitals" "PLANTEDNAME" hit
+scan "private name with a hyphen" "credit: other-name" hit
+scan "longer word with a private name" "plantednamesake" clean
 # Built at run time, like n15, so this file itself holds no e-mail or MAC for the scan to find.
 em="dev@example"; em="$em.org"; mac=$(printf '12:34:56:%s' '78:9A:BC')
+scan "private name in an upstream patch" "From: plantedname <$em>" hit kernel/mainline/patches/0001-x.patch
 scan "upstream author e-mail in a patch" "From: Kernel Dev <$em>" clean kernel/mainline/patches/0001-x.patch
 scan "the same e-mail anywhere else" "From: Kernel Dev <$em>" hit
 scan "MAC placeholder" "parse AA:BB:CC:DD:EE:FF here" clean

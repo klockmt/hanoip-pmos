@@ -41,6 +41,8 @@ files=$(git ls-files; git ls-files -o --exclude-standard)
 # a longer name that contains it (a GitHub account, say) does not match. Both new patterns report file:line
 # and not the line, so a hit does not copy the value into the output.
 user=$(sed -n 's/^HANOIP_USER=//p' .env 2>/dev/null | head -1 | tr -d "\"'")
+# People who asked not to be named: HANOIP_PRIVATE_NAMES in .env (words, any case). Reported as file:line only.
+names=$(sed -n 's/^HANOIP_PRIVATE_NAMES=//p' .env 2>/dev/null | head -1 | tr -d "\"'")
 hits=$(for f in $files; do [ -f "$f" ] || continue; case $f in *.dtb) continue;; esac
 	grep -InE '([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}' "$f" | grep -v -e '00:00:00:00:00:00' -e 'AA:BB:CC:DD:EE:FF' | sed "s|^|$f:|"
 	grep -InE 'androidboot\.serialno=[^X"[:space:]]' "$f" | sed "s|^|$f:|"
@@ -54,6 +56,7 @@ hits=$(for f in $files; do [ -f "$f" ] || continue; case $f in *.dtb) continue;;
 	esac
 	grep -InE '(^|[^0-9A-Za-z])[0-9]{15}([^0-9A-Za-z]|$)' "$f" | cut -d: -f1 | sed "s|^|$f:|"
 	if [ -n "$user" ]; then grep -InwF -- "$user" "$f" | cut -d: -f1 | sed "s|^|$f:|"; fi
+	for nm in $names; do grep -InwiF -- "$nm" "$f" | cut -d: -f1 | sed "s|^|$f:|"; done
 done)
 if [ -n "$hits" ]; then echo "$hits" | cut -c1-160 | while read -r l; do fail "private-looking data: $l"; done; bad=1; else ok "no private-looking data in committable files"; fi
 # the DTB is binary: check the same fields through fdtget when available

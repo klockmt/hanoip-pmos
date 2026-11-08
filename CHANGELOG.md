@@ -11,6 +11,7 @@ Up to v0.1.14 the notes lived only in the message of each annotated tag; this fi
 ## [Unreleased]
 
 ### Added
+- `scripts/check-repo` refuses the names listed in `HANOIP_PRIVATE_NAMES` (`.env`, any case, whole words), people who asked not to be named, and reports only file and line; `scripts/test-check-repo` covers it.
 - `docs/DURANIUM.md`: the plan for Duranium as the server, step by step with what each needs and how it is checked, the user's decisions, the state it starts from, and the rules and lessons that apply; `AGENTS.md` points to it.
 - `docs/MAINLINE.md`, section 7e: what Nura's Duranium needs on this phone (research): a pmaports device package with the mainline kernel, systemd, EFI (our U-Boot already has it, and `blkmap`), and 16 GB, flashed into `userdata` by design; its LUKS2 unlocks by itself with a blank passphrase; no image exists for SM7150.
 - Slot a marks itself successful after a complete boot from it, so the ABL keeps it as a second working slot instead of using up its retries (approved by the user): `98-hanoip-ml-slot.start` reads the ABL's slot from `u-boot,abl-bootargs` in the DT (`hanoip-ml-abl-slot`, only `androidboot.slot_suffix`), and with sshd up runs `qbootctl -m a` while the guard lends it only the whole disks that hold slot a's partitions (LUN 4 and LUN 2). A boot from the PC marks nothing, and the 15-minute dead man no longer reboots a boot from slot a. On the phone the ABL then said `slot-successful:_a: yes`, and only A/B bits changed in those two GPTs.

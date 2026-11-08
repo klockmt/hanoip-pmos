@@ -7,6 +7,7 @@ The rules are here. Before touching anything read `docs/STATUS.md` (what works),
 ## Rules that always apply
 - The repo check is `scripts/check-repo`: run it before every commit and push.
 - Local paths and personal data live in `.env` (copy of `.env.example`). Scripts source `scripts/env.sh`; docs use `$HANOIP_*` variables. To resolve one, read `.env`.
+- People who asked not to be named never appear in a tracked file or a commit message; their names are in `HANOIP_PRIVATE_NAMES` (`.env`) and `scripts/check-repo` refuses them.
 - Never write an IMEI, serial, MAC, battery id, home path or the user name in any tracked file, test fixture, log or commit message. Device dumps and partition backups stay in `$HANOIP_BACKUP_DIR` / `$HANOIP_COLLECTION_DIR`, outside the repo.
 - Keep `README.md` honest about which scripts were run end to end.
 - Do not flash partitions beyond what the user asked for, never wipe or factory reset. Inspect the target and compare with `SHA256SUMS` first. `fastboot set_active b` + `reboot` is pre-authorized only to recover the A/B slot (see below).
