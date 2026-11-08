@@ -18,6 +18,11 @@ done
 grep -qF 'losetup -f --show -o $OFF --sizelimit $SIZE $DEV' "$mk" || fail "$mk does not bound its loop to the region"
 grep -qF '[ "$before" = "$after" ] || fail "super changed outside the region"' "$mk" || fail "$mk does not compare super outside the region"
 grep -qF 'blkid -p $LOOP >/dev/null 2>&1 && fail' "$mk" || fail "$mk would format a region that holds another filesystem"
+# An unclean mainline shutdown leaves inodes in the orphan file, and the 4.14 kernel then refuses to mount the region
+# read-write ("unsupported optional features (10000)", 2026-11-08): e2fsck clears them before the mount.
+e=$(grep -n '^e2fsck -p $LOOP ' "$mk" | cut -d: -f1)
+m=$(grep -n '^mount -t ext4 -o noatime $LOOP $MNT' "$mk" | cut -d: -f1)
+[ -n "$e" ] && [ -n "$m" ] && [ "$e" -lt "$m" ] || fail "$mk mounts the region without running e2fsck first"
 
 # The modem's EFS is read from its partitions and served from RAM, read-only: rmtfs never gets the partitions (-P).
 m=$ov/etc/init.d/hanoip-ml-modem

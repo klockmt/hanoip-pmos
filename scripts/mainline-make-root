@@ -18,7 +18,7 @@ PKGS=$(echo $PKGS)
 if [ -n "${DRY_RUN:-}" ]; then
 	echo "+ check that the phone runs the 4.14 server and that super is not in use"
 	echo "+ pv -L 1m modules-*.tar.gz and kernel/mainline/root-overlay | hanoip-ssh 'cat > /var/tmp/...'"
-	echo "+ hanoip-sudo: hash super outside [$OFF, +$SIZE); losetup -o $OFF --sizelimit $SIZE; mkfs.ext4 -L hanoip_ml if new"
+	echo "+ hanoip-sudo: hash super outside [$OFF, +$SIZE); losetup -o $OFF --sizelimit $SIZE; mkfs.ext4 -L hanoip_ml if new, e2fsck -p"
 	echo "+ hanoip-sudo: apk --root add $PKGS; overlay; firmware, Wi-Fi, Tailscale, nftables and SSH from the server"
 	echo "+ hanoip-sudo: umount; hash super again and compare"
 	exit 0
@@ -58,6 +58,9 @@ if [ "$(blkid -s LABEL -o value $LOOP 2>/dev/null)" != $LABEL ]; then
 	mkfs.ext4 -q -F -L $LABEL -b 4096 -E nodiscard $LOOP
 	echo "formatted $LOOP as $LABEL"
 fi
+# After an unclean mainline shutdown the orphan file holds inodes, and the 4.14 kernel will not mount that read-write;
+# e2fsck (the e2fsprogs that made the filesystem) replays the journal and clears them. 0 to 2: clean or fixed.
+e2fsck -p $LOOP || [ $? -le 2 ] || fail "e2fsck could not fix $LABEL"
 mkdir -p $MNT
 mount -t ext4 -o noatime $LOOP $MNT
 mkdir -p $MNT/etc/apk
