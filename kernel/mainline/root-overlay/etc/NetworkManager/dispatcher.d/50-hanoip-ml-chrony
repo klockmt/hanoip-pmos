@@ -1,7 +1,8 @@
 #!/bin/sh
-# chronyd starts before the Wi-Fi is up: on the first boots the pool name did not resolve, chrony had no source, the
-# clock stayed in 1974 (the PMIC RTC does not keep it) and Tailscale stayed logged out (its TLS failed). When a
-# connection comes up, restart chronyd so it resolves the pool, and step the clock once it has a source.
+# chronyd starts before the Wi-Fi is up: on the first boots the pool name did not resolve,
+# chrony had no source, the clock stayed in 1974 (the PMIC RTC does not keep it) and
+# Tailscale stayed logged out (its TLS failed). When a connection comes up, restart
+# chronyd so it resolves the pool, and step the clock once it has a source.
 [ "$2" = up ] || exit 0
-rc-service chronyd restart >/dev/null 2>&1
+systemctl restart chronyd >/dev/null 2>&1
 ( sleep 20; chronyc makestep >/dev/null 2>&1 ) &

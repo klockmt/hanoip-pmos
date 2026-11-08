@@ -1,8 +1,8 @@
 #!/bin/sh
 # Checks the device-motorola-hanoip mainline subpackage:
 # - every local source= entry is tracked by git (URLs and name::url are ignored)
-# - each hanoip-ml-* / hanoip-*.start file matches kernel/mainline/root-overlay byte-for-byte
-# - the 13 mainline files are installed by package() and moved by mainline() amove (not in modem/ kernel subpackages)
+# - each mainline file matches kernel/mainline/root-overlay byte-for-byte
+# - all mainline files are installed by package() and moved by mainline() amove (not in modem/ kernel subpackages)
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -31,22 +31,38 @@ done
 [ $fail -eq 0 ] || exit 1
 echo "git-tracked sources: ok"
 
-# --- 2. List of 13 mainline files expected in root-overlay ---
+# --- 2. List of mainline files expected in root-overlay ---
 # Map: root-overlay path -> device package filename
 mainline_files="
-etc/init.d/hanoip-ml-modem:hanoip-ml-modem.initd
-etc/init.d/hanoip-ml-charge:hanoip-ml-charge.initd
-etc/local.d/05-hanoip-ml-guard.start:hanoip-ml-guard.start
-etc/local.d/10-hanoip-usb.start:hanoip-usb.start
-etc/local.d/20-hanoip-deadman.start:hanoip-deadman.start
-etc/local.d/30-hanoip-battery.start:hanoip-battery.start
-etc/local.d/98-hanoip-ml-slot.start:hanoip-ml-slot.start
-etc/local.d/99-hanoip-ml-up.start:hanoip-ml-up.start
+etc/systemd/system/hanoip-efs.service:hanoip-efs.service
+usr/bin/hanoip-efs:hanoip-efs
+etc/systemd/system/rmtfs.service:rmtfs.service
+etc/systemd/system/hanoip-qrtr-ns.service:hanoip-qrtr-ns.service
+etc/systemd/system/hanoip-pd-mapper.service:hanoip-pd-mapper.service
+etc/systemd/system/tqftpserv.service:tqftpserv.service
+etc/systemd/system/hanoip-modem.service:hanoip-modem.service
+usr/bin/hanoip-modem-load-modules:hanoip-modem-load-modules
+usr/bin/hanoip-modem-start:hanoip-modem-start
+etc/systemd/system/hanoip-charge.service:hanoip-charge.service
+usr/bin/hanoip-charge-pre:hanoip-charge-pre
+etc/systemd/system/hanoip-usb-net.service:hanoip-usb-net.service
+usr/bin/hanoip-usb-net:hanoip-usb-net
+etc/systemd/system/hanoip-slot-mark.service:hanoip-slot-mark.service
+usr/bin/hanoip-ml-slot:hanoip-ml-slot
+etc/systemd/system/hanoip-bot.service:hanoip-bot.service
+etc/systemd/system/hanoip-guard.service:hanoip-guard.service
+usr/bin/hanoip-guard:hanoip-guard
+etc/systemd/system/hanoip-deadman.service:hanoip-deadman.service
+usr/bin/hanoip-deadman:hanoip-deadman
+etc/systemd/system/hanoip-battery.service:hanoip-battery.service
+usr/bin/hanoip-battery:hanoip-battery
+etc/systemd/system/hanoip-ml-up.service:hanoip-ml-up.service
+etc/systemd/system.conf.d/90-hanoip-watchdog.conf:90-hanoip-watchdog.conf
+usr/bin/hanoip-ml-abl-slot:hanoip-ml-abl-slot
+usr/bin/hanoip-ml-charge:hanoip-ml-charge
 etc/modprobe.d/hanoip-ml.conf:hanoip-ml.conf
 etc/NetworkManager/conf.d/hanoip-ml.conf:hanoip-ml-networkmanager.conf
 etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony:hanoip-ml-chrony
-usr/bin/hanoip-ml-abl-slot:hanoip-ml-abl-slot
-usr/bin/hanoip-ml-charge:hanoip-ml-charge
 "
 
 # Verify each exists in root-overlay and matches the copy in device package
@@ -74,10 +90,10 @@ done
 [ $fail -eq 0 ] || exit 1
 echo "byte-for-byte copies from root-overlay: ok"
 
-# --- 3. Check package() installs all 13, and mainline() amove moves exactly those ---
+# --- 3. Check package() installs all, and mainline() amove moves exactly those ---
 # Extract the install -D lines from package() that correspond to mainline files
 installed_in_package=$(sed -n '/^package()/,/^}/p' "$apk" \
-    | grep -E 'install -D.*hanoip-ml|install -D.*hanoip-deadman|install -D.*hanoip-battery|install -D.*hanoip-usb' \
+    | grep -E 'install -D.*hanoip-efs|install -D.*rmtfs|install -D.*hanoip-qrtr-ns|install -D.*hanoip-pd-mapper|install -D.*tqftpserv|install -D.*hanoip-modem|install -D.*hanoip-charge|install -D.*hanoip-usb-net|install -D.*hanoip-slot-mark|install -D.*hanoip-bot|install -D.*hanoip-guard|install -D.*hanoip-deadman|install -D.*hanoip-battery|install -D.*hanoip-ml-up|install -D.*90-hanoip-watchdog|install -D.*hanoip-ml-abl-slot|install -D.*hanoip-ml-charge|install -D.*hanoip-ml.conf|install -D.*hanoip-ml-networkmanager|install -D.*hanoip-ml-chrony|install -D.*hanoip-ml-slot' \
     | sed -E 's/.*\$pkgdir\/(.*)"/\1/' \
     | tr '\n' ' ')
 
@@ -127,7 +143,7 @@ done
 
 # Ensure they are NOT in kernel_mainline() or kernel_downstream() (those use devicepkg_subpackage_kernel)
 # No explicit amove there, but ensure no stray install lines in package() are missing from mainline amove
-# (The check above already verifies all 13 are in mainline amove)
+# (The check above already verifies all are in mainline amove)
 
 [ $fail -eq 0 ] || exit 1
 echo "package() installs + mainline() amove: ok"
