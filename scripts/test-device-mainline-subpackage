@@ -16,35 +16,35 @@ sed -n '/^subpackages="/,/"/p' "$apk" | grep -qF '$pkgname-mainline:mainline' ||
 sed -n '/^mainline()/,/^}/p' "$apk" | grep -qF 'depends="$pkgname"' || fail "the mainline subpackage does not depend on $pkgname"
 code=$(grep -v '^[[:space:]]*#' "$apk")
 
-# Overlay path and the name the package carries it under (two files of the overlay share a base name, and an APKBUILD
-# cannot hold two files with the same name).
+# Overlay path, the name the package carries it under (two files of the overlay share a base name, and an APKBUILD
+# cannot hold two files with the same name), and the mode the destination needs: scripts run, configuration is read.
 map=$(mktemp)
 trap 'rm -f "$map" "$map".*' EXIT
 cat > "$map" <<'EOF'
-etc/init.d/hanoip-ml-modem hanoip-ml-modem.initd
-etc/init.d/hanoip-ml-charge hanoip-ml-charge.initd
-etc/local.d/05-hanoip-ml-guard.start hanoip-ml-guard.start
-etc/local.d/10-hanoip-usb.start hanoip-usb.start
-etc/local.d/20-hanoip-deadman.start hanoip-deadman.start
-etc/local.d/30-hanoip-battery.start hanoip-battery.start
-etc/local.d/98-hanoip-ml-slot.start hanoip-ml-slot.start
-etc/local.d/99-hanoip-ml-up.start hanoip-ml-up.start
-etc/modprobe.d/hanoip-ml.conf hanoip-ml.conf
-etc/NetworkManager/conf.d/hanoip-ml.conf hanoip-ml-networkmanager.conf
-etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony hanoip-ml-chrony
-usr/bin/hanoip-ml-abl-slot hanoip-ml-abl-slot
-usr/bin/hanoip-ml-charge hanoip-ml-charge
+etc/init.d/hanoip-ml-modem hanoip-ml-modem.initd 755
+etc/init.d/hanoip-ml-charge hanoip-ml-charge.initd 755
+etc/local.d/05-hanoip-ml-guard.start hanoip-ml-guard.start 755
+etc/local.d/10-hanoip-usb.start hanoip-usb.start 755
+etc/local.d/20-hanoip-deadman.start hanoip-deadman.start 755
+etc/local.d/30-hanoip-battery.start hanoip-battery.start 755
+etc/local.d/98-hanoip-ml-slot.start hanoip-ml-slot.start 755
+etc/local.d/99-hanoip-ml-up.start hanoip-ml-up.start 755
+etc/modprobe.d/hanoip-ml.conf hanoip-ml.conf 644
+etc/NetworkManager/conf.d/hanoip-ml.conf hanoip-ml-networkmanager.conf 644
+etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony hanoip-ml-chrony 755
+usr/bin/hanoip-ml-abl-slot hanoip-ml-abl-slot 755
+usr/bin/hanoip-ml-charge hanoip-ml-charge 755
 EOF
 
-while read -r src name; do
+while read -r src name mode; do
 	[ -f "$ov/$src" ] || { fail "$ov/$src is missing"; continue; }
 	[ -f "$d/$name" ] || { fail "$d/$name is missing (the copy of $ov/$src)"; continue; }
 	cmp -s "$ov/$src" "$d/$name" || fail "$d/$name is not identical to $ov/$src"
 	# The bug this test was written for: the copy existed only in the working tree, so the package built here and
 	# failed on a clean clone.
 	git ls-files --error-unmatch "$d/$name" >/dev/null 2>&1 || fail "$d/$name is not in git (a clean clone cannot build the package)"
-	echo "$code" | grep -qF -- "\"\$srcdir/$name\" \"\$pkgdir/$src\"" ||
-		fail "package() does not install $name as /$src"
+	echo "$code" | grep -qF -- "-Dm$mode \"\$srcdir/$name\" \"\$pkgdir/$src\"" ||
+		fail "package() does not install $name as /$src with mode $mode"
 	# amove takes the path as a word of its own list; the tokenised list must hold it exactly.
 	sed -n '/^mainline()/,/^}/p' "$apk" | tr -s ' \t\\' '\n' | grep -qxF "$src" ||
 		fail "mainline() does not move /$src out of the device package"

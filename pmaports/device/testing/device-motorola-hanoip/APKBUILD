@@ -146,7 +146,7 @@ package() {
 	install -Dm755 "$srcdir/hanoip-ml-charge" "$pkgdir/usr/bin/hanoip-ml-charge"
 	install -Dm644 "$srcdir/hanoip-ml.conf" "$pkgdir/etc/modprobe.d/hanoip-ml.conf"
 	install -Dm644 "$srcdir/hanoip-ml-networkmanager.conf" "$pkgdir/etc/NetworkManager/conf.d/hanoip-ml.conf"
-	install -Dm644 "$srcdir/hanoip-ml-chrony" "$pkgdir/etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony"
+	install -Dm755 "$srcdir/hanoip-ml-chrony" "$pkgdir/etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony"
 
 	# Modem and Wi-Fi userspace; modem() below moves it into its own subpackage.
 	install -Dm755 "$srcdir/hanoip-qrtr-ns" "$pkgdir/usr/bin/hanoip-qrtr-ns"
