@@ -244,7 +244,7 @@ builddir="$srcdir/linux-$pkgver"
 
 # Every make goes through here: LOCALVERSION= keeps the release 7.3.0-sm7150 (in a git tree it would get a "+", and
 # the modules would sit where the kernel does not look), and the banner must not carry this PC's user or host name.
-_make() { make ARCH="$_carch" LOCALVERSION= KBUILD_BUILD_USER=hanoip KBUILD_BUILD_HOST=hanoip-build "$@"; }
+_make() { KBUILD_BUILD_USER=hanoip KBUILD_BUILD_HOST=hanoip-build make ARCH="$_carch" LOCALVERSION= "$@"; }
 _git() { git -c user.name=hanoip -c user.email=hanoip@localhost -c core.autocrlf=false "$@"; }
 
 prepare() {
@@ -257,7 +257,9 @@ prepare() {
 	_git am -q $(ls "$srcdir"/*.patch | LC_ALL=C sort)
 	[ "$(git rev-parse 'HEAD^{tree}')" = "$_tree" ] || die "the patched tree is not the one that booted ($_tree)"
 
-	ARCH="$_carch" scripts/kconfig/merge_config.sh -m "$srcdir"/config-7.3-hanoip "$srcdir"/server.config >/dev/null
+	# The fragment's lines come last and win (kconfig warns "override"). merge_config.sh needs GNU mktemp, readlink and
+	# cp, which the chroot may not have; the .config this gives is byte-identical to the script's (checked 2026-11-08).
+	cat "$srcdir"/config-7.3-hanoip "$srcdir"/server.config > .config
 	_make olddefconfig >/dev/null
 	_lost=$(grep '^CONFIG_' "$srcdir"/server.config | grep -vxF -f .config || true)
 	[ -z "$_lost" ] || die "did not survive olddefconfig: $_lost"
