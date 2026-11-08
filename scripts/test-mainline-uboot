@@ -1,0 +1,38 @@
+#!/bin/sh
+# Checks the persistent-boot U-Boot and the boot_a image (no phone needed): the environment reads the kernel image from
+# where scripts/mainline-boot-a-image puts it, boots it with the embedded DTB, resets when that fails, and the U-Boot
+# cannot flash; then packs fake inputs and checks the layout.
+set -eu
+cd "$(dirname "$0")/.."
+fail() { echo "FAIL: $*" >&2; exit 1; }
+env=kernel/mainline/uboot/hanoip-server.env
+cfg=kernel/mainline/uboot/server.config
+img=scripts/mainline-boot-a-image
+grep -qx 'boot_with_embedded_fdt=1' "$env" || fail "the kernel would get the boot image's DTB, not U-Boot's"
+grep -q '^ml_load_boot=.*setexpr ml_blk $ml_start + 0x1000 && scsi dev $ml_dev && scsi read $fastboot_addr_r $ml_blk 0x2000 && abootimg addr $fastboot_addr_r && bootm $fastboot_addr_r$' "$env" ||
+	fail "ml_load_boot does not read 32 MiB at 16 MiB into boot_a and bootm it"
+# scsi read reads the current device, not the one part found boot_a on: boot_a is on LUN 4, the default is 0 (2026-11-08).
+grep '^ml_load_boot=' "$env" | grep -qF 'scsi dev $ml_dev && scsi read ' || fail "scsi read would read LUN 0, not boot_a's LUN"
+grep -q '^ml_boot=.*part number scsi $d boot_a ml_part' "$env" || fail "boot_a is not found by name"
+grep -qx 'bootcmd=run ml_boot; echo hanoip: mainline boot failed, resetting; sleep 5; reset' "$env" ||
+	fail "a failed boot does not reset (the ABL would never fall back to slot b)"
+# A key already pending at autoboot (seen on the phone, 2026-11-08: "stop autoboot: 0 ^H^H^H 0") stops bootdelay=0 and
+# left U-Boot at its prompt for good; -2 boots without checking for a key. Volume Down still opens the menu.
+grep -qx 'bootdelay=-2' "$env" || fail "a pending key at autoboot would stop the boot at the U-Boot prompt"
+# The offsets of the environment and of the image script agree.
+grep -qF 'OFF=$((16 * 1048576))' "$img" && grep -qF 'MAX=$((32 * 1048576))' "$img" || fail "$img does not use 16 MiB / 32 MiB"
+grep -qx '# CONFIG_FASTBOOT_FLASH is not set' "$cfg" || fail "this U-Boot could flash"
+grep -qx 'CONFIG_ENV_DEFAULT_ENV_TEXT_FILE="board/qualcomm/hanoip-server.env"' "$cfg" ||
+	fail "the default environment is not hanoip-server.env (its base.config points at the diagnostic one)"
+grep -qx 'CONFIG_QCOM_UFS=y' "$cfg" || fail "no UFS: the kernel in boot_a cannot be read"
+
+dir=$(mktemp -d)
+trap 'rm -rf "$dir"' EXIT
+{ printf 'ANDROID!'; head -c 4088 /dev/zero; } > "$dir/u.img"
+{ printf 'ANDROID!'; head -c 100000 /dev/urandom; } > "$dir/k.img"
+UBOOT_IMG=$dir/u.img KERNEL_IMG=$dir/k.img sh "$img" "$dir/a.img" >/dev/null || fail "packing fake inputs failed"
+cmp -s -n 4096 "$dir/u.img" "$dir/a.img" || fail "U-Boot is not at the start"
+[ "$(tail -c +$((16 * 1048576 + 1)) "$dir/a.img" | cmp -s - "$dir/k.img" && echo same)" = same ] || fail "the kernel image is not at 16 MiB"
+{ printf 'ANDROID!'; head -c $((32 * 1048576)) /dev/zero; } > "$dir/big.img"
+if UBOOT_IMG=$dir/u.img KERNEL_IMG=$dir/big.img sh "$img" "$dir/b.img" >/dev/null 2>&1; then fail "a kernel image over 32 MiB was packed"; fi
+echo "ok    test-mainline-uboot"
