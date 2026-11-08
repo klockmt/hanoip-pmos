@@ -1,25 +1,20 @@
 #!/bin/sh
-# Builds the U-Boot of the persistent mainline boot: sm7150-mainline/u-boot (branch tauchgang) at the commit of
-# the base's work/uboot-builds-20261026 (the mainline base)
-# plus its two diffs, checked against the tree of its validated build, plus kernel/mainline/uboot: an environment
-# that boots the kernel image from boot_a, UFS read support, and still no flashing. Nothing touches the phone.
+# Builds the U-Boot of the persistent mainline boot: sm7150-mainline/u-boot (branch tauchgang) at a pinned commit plus
+# the board diffs and config in kernel/mainline/uboot/base, checked against the tree of the first validated build,
+# plus kernel/mainline/uboot: an environment that boots the kernel image from boot_a, UFS read support, the watchdog
+# left running for the kernel, and still no flashing. Nothing touches the phone.
 # Usage: scripts/build-mainline-uboot   (tree in $HANOIP_UBOOT_ML_DIR, default $HANOIP_SRC_DIR/hanoip-uboot)
 # Out: $HANOIP_UBOOT_ML_DIR/out/u-boot-hanoip-server.img, an Android boot image header v3 for boot_a.
 set -eu
 . "$(dirname "$0")/env.sh"
 u=${HANOIP_UBOOT_ML_DIR:-$HANOIP_SRC_DIR/hanoip-uboot}
-ENG_COMMIT=ea0186ba9a556549a004bd14e77d9c53681e0302
-ENG=https://example.invalid/mainline-base/$ENG_COMMIT/work/uboot-builds-20261026
 BASE=f8c04469e8284aa2f1691a30aa3b7dc59fa0b8cd      # sm7150-mainline/u-boot, branch tauchgang
 BASE_TREE=d4ca1b8f873271528d3df2196c1db6d38521033d
-TREE=a38f1757adeb8ce1d8d0147de1a851a3b28d3f02      # + its two diffs: the tree of its validated build
+TREE=a38f1757adeb8ce1d8d0147de1a851a3b28d3f02      # + the two board diffs: the tree of the first validated build
 DT=sm7150-motorola-hanoip-cam-tres
 CC=${CROSS_COMPILE:-aarch64-linux-gnu-}
 ml=$HANOIP_ROOT/kernel/mainline/uboot
-mkdir -p "$u/eng/patches" "$u/out"
-for f in patches/hanoip-vs-sm7150-mainline-tauchgang.diff patches/hanoip-dts-cam-tres-delta.diff base.config; do
-	[ -s "$u/eng/$f" ] || curl -fsSL --retry 3 -o "$u/eng/$f" "$ENG/$f"
-done
+mkdir -p "$u/out"
 if [ ! -d "$u/git/.git" ]; then
 	git init -q "$u/git"
 	git -C "$u/git" remote add origin https://github.com/sm7150-mainline/u-boot
@@ -30,19 +25,19 @@ git -C "$u/git" -c advice.detachedHead=false checkout -q --force "$BASE"
 git -C "$u/git" clean -qfdx
 [ "$(git -C "$u/git" rev-parse HEAD^{tree})" = $BASE_TREE ] || { echo "the base tree is not $BASE_TREE" >&2; exit 1; }
 for d in hanoip-vs-sm7150-mainline-tauchgang hanoip-dts-cam-tres-delta; do
-	git -C "$u/git" apply --whitespace=nowarn "$u/eng/patches/$d.diff"
+	git -C "$u/git" apply --whitespace=nowarn "$ml/base/$d.diff"
 done
 git -C "$u/git" add -A
-[ "$(git -C "$u/git" write-tree)" = $TREE ] || { echo "the patched tree differs from its validated build" >&2; exit 1; }
+[ "$(git -C "$u/git" write-tree)" = $TREE ] || { echo "the patched tree differs from the validated build" >&2; exit 1; }
 echo "source tree OK ($TREE)"
 cp "$ml/hanoip-server.env" "$u/git/board/qualcomm/hanoip-server.env"
-# Our changes on top of his checked tree (the watchdog left running for the kernel).
+# The server's changes on top of the checked tree (the watchdog left running for the kernel).
 for p in "$ml"/*.patch; do git -C "$u/git" apply --whitespace=nowarn "$p"; done
 
 o=$u/obj
 mkdir -p "$o"
 sed "s|^CONFIG_DEFAULT_DEVICE_TREE=.*|CONFIG_DEFAULT_DEVICE_TREE=\"qcom/$DT\"|; s|^CONFIG_OF_LIST=.*|CONFIG_OF_LIST=\"qcom/$DT\"|" \
-	"$u/eng/base.config" > "$o/base.config"
+	"$ml/base/base.config" > "$o/base.config"
 (cd "$u/git" && scripts/kconfig/merge_config.sh -m -O "$o" "$o/base.config" "$ml/server.config" >/dev/null)
 make -C "$u/git" O="$o" CROSS_COMPILE="$CC" olddefconfig >/dev/null
 grep -E '^(CONFIG_|# CONFIG_)' "$ml/server.config" | while read -r l; do

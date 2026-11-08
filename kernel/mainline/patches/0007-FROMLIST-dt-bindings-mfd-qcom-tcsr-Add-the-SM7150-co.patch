@@ -1,0 +1,28 @@
+From a23d4313eba5210e769fe5a99829ab5399c71f15 Mon Sep 17 00:00:00 2001
+From: Danila Tikhonov <danila@jiaxyga.com>
+Date: Fri, 8 Sep 2023 21:39:40 +0300
+Subject: [PATCH 007/194] FROMLIST: dt-bindings: mfd: qcom,tcsr: Add the SM7150
+ compatible
+
+Document the qcom,sm7150-tcsr compatible.
+
+Signed-off-by: Danila Tikhonov <danila@jiaxyga.com>
+---
+ Documentation/devicetree/bindings/mfd/qcom,tcsr.yaml | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/Documentation/devicetree/bindings/mfd/qcom,tcsr.yaml b/Documentation/devicetree/bindings/mfd/qcom,tcsr.yaml
+index c3889f974..d410a321a 100644
+--- a/Documentation/devicetree/bindings/mfd/qcom,tcsr.yaml
++++ b/Documentation/devicetree/bindings/mfd/qcom,tcsr.yaml
+@@ -39,6 +39,7 @@ properties:
+           - qcom,shikra-tcsr
+           - qcom,sm4450-tcsr
+           - qcom,sm6115-tcsr
++          - qcom,sm7150-tcsr
+           - qcom,sm8150-tcsr
+           - qcom,sm8250-tcsr
+           - qcom,sm8350-tcsr
+-- 
+2.43.0
+

@@ -1,0 +1,251 @@
+From 17f1adda18abbe85d70392d810be697bbdf4814a Mon Sep 17 00:00:00 2001
+From: hanoip <hanoip@localhost>
+Date: Sun, 25 Oct 2026 20:56:33 +0000
+Subject: [PATCH 122/194] hanoip: ufs
+
+---
+ drivers/ufs/core/ufshcd.c   | 42 +++++++++++++++++++++++++++++--------
+ drivers/ufs/host/ufs-qcom.c | 38 +++++++++++++++++++--------------
+ 2 files changed, 55 insertions(+), 25 deletions(-)
+
+diff --git a/drivers/ufs/core/ufshcd.c b/drivers/ufs/core/ufshcd.c
+index ca8329052..cea3d9663 100644
+--- a/drivers/ufs/core/ufshcd.c
++++ b/drivers/ufs/core/ufshcd.c
+@@ -9952,7 +9952,9 @@ static int ufshcd_init_clocks(struct ufs_hba *hba)
+ 
+ static int ufshcd_variant_hba_init(struct ufs_hba *hba)
+ {
+-	int err = ufshcd_vops_init(hba);
++	int err;
++
++	err = ufshcd_vops_init(hba);
+ 
+ 	if (err)
+ 		dev_err_probe(hba->dev, err,
+@@ -9973,31 +9975,49 @@ static int ufshcd_hba_init(struct ufs_hba *hba)
+ 	 * of the initialization here.
+ 	 */
+ 	err = ufshcd_init_hba_vreg(hba);
+-	if (err)
++	if (err) {
++		dev_err_probe(hba->dev, err,
++			      "generic init_hba_vreg failed\n");
+ 		goto out;
++	}
+ 
+ 	err = ufshcd_setup_hba_vreg(hba, true);
+-	if (err)
++	if (err) {
++		dev_err_probe(hba->dev, err,
++			      "generic setup_hba_vreg failed\n");
+ 		goto out;
++	}
+ 
+ 	err = ufshcd_init_clocks(hba);
+-	if (err)
++	if (err) {
++		dev_err_probe(hba->dev, err,
++			      "generic init_clocks failed\n");
+ 		goto out_disable_hba_vreg;
++	}
+ 
+ 	if (hba->dev_ref_clk_freq == REF_CLK_FREQ_INVAL)
+ 		hba->dev_ref_clk_freq = ufshcd_parse_ref_clk_property(hba);
+ 
+ 	err = ufshcd_setup_clocks(hba, true);
+-	if (err)
++	if (err) {
++		dev_err_probe(hba->dev, err,
++			      "generic setup_clocks failed\n");
+ 		goto out_disable_hba_vreg;
++	}
+ 
+ 	err = ufshcd_init_vreg(hba);
+-	if (err)
++	if (err) {
++		dev_err_probe(hba->dev, err,
++			      "generic init_vreg failed\n");
+ 		goto out_disable_clks;
++	}
+ 
+ 	err = ufshcd_setup_vreg(hba, true);
+-	if (err)
++	if (err) {
++		dev_err_probe(hba->dev, err,
++			      "generic setup_vreg failed\n");
+ 		goto out_disable_clks;
++	}
+ 
+ 	err = ufshcd_variant_hba_init(hba);
+ 	if (err)
+@@ -11194,13 +11214,17 @@ int ufshcd_init(struct ufs_hba *hba, void __iomem *mmio_base, unsigned int irq)
+ 	hba->vcc_off_delay_us = 2000;
+ 
+ 	err = ufshcd_hba_init(hba);
+-	if (err)
++	if (err) {
++		dev_err_probe(dev, err, "ufshcd_hba_init failed\n");
+ 		goto out_error;
++	}
+ 
+ 	/* Read capabilities registers */
+ 	err = ufshcd_hba_capabilities(hba);
+-	if (err)
++	if (err) {
++		dev_err_probe(dev, err, "hba_capabilities failed\n");
+ 		goto out_disable;
++	}
+ 
+ 	/* Get UFS version supported by the controller */
+ 	hba->ufs_version = ufshcd_get_ufs_version(hba);
+diff --git a/drivers/ufs/host/ufs-qcom.c b/drivers/ufs/host/ufs-qcom.c
+index 4cd92a36f..edc7d9e76 100644
+--- a/drivers/ufs/host/ufs-qcom.c
++++ b/drivers/ufs/host/ufs-qcom.c
+@@ -553,7 +553,7 @@ static int ufs_qcom_power_up_sequence(struct ufs_hba *hba)
+  * Internal hardware sub-modules within the UTP controller control the CGCs.
+  * Hardware CGCs disable the clock to inactivate UTP sub-modules not involved
+  * in a specific operation, UTP controller CGCs are by default disabled and
+- * this function enables them (after every UFS link startup) to save some power
++ * this function enables them (after every UFS link startup) to save some powe
+  * leakage.
+  */
+ static void ufs_qcom_enable_hw_clk_gating(struct ufs_hba *hba)
+@@ -871,7 +871,7 @@ static void ufs_qcom_dev_ref_clk_ctrl(struct ufs_qcom_host *host, bool enable)
+ 		/*
+ 		 * If we are here to disable this clock it might be immediately
+ 		 * after entering into hibern8 in which case we need to make
+-		 * sure that device ref_clk is active for specific time after
++		 * sure that device ref_clk is active for specific time afte
+ 		 * hibern8 enter.
+ 		 */
+ 		if (!enable) {
+@@ -920,13 +920,13 @@ static int ufs_qcom_icc_set_bw(struct ufs_qcom_host *host, u32 mem_bw, u32 cfg_b
+ 
+ 	ret = icc_set_bw(host->icc_ddr, 0, mem_bw);
+ 	if (ret < 0) {
+-		dev_err(dev, "failed to set bandwidth request: %d\n", ret);
++		dev_err(dev, "ufs-ddr bandwidth request failed: %d\n", ret);
+ 		return ret;
+ 	}
+ 
+ 	ret = icc_set_bw(host->icc_cpu, 0, cfg_bw);
+ 	if (ret < 0) {
+-		dev_err(dev, "failed to set bandwidth request: %d\n", ret);
++		dev_err(dev, "cpu-ufs bandwidth request failed: %d\n", ret);
+ 		return ret;
+ 	}
+ 
+@@ -1539,12 +1539,12 @@ static int ufs_qcom_icc_init(struct ufs_qcom_host *host)
+ 	host->icc_ddr = devm_of_icc_get(dev, "ufs-ddr");
+ 	if (IS_ERR(host->icc_ddr))
+ 		return dev_err_probe(dev, PTR_ERR(host->icc_ddr),
+-				    "failed to acquire interconnect path\n");
++				    "failed to acquire ufs-ddr interconnect\n");
+ 
+ 	host->icc_cpu = devm_of_icc_get(dev, "cpu-ufs");
+ 	if (IS_ERR(host->icc_cpu))
+ 		return dev_err_probe(dev, PTR_ERR(host->icc_cpu),
+-				    "failed to acquire interconnect path\n");
++				    "failed to acquire cpu-ufs interconnect\n");
+ 
+ 	/*
+ 	 * Set Maximum bandwidth vote before initializing the UFS controller and
+@@ -1554,19 +1554,20 @@ static int ufs_qcom_icc_init(struct ufs_qcom_host *host)
+ 	ret = ufs_qcom_icc_set_bw(host, ufs_qcom_bw_table[MODE_MAX][0][0].mem_bw,
+ 				  ufs_qcom_bw_table[MODE_MAX][0][0].cfg_bw);
+ 	if (ret < 0)
+-		return dev_err_probe(dev, ret, "failed to set bandwidth request\n");
++		return dev_err_probe(dev, ret,
++				    "failed to set initial bandwidth\n");
+ 
+ 	return 0;
+ }
+ 
+ /**
+- * ufs_qcom_init - bind phy with controller
++ * ufs_qcom_init - bind phy with controlle
+  * @hba: host controller instance
+  *
+  * Binds PHY with controller and powers up PHY enabling clocks
+  * and regulators.
+  *
+- * Return: -EPROBE_DEFER if binding fails, returns negative error
++ * Return: -EPROBE_DEFER if binding fails, returns negative erro
+  * on phy power up failure and returns zero on success.
+  */
+ static int ufs_qcom_init(struct ufs_hba *hba)
+@@ -1589,7 +1590,7 @@ static int ufs_qcom_init(struct ufs_hba *hba)
+ 	host->core_reset = devm_reset_control_get_optional(hba->dev, "rst");
+ 	if (IS_ERR(host->core_reset)) {
+ 		err = dev_err_probe(dev, PTR_ERR(host->core_reset),
+-				    "Failed to get reset control\n");
++				    "failed to get host reset rst\n");
+ 		goto out_variant_clear;
+ 	}
+ 
+@@ -1605,7 +1606,8 @@ static int ufs_qcom_init(struct ufs_hba *hba)
+ 	if (!has_acpi_companion(dev)) {
+ 		host->generic_phy = devm_phy_get(dev, "ufsphy");
+ 		if (IS_ERR(host->generic_phy)) {
+-			err = dev_err_probe(dev, PTR_ERR(host->generic_phy), "Failed to get PHY\n");
++			err = dev_err_probe(dev, PTR_ERR(host->generic_phy),
++					   "failed to get PHY ufsphy\n");
+ 			goto out_variant_clear;
+ 		}
+ 	}
+@@ -1618,7 +1620,7 @@ static int ufs_qcom_init(struct ufs_hba *hba)
+ 						     GPIOD_OUT_HIGH);
+ 	if (IS_ERR(host->device_reset)) {
+ 		err = dev_err_probe(dev, PTR_ERR(host->device_reset),
+-				    "Failed to acquire device reset gpio\n");
++				    "failed to acquire device reset GPIO\n");
+ 		goto out_variant_clear;
+ 	}
+ 
+@@ -1634,8 +1636,10 @@ static int ufs_qcom_init(struct ufs_hba *hba)
+ 	}
+ 
+ 	err = ufs_qcom_init_lane_clks(host);
+-	if (err)
++	if (err) {
++		dev_err_probe(dev, err, "failed to acquire lane clocks\n");
+ 		goto out_variant_clear;
++	}
+ 
+ 	ufs_qcom_set_caps(hba);
+ 	ufs_qcom_advertise_quirks(hba);
+@@ -1644,8 +1648,10 @@ static int ufs_qcom_init(struct ufs_hba *hba)
+ 	ufs_qcom_parse_gear_limits(hba);
+ 
+ 	err = ufs_qcom_ice_init(host);
+-	if (err)
++	if (err) {
++		dev_err_probe(dev, err, "failed to initialize ICE\n");
+ 		goto out_variant_clear;
++	}
+ 
+ 	ufs_qcom_setup_clocks(hba, true, POST_CHANGE);
+ 
+@@ -2255,7 +2261,7 @@ static int ufs_qcom_device_reset(struct ufs_hba *hba)
+ 
+ /**
+  * ufs_qcom_fw_managed_device_reset - Reset UFS device under FW-managed design
+- * @hba: pointer to UFS host bus adapter
++ * @hba: pointer to UFS host bus adapte
+  *
+  * In the firmware-managed reset model, the power domain is powered on by genpd
+  * before the UFS controller driver probes. For subsequent resets (such as
+@@ -2963,7 +2969,7 @@ static const struct ufs_hba_variant_ops ufs_hba_qcom_sa8255p_vops = {
+ };
+ 
+ /**
+- * ufs_qcom_probe - probe routine of the driver
++ * ufs_qcom_probe - probe routine of the drive
+  * @pdev: pointer to Platform device handle
+  *
+  * Return: zero for success and non-zero for failure.
+-- 
+2.43.0
+

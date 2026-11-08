@@ -1,0 +1,50 @@
+From db5da3d51b059cede7121199a8fbf1a60bc41047 Mon Sep 17 00:00:00 2001
+From: hanoip <h@l>
+Date: Tue, 27 Oct 2026 18:01:26 -0300
+Subject: [PATCH 187/194] power: supply: qcom_qg: document what 100% means on
+ this port
+
+Measured after the first full charge: with the float the bootloader leaves
+(4.400 V) the pack rests at 4.381 V, which the Motorola OCV curve reads as
+94.4%, and a coulomb count over the same charge gives the same number. Android
+programmes 4.450 V, the curve point that is 100%.
+
+The 100% reported at termination is therefore a policy -- 'the charger is done,
+you can unplug' -- and not a claim that the cell is chemically full. Write that
+down next to the code so nobody later mistakes it for a bug and replaces it with
+a voltage-based estimate that would overstate the charge.
+---
+ drivers/power/supply/qcom_qg.c | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/drivers/power/supply/qcom_qg.c b/drivers/power/supply/qcom_qg.c
+index 9ed2bfac1..b57d51a31 100644
+--- a/drivers/power/supply/qcom_qg.c
++++ b/drivers/power/supply/qcom_qg.c
+@@ -509,6 +509,23 @@ static int qcom_qg_get_capacity(struct qcom_qg_chip *chip,
+ 	 * A terminated charge means full, whatever the estimate says. Report it
+ 	 * immediately: the coulomb budget must not delay the last couple of
+ 	 * percent after the hardware declared the battery full.
++	 *
++	 * 100% here means "the charger finished, you can unplug", not "the cell
++	 * is chemically full". With the float the bootloader leaves
++	 * (FLOAT_VOLTAGE_CFG 0x70 = 0x50 = 4.400 V) the pack settles at 4.381 V
++	 * of rest, which the Motorola OCV curve in the DT reads as 94.4%; a
++	 * coulomb count over the same charge (91.5% at 4.342 V, plus 145 mAh of
++	 * 4939 mAh) gives exactly the same 94.4%. Android programmes
++	 * qcom,fv-max-uv = 4.450 V, and that is the curve point that means 100%.
++	 *
++	 * The extra 50 mV is deliberately not taken here: this cell is old (the
++	 * learned capacity is 4939 mAh against 6174 mAh of design) and staying
++	 * 50 mV below the Android float is the conservative choice this port
++	 * makes on purpose.
++	 *
++	 * Do not "fix" the 100% by trusting the estimate instead: it is a
++	 * display policy, it only applies while the charger reports FULL, and
++	 * it drops back to the real curve value as soon as the cable is pulled.
+ 	 */
+ 	if (status == POWER_SUPPLY_STATUS_FULL) {
+ 		guard(mutex)(&chip->lock);
+-- 
+2.43.0
+

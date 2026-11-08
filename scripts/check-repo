@@ -42,13 +42,16 @@ files=$(git ls-files; git ls-files -o --exclude-standard)
 # and not the line, so a hit does not copy the value into the output.
 user=$(sed -n 's/^HANOIP_USER=//p' .env 2>/dev/null | head -1 | tr -d "\"'")
 hits=$(for f in $files; do [ -f "$f" ] || continue; case $f in *.dtb) continue;; esac
-	grep -InE '([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}' "$f" | grep -v '00:00:00:00:00:00' | sed "s|^|$f:|"
+	grep -InE '([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}' "$f" | grep -v -e '00:00:00:00:00:00' -e 'AA:BB:CC:DD:EE:FF' | sed "s|^|$f:|"
 	grep -InE 'androidboot\.serialno=[^X"[:space:]]' "$f" | sed "s|^|$f:|"
 	grep -InE 'linux,seriallow *= *<0x0*[1-9a-f]' "$f" | sed "s|^|$f:|"
 	grep -InE 'mmi,battid *= *"[^R]' "$f" | sed "s|^|$f:|"
 	grep -InE '^(battid|pcb-part-no): *[^R ]' "$f" | sed "s|^|$f:|"
 	grep -InE '(^|[[:space:]"'"'"'=:(])/home/[a-z][a-z0-9_-]*/' "$f" | sed "s|^|$f:|"
-	grep -InE '[A-Za-z0-9._-]+@[A-Za-z0-9-]+\.(com|org|net|io|dev)' "$f" | grep -v 'noreply@' | sed "s|^|$f:|"
+	# The upstream patches carry their authors' public e-mails, which are part of the attribution.
+	case $f in kernel/mainline/patches/*|kernel/mainline/uboot/base/*) ;; *)
+		grep -InE '[A-Za-z0-9._-]+@[A-Za-z0-9-]+\.(com|org|net|io|dev)' "$f" | grep -v 'noreply@' | sed "s|^|$f:|" ;;
+	esac
 	grep -InE '(^|[^0-9A-Za-z])[0-9]{15}([^0-9A-Za-z]|$)' "$f" | cut -d: -f1 | sed "s|^|$f:|"
 	if [ -n "$user" ]; then grep -InwF -- "$user" "$f" | cut -d: -f1 | sed "s|^|$f:|"; fi
 done)

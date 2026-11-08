@@ -1,0 +1,29 @@
+From fa9b3caa200fbe4066aac3c0acba14943e36c1aa Mon Sep 17 00:00:00 2001
+From: David Wronek <david@mainlining.org>
+Date: Fri, 8 Sep 2023 21:30:53 +0300
+Subject: [PATCH 009/194] FROMLIST: dt-bindings: ufs: qcom: Add the SM7150
+ compatible
+
+Document the compatible for the UFS found on SM7150.
+
+Signed-off-by: David Wronek <david@mainlining.org>
+Signed-off-by: Danila Tikhonov <danila@jiaxyga.com>
+---
+ Documentation/devicetree/bindings/ufs/qcom,ufs.yaml | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/Documentation/devicetree/bindings/ufs/qcom,ufs.yaml b/Documentation/devicetree/bindings/ufs/qcom,ufs.yaml
+index 516bb61a4..7525e7207 100644
+--- a/Documentation/devicetree/bindings/ufs/qcom,ufs.yaml
++++ b/Documentation/devicetree/bindings/ufs/qcom,ufs.yaml
+@@ -38,6 +38,7 @@ properties:
+           - qcom,sm6115-ufshc
+           - qcom,sm6125-ufshc
+           - qcom,sm6350-ufshc
++          - qcom,sm7150-ufshc
+           - qcom,sm8150-ufshc
+       - const: qcom,ufshc
+       - const: jedec,ufs-2.0
+-- 
+2.43.0
+

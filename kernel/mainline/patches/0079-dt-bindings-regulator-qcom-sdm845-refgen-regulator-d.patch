@@ -1,0 +1,29 @@
+From ab46e941dc9612744bb168e4e177246511142eb9 Mon Sep 17 00:00:00 2001
+From: Jens Reidel <adrian@mainlining.org>
+Date: Sun, 21 Sep 2025 10:09:31 +0200
+Subject: [PATCH 079/194] dt-bindings: regulator: qcom,sdm845-refgen-regulator:
+ document SM7150
+
+Document the refgen clock being present on the SM7150 platform. It is
+used to provide reference voltage to the DSI controller.
+
+Signed-off-by: Jens Reidel <adrian@mainlining.org>
+---
+ .../bindings/regulator/qcom,sdm845-refgen-regulator.yaml         | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/Documentation/devicetree/bindings/regulator/qcom,sdm845-refgen-regulator.yaml b/Documentation/devicetree/bindings/regulator/qcom,sdm845-refgen-regulator.yaml
+index 0bbf7c806..4ad93283b 100644
+--- a/Documentation/devicetree/bindings/regulator/qcom,sdm845-refgen-regulator.yaml
++++ b/Documentation/devicetree/bindings/regulator/qcom,sdm845-refgen-regulator.yaml
+@@ -21,6 +21,7 @@ properties:
+               - qcom,sc7180-refgen-regulator
+               - qcom,sc8180x-refgen-regulator
+               - qcom,sdm670-refgen-regulator
++              - qcom,sm7150-refgen-regulator
+               - qcom,sm8150-refgen-regulator
+           - const: qcom,sdm845-refgen-regulator
+ 
+-- 
+2.43.0
+

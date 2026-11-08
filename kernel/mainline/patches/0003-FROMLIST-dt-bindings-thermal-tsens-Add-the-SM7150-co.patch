@@ -1,0 +1,28 @@
+From bab03de39054aedb0ad93e2862e1deda4bee91e9 Mon Sep 17 00:00:00 2001
+From: Danila Tikhonov <danila@jiaxyga.com>
+Date: Fri, 8 Sep 2023 22:05:24 +0300
+Subject: [PATCH 003/194] FROMLIST: dt-bindings: thermal: tsens: Add the SM7150
+ compatible
+
+Add the TSENS v2.x controller found on SM7150.
+
+Signed-off-by: Danila Tikhonov <danila@jiaxyga.com>
+---
+ Documentation/devicetree/bindings/thermal/qcom-tsens.yaml | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/Documentation/devicetree/bindings/thermal/qcom-tsens.yaml b/Documentation/devicetree/bindings/thermal/qcom-tsens.yaml
+index 5a8f7673e..8e37571e4 100644
+--- a/Documentation/devicetree/bindings/thermal/qcom-tsens.yaml
++++ b/Documentation/devicetree/bindings/thermal/qcom-tsens.yaml
+@@ -81,6 +81,7 @@ properties:
+               - qcom,sm6115-tsens
+               - qcom,sm6350-tsens
+               - qcom,sm6375-tsens
++              - qcom,sm7150-tsens
+               - qcom,sm8150-tsens
+               - qcom,sm8250-tsens
+               - qcom,sm8350-tsens
+-- 
+2.43.0
+

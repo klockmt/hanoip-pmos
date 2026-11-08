@@ -1,0 +1,941 @@
+From d74695621d1f432bab8ac088d2305ca005a1ae7e Mon Sep 17 00:00:00 2001
+From: Aelin Reidel <aelin@mainlining.org>
+Date: Sun, 17 May 2026 02:10:12 +0200
+Subject: [PATCH 113/194] Revert "WIP WCD stuff"
+
+This reverts commit 9de4fb1a3a1fafafa783731c48d2e77cfc93db2a.
+---
+ .../boot/dts/qcom/sm7150-xiaomi-common.dtsi   |  52 -----
+ .../boot/dts/qcom/sm7150-xiaomi-davinci.dtsi  |  77 -------
+ .../boot/dts/qcom/sm7150-xiaomi-surya.dtsi    |  78 -------
+ arch/arm64/boot/dts/qcom/sm7150.dtsi          | 196 +++---------------
+ arch/arm64/configs/sm7150.config              |   2 +-
+ drivers/pinctrl/qcom/pinctrl-lpass-lpi.c      |   6 -
+ .../pinctrl/qcom/pinctrl-sm7150-lpass-lpi.c   | 112 ++++------
+ sound/soc/codecs/wcd937x.c                    |   4 -
+ sound/soc/qcom/qdsp6/q6afe.c                  |   2 -
+ sound/soc/qcom/sm8250.c                       |   2 +-
+ 10 files changed, 64 insertions(+), 467 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-common.dtsi b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-common.dtsi
+index 673aa13bc..3209faf98 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-common.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-common.dtsi
+@@ -122,25 +122,6 @@ vreg_s3a_0p8: smpa3-regulator {
+ 		vin-supply = <&vph_pwr>;
+ 	};
+ 
+-	wcd937x: audio-codec {
+-		compatible = "qcom,wcd9375-codec";
+-
+-		reset-gpios = <&lpass_tlmm 24 GPIO_ACTIVE_LOW>;
+-		pinctrl-0 = <&wcd9375_reset_active>;
+-		pinctrl-1 = <&wcd9375_reset_sleep>;
+-		pinctrl-names = "default", "sleep";
+-
+-		vdd-buck-supply = <&vreg_l15a_1p8>;
+-		vdd-rxtx-supply = <&vreg_l10a_1p8>;
+-		vdd-px-supply = <&vreg_l10a_1p8>;
+-		vdd-mic-bias-supply = <&vreg_bob>;
+-
+-		qcom,rx-device = <&wcd_rx>;
+-		qcom,tx-device = <&wcd_tx>;
+-
+-		#sound-dai-cells = <1>;
+-	};
+-
+ 	wcn3998-pmu {
+ 		compatible = "qcom,wcn3998-pmu";
+ 
+@@ -743,10 +724,6 @@ &remoteproc_mpss {
+ 	status = "okay";
+ };
+ 
+-&rxmacro {
+-	status = "okay";
+-};
+-
+ &sdhc_2 {
+ 	cd-gpios = <&tlmm 69 GPIO_ACTIVE_LOW>;
+ 
+@@ -758,27 +735,6 @@ &sdhc_2 {
+ 	pinctrl-1 = <&sdc2_off>;
+ };
+ 
+-&swr1 {
+-	status = "okay";
+-
+-	wcd_rx: codec@0,4 {
+-		compatible = "sdw20217010a00";
+-		reg = <0 4>;
+-
+-		qcom,rx-port-mapping = <1 2 3 4 5>;
+-	};
+-};
+-
+-&swr2 {
+-	status = "okay";
+-	wcd_tx: codec@0,3 {
+-		compatible = "sdw20217010a00";
+-		reg = <0 3>;
+-
+-		qcom,tx-port-mapping = <2 3 4 5>;
+-	};
+-};
+-
+ &tlmm {
+ 	/* Reserved I/Os for NFC and FP */
+ 	gpio-reserved-ranges = <0 4>, <59 4>;
+@@ -933,10 +889,6 @@ sw_ctrl_default: sw-ctrl-default-state {
+ 	};
+ };
+ 
+-&txmacro {
+-	status = "okay";
+-};
+-
+ &uart3 {
+ 	/delete-property/interrupts;
+ 	interrupts-extended = <&intc GIC_SPI 604 IRQ_TYPE_LEVEL_HIGH>,
+@@ -1005,10 +957,6 @@ &usb_1_hsphy {
+ 	status = "okay";
+ };
+ 
+-&vamacro {
+-	status = "okay";
+-};
+-
+ &venus {
+ 	//status = "okay";
+ };
+diff --git a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi
+index b92d14608..a9bccbbf8 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi
+@@ -88,14 +88,6 @@ sound {
+ 		pinctrl-0 = <&pri_mi2s_active &pri_mi2s_ws_active>;
+ 		pinctrl-names = "default";
+ 		model = "Xiaomi Mi 9T";
+-		audio-routing =
+-			"IN1_HPHL", "HPHL_OUT",
+-			"IN2_HPHR", "HPHR_OUT",
+-			"AMIC1", "MIC BIAS1",
+-			"AMIC2", "MIC BIAS2",
+-			"AMIC3", "MIC BIAS3",
+-			"TX SWR_ADC0", "ADC1_OUTPUT",
+-			"TX SWR_ADC2", "ADC2_OUTPUT";
+ 
+ 		mm1-dai-link {
+ 			link-name = "MultiMedia1";
+@@ -104,22 +96,6 @@ cpu {
+ 			};
+ 		};
+ 
+-		mm2-dai-link {
+-			link-name = "MultiMedia2";
+-
+-			cpu {
+-				sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA2>;
+-			};
+-		};
+-	 
+-		mm3-dai-link {
+-			link-name = "MultiMedia3";
+-
+-			cpu {
+-				sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA3>;
+-			};
+-		};
+-
+ 		speaker_playback_dai {
+ 			link-name = "Primary Spkr Playback";
+ 			cpu {
+@@ -134,38 +110,6 @@ codec {
+ 				sound-dai = <&tfa9874>;
+ 			};
+ 		};
+-
+-		wcd-playback-dai-link {
+-			link-name = "WCD Playback";
+-
+-			cpu {
+-				sound-dai = <&q6afedai RX_CODEC_DMA_RX_0>;
+-			};
+-	 
+-			codec {
+-				sound-dai = <&wcd937x 0>, <&swr1 0>, <&rxmacro 0>;
+-			};
+-
+-			platform {
+-				sound-dai = <&q6routing>;
+-			};
+-		};
+-
+-		wcd-capture-dai-link {
+-			link-name = "WCD Capture";
+-
+-			cpu {
+-				sound-dai = <&q6afedai TX_CODEC_DMA_TX_3>;
+-			};
+-	 
+-			codec {
+-				sound-dai = <&wcd937x 1>, <&swr2 0>, <&txmacro 0>;
+-			};
+-
+-			platform {
+-				sound-dai = <&q6routing>;
+-			};
+-		};
+ 	};
+ 
+ 	camt_avdd_2p8: regulator-camt-avdd-2p8 {
+@@ -453,28 +397,12 @@ qi2s@16 {
+ 		reg = <PRIMARY_MI2S_RX>;
+ 		qcom,sd-lines = <0>;
+ 	};
+-
+-	dai@113 {
+-		reg = <RX_CODEC_DMA_RX_0>;
+-	};
+-
+-	dai@120 {
+-		reg = <TX_CODEC_DMA_TX_3>;
+-	};
+ };
+ 
+ &q6asmdai {
+ 	dai@0 {
+ 		reg = <MSM_FRONTEND_DAI_MULTIMEDIA1>;
+ 	};
+-
+-	dai@1 {
+-		reg = <1>;
+-	};
+-
+-	dai@2 {
+-		reg = <2>;
+-	};
+ };
+ 
+ &remoteproc_adsp {
+@@ -661,11 +589,6 @@ &venus {
+ 	firmware-name = "qcom/sm7150/xiaomi/davinci/venus.mbn";
+ };
+ 
+-&wcd937x {
+-	qcom,micbias1-microvolt = <2750000>;
+-	qcom,micbias3-microvolt = <2750000>;
+-};
+-
+ &wifi {
+ 	qcom,ath10k-calibration-variant = "xiaomi_davinci";
+ };
+diff --git a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-surya.dtsi b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-surya.dtsi
+index 7b4acff16..65aee9597 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-surya.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-surya.dtsi
+@@ -79,14 +79,6 @@ sound {
+ 		pinctrl-0 = <&ter_mi2s_active>;
+ 		pinctrl-names = "default";
+ 		model = "POCO X3";
+-		audio-routing =
+-			"IN1_HPHL", "HPHL_OUT",
+-			"IN2_HPHR", "HPHR_OUT",
+-			"AMIC1", "MIC BIAS1",
+-			"AMIC2", "MIC BIAS2",
+-			"AMIC3", "MIC BIAS3",
+-			"TX SWR_ADC0", "ADC1_OUTPUT",
+-			"TX SWR_ADC2", "ADC2_OUTPUT";
+ 
+ 		mm1-dai-link {
+ 			link-name = "MultiMedia1";
+@@ -95,22 +87,6 @@ cpu {
+ 			};
+ 		};
+ 
+-		mm2-dai-link {
+-			link-name = "MultiMedia2";
+-
+-			cpu {
+-				sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA2>;
+-			};
+-		};
+-
+-		mm3-dai-link {
+-			link-name = "MultiMedia3";
+-
+-			cpu {
+-				sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA3>;
+-			};
+-		};
+-
+ 		i2s-dai-link {
+ 			link-name = "I2S Playback";
+ 			cpu {
+@@ -125,38 +101,6 @@ codec {
+ 				sound-dai = <&tas2562 0>, <&tas2564 0>;
+ 			};
+ 		};
+-
+-		wcd-playback-dai-link {
+-			link-name = "WCD Playback";
+-
+-			cpu {
+-				sound-dai = <&q6afedai RX_CODEC_DMA_RX_0>;
+-			};
+-
+-			codec {
+-				sound-dai = <&wcd937x 0>, <&swr1 0>, <&rxmacro 0>;
+-			};
+-
+-			platform {
+-				sound-dai = <&q6routing>;
+-			};
+-		};
+-
+-		wcd-capture-dai-link {
+-			link-name = "WCD Capture";
+-
+-			cpu {
+-				sound-dai = <&q6afedai TX_CODEC_DMA_TX_3>;
+-			};
+-
+-			codec {
+-				sound-dai = <&wcd937x 1>, <&swr2 0>, <&txmacro 0>;
+-			};
+-
+-			platform {
+-				sound-dai = <&q6routing>;
+-			};
+-		};
+ 	};
+ };
+ 
+@@ -341,28 +285,12 @@ qi2s@20 {
+ 		reg = <TERTIARY_MI2S_RX>;
+ 		qcom,sd-lines = <0>;
+ 	};
+-
+-	dai@113 {
+-		reg = <RX_CODEC_DMA_RX_0>;
+-	};
+-
+-	dai@120 {
+-		reg = <TX_CODEC_DMA_TX_3>;
+-	};
+ };
+ 
+ &q6asmdai {
+ 	dai@0 {
+ 		reg = <MSM_FRONTEND_DAI_MULTIMEDIA1>;
+ 	};
+-
+-	dai@1 {
+-		reg = <1>;
+-	};
+-
+-	dai@2 {
+-		reg = <2>;
+-	};
+ };
+ 
+ &remoteproc_adsp {
+@@ -533,12 +461,6 @@ &vreg_l18a_2p8 {
+ 	regulator-max-microvolt = <1904000>;
+ };
+ 
+-&wcd937x {
+-	qcom,micbias1-microvolt = <2700000>;
+-	qcom,micbias2-microvolt = <2700000>;
+-	qcom,micbias3-microvolt = <2700000>;
+-};
+-
+ &wifi {
+ 	qcom,ath10k-calibration-variant = "xiaomi_surya";
+ };
+diff --git a/arch/arm64/boot/dts/qcom/sm7150.dtsi b/arch/arm64/boot/dts/qcom/sm7150.dtsi
+index a2eb0cdfa..cd81391fb 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm7150.dtsi
+@@ -23,7 +23,6 @@
+ #include <dt-bindings/soc/qcom,rpmh-rsc.h>
+ #include <dt-bindings/soc/qcom,apr.h>
+ #include <dt-bindings/sound/qcom,q6afe.h>
+-#include <dt-bindings/sound/qcom,q6dsp-lpass-ports.h>
+ #include <dt-bindings/thermal/thermal.h>
+ 
+ / {
+@@ -4626,182 +4625,35 @@ wifi: wifi@18800000 {
+ 			status = "disabled";
+ 		};
+ 
+-		slimbam: dma-controller@62e04000 {
+-			compatible = "qcom,bam-v1.7.4", "qcom,bam-v1.7.0";
+-			reg = <0 0x62e04000 0 0x20000>;
+-			interrupts = <GIC_SPI 292 IRQ_TYPE_LEVEL_HIGH>;
+-
+-			num-channels = <31>;
+-			#dma-cells = <1>;
+-			qcom,ee = <1>;
+-			qcom,num-ees = <2>;
+-			qcom,controlled-remotely;
+-
+-			iommus = <&apps_smmu 0x1bf3 0x0>;
+-		};
+-
+-		slim: slim-ngd@62e40000 {
+-			compatible = "qcom,slim-ngd-v2.1.0";
+-			reg = <0 0x62e40000 0 0x2c000>;
+-			interrupts = <GIC_SPI 291 IRQ_TYPE_LEVEL_HIGH>;
+-
+-			dmas = <&slimbam 3>, <&slimbam 4>;
+-			dma-names = "rx", "tx";
+-
+-			iommus = <&apps_smmu 0x1bf3 0x0>;
+-			#address-cells = <1>;
+-			#size-cells = <0>;
+-			status = "disabled";
+-		};
+-
+-		txmacro: txmacro@62ec0000 {
+-			compatible = "qcom,sm7150-lpass-tx-macro",
+-				     "qcom,sm8250-lpass-tx-macro";
+-			reg = <0 0x62ec0000 0 0x1000>;
+-
+-			clocks = <&q6afecc LPASS_CLK_ID_TX_CORE_MCLK LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
+-				 <&q6afecc LPASS_CLK_ID_TX_CORE_NPL_MCLK  LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
+-				 <&q6afecc LPASS_HW_MACRO_VOTE LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
+-				 <&vamacro>;
+-			clock-names = "mclk", "npl", "macro", "fsgen";
+-
+-			pinctrl-names = "default";
+-			pinctrl-0 = <&tx_swr_active>;
+-
+-			#clock-cells = <0>;
+-			clock-output-names = "mclk";
+-			#sound-dai-cells = <1>;
+-			status = "disabled";
+-		};
+-
+-		swr2: soundwire-controller@62ed0000 {
+-			compatible = "qcom,soundwire-v1.5.1";
+-			reg = <0 0x62ed0000 0 0x2000>;
+-
+-			interrupts = <GIC_SPI 296 IRQ_TYPE_LEVEL_HIGH>,
+-				     <GIC_SPI 500 IRQ_TYPE_LEVEL_HIGH>;
+-			interrupt-names = "core", "wakeup";
+-
+-			clocks = <&txmacro>;
+-			clock-names = "iface";
+-			label = "TX";
+-
+-			qcom,din-ports = <6>;
+-			qcom,dout-ports = <1>;
+-			qcom,ports-sinterval-low =	/bits/ 8 <0xFF 0x01 0x01 0x03 0x03 0xFF 0xFF>;
+-			qcom,ports-offset1 =		/bits/ 8 <0xFF 0x01 0x00 0x02 0x00 0xFF 0xFF>;
+-			qcom,ports-offset2 =		/bits/ 8 <0xFF 0x00 0x00 0x00 0x00 0xFF 0xFF>;
+-			qcom,ports-block-pack-mode =	/bits/ 8 <0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF>;
+-			qcom,ports-hstart =		/bits/ 8 <0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF>;
+-			qcom,ports-hstop =		/bits/ 8 <0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF>;
+-			qcom,ports-word-length =	/bits/ 8 <0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF>;
+-			qcom,ports-block-group-count =	/bits/ 8 <0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF>;
+-			qcom,ports-lane-control =	/bits/ 8 <0xFF 0x00 0x01 0x00 0x01 0xFF 0xFF>;
+-
+-			#sound-dai-cells = <1>;
+-			#address-cells = <2>;
+-			#size-cells = <0>;
+-
+-			status = "disabled";
+-		};
+-
+-		rxmacro: rxmacro@62ee0000 {
+-			compatible = "qcom,sm7150-lpass-rx-macro",
+-				     "qcom,sm8250-lpass-rx-macro";
+-			reg = <0 0x62ee0000 0 0x1000>;
+-
+-			clocks = <&q6afecc LPASS_CLK_ID_TX_CORE_MCLK LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
+-				 <&q6afecc LPASS_CLK_ID_TX_CORE_NPL_MCLK  LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
+-				 <&q6afecc LPASS_HW_MACRO_VOTE LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
+-				 <&vamacro>;
+-			clock-names = "mclk", "npl", "macro", "fsgen";
+-
+-			pinctrl-names = "default";
+-			pinctrl-0 = <&rx_swr_active>;
+-
+-			#clock-cells = <0>;
+-			clock-output-names = "mclk";
+-			#sound-dai-cells = <1>;
+-			status = "disabled";
+-		};
+-
+-
+-		swr1: soundwire-controller@62ef0000 {
+-			compatible = "qcom,soundwire-v1.5.1";
+-			reg = <0 0x62ef0000 0 0x2000>;
+-
+-			interrupts = <GIC_SPI 297 IRQ_TYPE_LEVEL_HIGH>;
+-			interrupt-names = "core";
+-
+-			clocks = <&rxmacro>;
+-			clock-names = "iface";
+-			label = "RX";
+-
+-			qcom,din-ports = <1>;
+-			qcom,dout-ports = <6>;
+-			qcom,ports-sinterval-low =	/bits/ 8 <0x03 0x1F 0x1F 0x07 0x00 0xFF 0xFF>;
+-			qcom,ports-offset1 =		/bits/ 8 <0x00 0x00 0x0B 0x01 0x00 0xFF 0xFF>;
+-			qcom,ports-offset2 =		/bits/ 8 <0x00 0x00 0x0B 0x00 0x00 0xFF 0xFF>;
+-			qcom,ports-hstart =		/bits/ 8 <0xFF 0x03 0xFF 0xFF 0xFF 0xFF 0xFF>;
+-			qcom,ports-hstop =		/bits/ 8 <0xFF 0x06 0xFF 0xFF 0xFF 0xFF 0xFF>;
+-			qcom,ports-word-length =	/bits/ 8 <0x01 0x07 0x04 0xFF 0xFF 0xFF 0xFF>;
+-			qcom,ports-block-pack-mode =	/bits/ 8 <0xFF 0x00 0x01 0xFF 0xFF 0xFF 0xFF>;
+-			qcom,ports-block-group-count =	/bits/ 8 <0xFF 0xFF 0xFF 0xFF 0x00 0xFF 0xFF>;
+-			qcom,ports-lane-control =	/bits/ 8 <0x01 0x00 0x00 0x00 0x00 0xFF 0xFF>;
+-
+-			#sound-dai-cells = <1>;
+-			#address-cells = <2>;
+-			#size-cells = <0>;
+-
+-			status = "disabled";
+-		};
+-
+-		vamacro: codec@62f20000 {
+-			compatible = "qcom,sm7150-lpass-va-macro",
+-				     "qcom,sm8250-lpass-va-macro";
+-			reg = <0 0x62f20000 0 0x1000>;
+-
+-			clocks = <&q6afecc LPASS_CLK_ID_TX_CORE_MCLK LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
+-				 <&q6afecc LPASS_CLK_ID_TX_CORE_NPL_MCLK LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
+-				 <&q6afecc LPASS_HW_MACRO_VOTE LPASS_CLK_ATTRIBUTE_COUPLE_NO>;
+-			clock-names = "mclk", "npl", "macro";
+-
+-			#clock-cells = <0>;
+-			clock-output-names = "fsgen";
+-			#sound-dai-cells = <1>;
+-			status = "disabled";
+-		};
+-
+-		lpass_tlmm: pinctrl@62b40000 {
++		lpass_tlmm: pinctrl@62b52000 {
+ 			compatible = "qcom,sm7150-lpass-lpi-pinctrl";
+-			reg = <0 0x62b40000 0 0x20000>,
+-			      <0 0x62b6f000 0 0x8>;
+-			      //<0 0x62b65000 0 0x1000>;
++			/* SSC range: <0 0x62b40000 0 0x12000> */
++			reg = <0 0x62b52000 0 0xe000>;
+ 
+ 			clocks = <&q6afecc LPASS_HW_MACRO_VOTE LPASS_CLK_ATTRIBUTE_COUPLE_NO>;
+ 			clock-names = "core";
+ 
+ 			gpio-controller;
+ 			#gpio-cells = <2>;
+-			gpio-ranges = <&lpass_tlmm 0 0 32>;
++			gpio-ranges = <&lpass_tlmm 0 0 14>;
+ 
+ 			tx_swr_active: tx-swr-active-state {
+ 				clk-pins {
+-					pins = "gpio18";
++					pins = "gpio0";
+ 					function = "swr_tx_clk";
+ 					drive-strength = <8>;
+ 					bias-bus-hold;
+ 				};
+ 
+ 				data1-pins {
+-					pins = "gpio19";
++					pins = "gpio1";
+ 					function = "swr_tx_data";
+ 					drive-strength = <8>;
+ 					bias-bus-hold;
+ 				};
+ 
+ 				data2-pins {
+-					pins = "gpio20";
++					pins = "gpio2";
+ 					function = "swr_tx_data";
+ 					drive-strength = <8>;
+ 					bias-bus-hold;
+@@ -4810,21 +4662,21 @@ data2-pins {
+ 
+ 			tx_swr_sleep: tx-swr-sleep-state {
+ 				clk-pins {
+-					pins = "gpio18";
++					pins = "gpio0";
+ 					function = "swr_tx_clk";
+ 					drive-strength = <2>;
+ 					bias-bus-hold;
+ 				};
+ 
+ 				data1-pins {
+-					pins = "gpio19";
++					pins = "gpio1";
+ 					function = "swr_tx_data";
+ 					drive-strength = <2>;
+ 					bias-bus-hold;
+ 				};
+ 
+ 				data2-pins {
+-					pins = "gpio20";
++					pins = "gpio2";
+ 					function = "swr_tx_data";
+ 					drive-strength = <2>;
+ 					bias-bus-hold;
+@@ -4833,14 +4685,14 @@ data2-pins {
+ 
+ 			rx_swr_active: rx-swr-active-state {
+ 				clk-pins {
+-					pins = "gpio21";
++					pins = "gpio3";
+ 					function = "swr_rx_clk";
+ 					drive-strength = <8>;
+ 					bias-bus-hold;
+ 				};
+ 
+ 				data-pins {
+-					pins = "gpio22", "gpio23";
++					pins = "gpio4", "gpio5";
+ 					function = "swr_rx_data";
+ 					drive-strength = <8>;
+ 					bias-bus-hold;
+@@ -4850,14 +4702,14 @@ data-pins {
+ 
+ 			rx_swr_sleep: rx-swr-sleep-state {
+ 				clk-pins {
+-					pins = "gpio21";
++					pins = "gpio3";
+ 					function = "swr_rx_clk";
+ 					drive-strength = <2>;
+ 					bias-bus-hold;
+ 				};
+ 
+ 				data-pins {
+-					pins = "gpio22", "gpio23";
++					pins = "gpio4", "gpio5";
+ 					function = "swr_rx_data";
+ 					drive-strength = <2>;
+ 					bias-bus-hold;
+@@ -4865,14 +4717,14 @@ data-pins {
+ 			};
+ 
+ 			wcd9375_reset_active: wcd9375-reset-active-state {
+-				pins = "gpio24";
++				pins = "gpio6";
+ 				function = "cdc_pdm_rx";
+ 				drive-strength = <16>;
+ 				output-high;
+ 			};
+ 
+ 			wcd9375_reset_sleep: wcd9375-reset-sleep-state {
+-				pins = "gpio24";
++				pins = "gpio6";
+ 				function = "cdc_pdm_rx";
+ 				drive-strength = <16>;
+ 				bias-disable;
+@@ -4881,14 +4733,14 @@ wcd9375_reset_sleep: wcd9375-reset-sleep-state {
+ 
+ 			dmic01_active: dmic01-active-state {
+ 				clk-pins {
+-					pins = "gpio26";
++					pins = "gpio8";
+ 					function = "dmic1_clk";
+ 					drive-strength = <8>;
+ 					output-high;
+ 				};
+ 
+ 				data-pins {
+-					pins = "gpio27";
++					pins = "gpio9";
+ 					function = "dmic1_data";
+ 					drive-strength = <8>;
+ 					input-enable;
+@@ -4897,14 +4749,14 @@ data-pins {
+ 
+ 			dmic01_sleep: dmic01-sleep-state {
+ 				clk-pins {
+-					pins = "gpio26";
++					pins = "gpio8";
+ 					function = "dmic1_clk";
+ 					drive-strength = <2>;
+ 					bias-disable;
+ 				};
+ 
+ 				data-pins {
+-					pins = "gpio27";
++					pins = "gpio9";
+ 					function = "dmic1_data";
+ 					drive-strength = <2>;
+ 					pull-down;
+@@ -4914,14 +4766,14 @@ data-pins {
+ 
+ 			dmic23_active: dmic23-active-state {
+ 				clk-pins {
+-					pins = "gpio28";
++					pins = "gpio10";
+ 					function = "dmic2_clk";
+ 					drive-strength = <8>;
+ 					output-high;
+ 				};
+ 
+ 				data-pins {
+-					pins = "gpio29";
++					pins = "gpio11";
+ 					function = "dmic2_data";
+ 					drive-strength = <8>;
+ 					input-enable;
+@@ -4930,7 +4782,7 @@ data-pins {
+ 
+ 			dmic23_sleep: dmic23-sleep-state {
+ 				clk-pins {
+-					pins = "gpio28";
++					pins = "gpio10";
+ 					function = "dmic2_clk";
+ 					drive-strength = <2>;
+ 					bias-disable;
+@@ -4938,7 +4790,7 @@ clk-pins {
+ 				};
+ 
+ 				data-pins {
+-					pins = "gpio29";
++					pins = "gpio11";
+ 					function = "dmic2_data";
+ 					drive-strength = <2>;
+ 					pull-down;
+diff --git a/arch/arm64/configs/sm7150.config b/arch/arm64/configs/sm7150.config
+index e4970cfef..36dd58506 100644
+--- a/arch/arm64/configs/sm7150.config
++++ b/arch/arm64/configs/sm7150.config
+@@ -175,7 +175,6 @@ CONFIG_INPUT_JOYDEV=m
+ CONFIG_SND_SOC_WCD937X_SDW=m
+ CONFIG_SND_SOC_LPASS_RX_MACRO=m
+ CONFIG_SND_SOC_LPASS_TX_MACRO=m
+-CONFIG_SND_SOC_LPASS_VA_MACRO=m
+ 
+ # LED Triggers
+ CONFIG_LEDS_TRIGGER_ONESHOT=y
+@@ -1042,6 +1041,7 @@ CONFIG_SM_TCSRCC_8750=n
+ CONFIG_SM_VIDEOCC_8250=n
+ CONFIG_SM_VIDEOCC_8450=n
+ CONFIG_SM_VIDEOCC_8550=n
++CONFIG_CLK_GFM_LPASS_SM8250=n
+ CONFIG_QCOM_A53PLL=n
+ 
+ # Disable interconnect drivers
+diff --git a/drivers/pinctrl/qcom/pinctrl-lpass-lpi.c b/drivers/pinctrl/qcom/pinctrl-lpass-lpi.c
+index 938db5c23..5fd4a4eba 100644
+--- a/drivers/pinctrl/qcom/pinctrl-lpass-lpi.c
++++ b/drivers/pinctrl/qcom/pinctrl-lpass-lpi.c
+@@ -503,8 +503,6 @@ int lpi_pinctrl_probe(struct platform_device *pdev)
+ 	struct lpi_pinctrl *pctrl;
+ 	int ret;
+ 
+-	printk(KERN_INFO "lpass-lpi probed successfully\n");
+-
+ 	pctrl = devm_kzalloc(dev, sizeof(*pctrl), GFP_KERNEL);
+ 	if (!pctrl)
+ 		return -ENOMEM;
+@@ -531,8 +529,6 @@ int lpi_pinctrl_probe(struct platform_device *pdev)
+ 		if (IS_ERR(pctrl->slew_base))
+ 			return dev_err_probe(dev, PTR_ERR(pctrl->slew_base),
+ 					     "Slew resource not provided\n");
+-		iowrite32(0x3333, pctrl->slew_base);
+-		iowrite32(0xF, pctrl->slew_base + 4);
+ 	}
+ 
+ 	ret = devm_pm_clk_create(dev);
+@@ -582,8 +578,6 @@ int lpi_pinctrl_probe(struct platform_device *pdev)
+ 		goto err_pinctrl;
+ 	}
+ 
+-	printk(KERN_INFO "lpass-lpi probed successfully\n");
+-
+ 	return 0;
+ 
+ err_pinctrl:
+diff --git a/drivers/pinctrl/qcom/pinctrl-sm7150-lpass-lpi.c b/drivers/pinctrl/qcom/pinctrl-sm7150-lpass-lpi.c
+index 945063c4d..94b9b8725 100644
+--- a/drivers/pinctrl/qcom/pinctrl-sm7150-lpass-lpi.c
++++ b/drivers/pinctrl/qcom/pinctrl-sm7150-lpass-lpi.c
+@@ -50,86 +50,50 @@ static const struct pinctrl_pin_desc sm7150_lpi_pins[] = {
+ 	PINCTRL_PIN(11, "gpio11"),
+ 	PINCTRL_PIN(12, "gpio12"),
+ 	PINCTRL_PIN(13, "gpio13"),
+-	PINCTRL_PIN(14, "gpio14"),
+-	PINCTRL_PIN(15, "gpio15"),
+-	PINCTRL_PIN(16, "gpio16"),
+-	PINCTRL_PIN(17, "gpio17"),
+-	PINCTRL_PIN(18, "gpio18"),
+-	PINCTRL_PIN(19, "gpio19"),
+-	PINCTRL_PIN(20, "gpio20"),
+-	PINCTRL_PIN(21, "gpio21"),
+-	PINCTRL_PIN(22, "gpio22"),
+-	PINCTRL_PIN(23, "gpio23"),
+-	PINCTRL_PIN(24, "gpio24"),
+-	PINCTRL_PIN(25, "gpio25"),
+-	PINCTRL_PIN(26, "gpio26"),
+-	PINCTRL_PIN(27, "gpio27"),
+-	PINCTRL_PIN(28, "gpio28"),
+-	PINCTRL_PIN(29, "gpio29"),
+-	PINCTRL_PIN(30, "gpio30"),
+-	PINCTRL_PIN(31, "gpio31"),
+ };
+ 
+ static const char * const gpio_groups[] = {
+-	"gpio18", "gpio19", "gpio20", "gpio21", "gpio22", "gpio23", "gpio24",
+-	"gpio25", "gpio26", "gpio27", "gpio28", "gpio29", "gpio30", "gpio31",
++	"gpio0",  "gpio1",  "gpio2",  "gpio3",  "gpio4",  "gpio5",  "gpio6",
++	"gpio7",  "gpio8",  "gpio9",  "gpio10", "gpio11", "gpio12", "gpio13",
+ };
+ 
+-static const char * const audio_ref_groups[] = { "gpio19" };
+-static const char * const cdc_pdm_rx_groups[] = { "gpio24" };
+-static const char * const dmic1_clk_groups[] = { "gpi26" };
+-static const char * const dmic1_data_groups[] = { "gpio27" };
+-static const char * const dmic2_clk_groups[] = { "gpio28" };
+-static const char * const dmic2_data_groups[] = { "gpio29" };
+-static const char * const qdss_cti_groups[] = { "gpio27", "gpio28" };
+-static const char * const gp_pdm_groups[] = { "gpio28" };
+-static const char * const prim_mclk_a_groups[] = { "gpio22" };
+-static const char * const prim_mclk_b_groups[] = { "gpio29" };
+-static const char * const qca_sb_clk_groups[] = { "gpio31" };
+-static const char * const qca_sb_data_groups[] = { "gpio30" };
+-static const char * const qua_mi2s_data_groups[] = { "gpio25", "gpio26", "gpio27", "gpio28" };
+-static const char * const qua_mi2s_sclk_groups[] = { "gpio23" };
+-static const char * const qua_mi2s_ws_groups[] = { "gpio24" };
+-static const char * const slimbus_clk_groups[] = { "gpio18" };
+-static const char * const slimbus_data_groups[] = { "gpio20", "gpio21", "gpio22" };
+-static const char * const swr_rx_clk_groups[] = { "gpio21" };
+-static const char * const swr_rx_data_groups[] = { "gpio22", "gpio23" };
+-static const char * const swr_tx_clk_groups[] = { "gpio18" };
+-static const char * const swr_tx_data_groups[] = { "gpio19", "gpio20", "gpio23" };
++static const char * const audio_ref_groups[] = { "gpio1" };
++static const char * const cdc_pdm_rx_groups[] = { "gpio6" };
++static const char * const dmic1_clk_groups[] = { "gpio8" };
++static const char * const dmic1_data_groups[] = { "gpio9" };
++static const char * const dmic2_clk_groups[] = { "gpio10" };
++static const char * const dmic2_data_groups[] = { "gpio11" };
++static const char * const qdss_cti_groups[] = { "gpio9", "gpio10" };
++static const char * const gp_pdm_groups[] = { "gpio10" };
++static const char * const prim_mclk_a_groups[] = { "gpio4" };
++static const char * const prim_mclk_b_groups[] = { "gpio11" };
++static const char * const qca_sb_clk_groups[] = { "gpio13" };
++static const char * const qca_sb_data_groups[] = { "gpio12" };
++static const char * const qua_mi2s_data_groups[] = { "gpio7", "gpio8", "gpio9", "gpio10" };
++static const char * const qua_mi2s_sclk_groups[] = { "gpio5" };
++static const char * const qua_mi2s_ws_groups[] = { "gpio6" };
++static const char * const slimbus_clk_groups[] = { "gpio0" };
++static const char * const slimbus_data_groups[] = { "gpio2", "gpio3", "gpio4" };
++static const char * const swr_rx_clk_groups[] = { "gpio3" };
++static const char * const swr_rx_data_groups[] = { "gpio4", "gpio5" };
++static const char * const swr_tx_clk_groups[] = { "gpio0" };
++static const char * const swr_tx_data_groups[] = { "gpio1", "gpio2", "gpio5" };
+ 
+ static const struct lpi_pingroup sm7150_groups[] = {
+-	LPI_PINGROUP(0, LPI_NO_SLEW, _, _, _, _), // slew rate 3
+-	LPI_PINGROUP(1, LPI_NO_SLEW, _, _, _, _), // slew rate 0
+-	LPI_PINGROUP(2, LPI_NO_SLEW, _, _, _, _), // slew rate 3
+-	LPI_PINGROUP(3, LPI_NO_SLEW, _, _, _, _),  // slew rate 0
+-	LPI_PINGROUP(4, LPI_NO_SLEW, _, _, _, _), // slew rate 3
+-	LPI_PINGROUP(5, LPI_NO_SLEW, _, _, _, _), // slew rate 0
+-	LPI_PINGROUP(6, LPI_NO_SLEW, _, _, _, _), // slew rate 3
+-	LPI_PINGROUP(7, LPI_NO_SLEW, _, _, _, _),
+-	LPI_PINGROUP(8, LPI_NO_SLEW, _, _, _, _),
+-	LPI_PINGROUP(9, LPI_NO_SLEW, _, _, _, _),
+-	LPI_PINGROUP(10, LPI_NO_SLEW, _, _, _, _),
+-	LPI_PINGROUP(11, LPI_NO_SLEW, _, _, _, _),
+-	LPI_PINGROUP(12, LPI_NO_SLEW, _, _, _, _),
+-	LPI_PINGROUP(13, LPI_NO_SLEW, _, _, _, _),
+-	LPI_PINGROUP(14, LPI_NO_SLEW, _, _, _, _),
+-	LPI_PINGROUP(15, LPI_NO_SLEW, _, _, _, _),
+-	LPI_PINGROUP(16, LPI_NO_SLEW, _, _, _, _),
+-	LPI_PINGROUP(17, LPI_NO_SLEW, _, _, _, _),
+-	LPI_PINGROUP(18, LPI_NO_SLEW, slimbus_clk, swr_tx_clk, _, _),
+-	LPI_PINGROUP(19, LPI_NO_SLEW, swr_tx_data, audio_ref, _, _),
+-	LPI_PINGROUP(20, LPI_NO_SLEW, slimbus_data, swr_tx_data, _, _),
+-	LPI_PINGROUP(21, LPI_NO_SLEW, slimbus_data, swr_rx_clk, _, _),
+-	LPI_PINGROUP(22, LPI_NO_SLEW, slimbus_data, swr_rx_data, prim_mclk_a, _),
+-	LPI_PINGROUP(23, LPI_NO_SLEW, qua_mi2s_sclk, _, swr_rx_data, swr_tx_data),
+-	LPI_PINGROUP(24, LPI_NO_SLEW, qua_mi2s_ws, cdc_pdm_rx, _, _),
+-	LPI_PINGROUP(25, LPI_NO_SLEW, qua_mi2s_data, _, _, _),
+-	LPI_PINGROUP(26, LPI_NO_SLEW, qua_mi2s_data, dmic1_clk, _, _),
+-	LPI_PINGROUP(27, LPI_NO_SLEW, qua_mi2s_data, dmic1_data, qdss_cti, _),
+-	LPI_PINGROUP(28, LPI_NO_SLEW, qua_mi2s_data, dmic2_clk, gp_pdm, qdss_cti),
+-	LPI_PINGROUP(29, LPI_NO_SLEW, prim_mclk_b, dmic2_data, _, _),
+-	LPI_PINGROUP(30, LPI_NO_SLEW, qca_sb_data, _, _, _),
+-	LPI_PINGROUP(31, LPI_NO_SLEW, qca_sb_clk, _, _, _),
++	LPI_PINGROUP(0, 0, slimbus_clk, swr_tx_clk, _, _),
++	LPI_PINGROUP(1, 2, swr_tx_data, audio_ref, _, _),
++	LPI_PINGROUP(2, 4, slimbus_data, swr_tx_data, _, _),
++	LPI_PINGROUP(3, 8, slimbus_data, swr_rx_clk, _, _),
++	LPI_PINGROUP(4, 10, slimbus_data, swr_rx_data, prim_mclk_a, _),
++	LPI_PINGROUP(5, 6, qua_mi2s_sclk, _, swr_rx_data, swr_tx_data),
++	LPI_PINGROUP(6, LPI_NO_SLEW, qua_mi2s_ws, cdc_pdm_rx, _, _),
++	LPI_PINGROUP(7, LPI_NO_SLEW, qua_mi2s_data, _, _, _),
++	LPI_PINGROUP(8, LPI_NO_SLEW, qua_mi2s_data, dmic1_clk, _, _),
++	LPI_PINGROUP(9, LPI_NO_SLEW, qua_mi2s_data, dmic1_data, qdss_cti, _),
++	LPI_PINGROUP(10, LPI_NO_SLEW, qua_mi2s_data, dmic2_clk, gp_pdm, qdss_cti),
++	LPI_PINGROUP(11, LPI_NO_SLEW, prim_mclk_b, dmic2_data, _, _),
++	LPI_PINGROUP(12, LPI_NO_SLEW, qca_sb_data, _, _, _),
++	LPI_PINGROUP(13, LPI_NO_SLEW, qca_sb_clk, _, _, _),
+ };
+ 
+ static const struct lpi_function sm7150_functions[] = {
+@@ -164,7 +128,7 @@ static const struct lpi_pinctrl_variant_data sm7150_lpi_data = {
+ 	.ngroups = ARRAY_SIZE(sm7150_groups),
+ 	.functions = sm7150_functions,
+ 	.nfunctions = ARRAY_SIZE(sm7150_functions),
+-	//.flags = LPI_FLAG_SLEW_RATE_SAME_REG,
++	.flags = LPI_FLAG_SLEW_RATE_SAME_REG,
+ };
+ 
+ static const struct of_device_id lpi_pinctrl_of_match[] = {
+diff --git a/sound/soc/codecs/wcd937x.c b/sound/soc/codecs/wcd937x.c
+index a72103ca5..cc7344b2f 100644
+--- a/sound/soc/codecs/wcd937x.c
++++ b/sound/soc/codecs/wcd937x.c
+@@ -2951,8 +2951,6 @@ static int wcd937x_probe(struct platform_device *pdev)
+ 	if (ret)
+ 		return ret;
+ 
+-	printk(KERN_INFO "wcd937x probe over\n");
+-
+ 	pm_runtime_set_autosuspend_delay(dev, 1000);
+ 	pm_runtime_use_autosuspend(dev);
+ 	pm_runtime_mark_last_busy(dev);
+@@ -2960,8 +2958,6 @@ static int wcd937x_probe(struct platform_device *pdev)
+ 	pm_runtime_enable(dev);
+ 	pm_runtime_idle(dev);
+ 
+-	printk(KERN_INFO "wcd937x pm stuff over\n");
+-
+ 	return 0;
+ }
+ 
+diff --git a/sound/soc/qcom/qdsp6/q6afe.c b/sound/soc/qcom/qdsp6/q6afe.c
+index d235f5972..7bf936fe3 100644
+--- a/sound/soc/qcom/qdsp6/q6afe.c
++++ b/sound/soc/qcom/qdsp6/q6afe.c
+@@ -1989,8 +1989,6 @@ int q6afe_vote_lpass_core_hw(struct device *dev, uint32_t hw_block_id,
+ 	strscpy(vote_cfg->client_name, client_name,
+ 			sizeof(vote_cfg->client_name));
+ 
+-	printk(KERN_INFO "%s: voting for lpass core hw with id %d\n", __func__, hw_block_id);
+-
+ 	ret = afe_apr_send_pkt(afe, pkt, NULL,
+ 			       AFE_CMD_RSP_REMOTE_LPASS_CORE_HW_VOTE_REQUEST);
+ 	if (ret)
+diff --git a/sound/soc/qcom/sm8250.c b/sound/soc/qcom/sm8250.c
+index 5cf54a5d8..76dc3a3f4 100644
+--- a/sound/soc/qcom/sm8250.c
++++ b/sound/soc/qcom/sm8250.c
+@@ -84,7 +84,7 @@ static int sm8250_snd_startup(struct snd_pcm_substream *substream)
+ 		codec_dai_fmt |= SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_I2S;
+ 		snd_soc_dai_set_sysclk(cpu_dai,
+ 			Q6AFE_LPASS_CLK_ID_PRI_MI2S_IBIT,
+-			MI2S_BCLK_RATE * 2, SNDRV_PCM_STREAM_PLAYBACK);
++			MI2S_BCLK_RATE, SNDRV_PCM_STREAM_PLAYBACK);
+ 		snd_soc_dai_set_fmt(cpu_dai, fmt);
+ 		snd_soc_dai_set_fmt(codec_dai, codec_dai_fmt);
+ 		break;
+-- 
+2.43.0
+

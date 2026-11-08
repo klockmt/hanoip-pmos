@@ -1,0 +1,29 @@
+From 6955d692335841ae959d1eef8b2bbb28d5e37e15 Mon Sep 17 00:00:00 2001
+From: Aleks <aleks.spv@gmail.com>
+Date: Wed, 21 Oct 2026 10:25:53 +0600
+Subject: [PATCH 136/194] ASoC: dt-bindings: awinic,aw88395: Add AW88263S
+
+AW88263S is a sibling of the AW88261 smart amplifier with a different
+register layout, found e.g. in the Xiaomi Redmi Note 10 Pro (sweet).
+It is handled by the aw88261 driver, so document its compatible here.
+
+Signed-off-by: Aleks <aleks.spv@gmail.com>
+---
+ Documentation/devicetree/bindings/sound/awinic,aw88395.yaml | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/Documentation/devicetree/bindings/sound/awinic,aw88395.yaml b/Documentation/devicetree/bindings/sound/awinic,aw88395.yaml
+index b9abb1094..fca2c1874 100644
+--- a/Documentation/devicetree/bindings/sound/awinic,aw88395.yaml
++++ b/Documentation/devicetree/bindings/sound/awinic,aw88395.yaml
+@@ -21,6 +21,7 @@ properties:
+       - awinic,aw88083
+       - awinic,aw88166
+       - awinic,aw88261
++      - awinic,aw88263s
+       - awinic,aw88395
+       - awinic,aw88399
+ 
+-- 
+2.43.0
+

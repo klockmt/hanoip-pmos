@@ -1,0 +1,28 @@
+From c2e446424a33927a94fcc3be2ccf1539a7df0313 Mon Sep 17 00:00:00 2001
+From: Danila Tikhonov <danila@jiaxyga.com>
+Date: Fri, 8 Sep 2023 22:22:26 +0300
+Subject: [PATCH 002/194] FROMLIST: dt-bindings: watchdog: qcom-wdt: Add the
+ SM7150 compatible
+
+Document the SM7150 watchdog compatible.
+
+Signed-off-by: Danila Tikhonov <danila@jiaxyga.com>
+---
+ Documentation/devicetree/bindings/watchdog/qcom-wdt.yaml | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/Documentation/devicetree/bindings/watchdog/qcom-wdt.yaml b/Documentation/devicetree/bindings/watchdog/qcom-wdt.yaml
+index 4ff61102e..5fc42c6a8 100644
+--- a/Documentation/devicetree/bindings/watchdog/qcom-wdt.yaml
++++ b/Documentation/devicetree/bindings/watchdog/qcom-wdt.yaml
+@@ -48,6 +48,7 @@ properties:
+               - qcom,apss-wdt-shikra
+               - qcom,apss-wdt-sm6115
+               - qcom,apss-wdt-sm6350
++              - qcom,apss-wdt-sm7150
+               - qcom,apss-wdt-sm8150
+               - qcom,apss-wdt-sm8250
+               - qcom,apss-wdt-x1e80100
+-- 
+2.43.0
+

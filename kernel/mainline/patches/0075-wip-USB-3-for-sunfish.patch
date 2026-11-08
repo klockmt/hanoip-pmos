@@ -1,0 +1,223 @@
+From d44be270ed20e0397380a993c8b41f36289c0019 Mon Sep 17 00:00:00 2001
+From: Jens Reidel <adrian@mainlining.org>
+Date: Thu, 14 Aug 2025 22:52:18 +0200
+Subject: [PATCH 075/194] wip!: USB 3 for sunfish
+
+Signed-off-by: Jens Reidel <adrian@mainlining.org>
+---
+ .../boot/dts/qcom/sm7150-google-sunfish.dts   | 32 +++++++++--
+ .../boot/dts/qcom/sm7150-xiaomi-common.dtsi   |  3 +
+ arch/arm64/boot/dts/qcom/sm7150.dtsi          | 55 ++++++++++++++++++-
+ drivers/phy/qualcomm/phy-qcom-qmp-combo.c     |  4 ++
+ 4 files changed, 86 insertions(+), 8 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/sm7150-google-sunfish.dts b/arch/arm64/boot/dts/qcom/sm7150-google-sunfish.dts
+index 5c41af136..a9cde8dc7 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150-google-sunfish.dts
++++ b/arch/arm64/boot/dts/qcom/sm7150-google-sunfish.dts
+@@ -546,7 +546,11 @@ &i2c2 {
+ 	clock-frequency = <400000>;
+ 
+ 	/* st21nfc nfc@8 */
+-	/* realtek,rt5514 codec@57 */
++
++	codec: rt5514@57 {
++		compatible = "realtek,rt5514";
++		reg = <0x57>;
++	};
+ };
+ 
+ &i2c7 {
+@@ -564,6 +568,7 @@ &i2c9 {
+ 	/* cirrus,cs35l41 speaker-amp@40 */
+ 	/* cirrus,cs35l41 speaker-amp@41 */
+ 
++	/*
+ 	typec-mux@43 {
+ 		compatible = "fcs,fsa4480";
+ 		reg = <0x43>;
+@@ -581,6 +586,7 @@ fsa4480_sbu_mux: endpoint {
+ 			};
+ 		};
+ 	};
++	*/
+ 
+ 	/* st,m24c08 e2prom@50 */
+ 	/* ti,drv2624 haptic@5a */
+@@ -671,14 +677,22 @@ pm6150_hs_in: endpoint {
+ 				};
+ 			};
+ 
+-			/* port@1 is for usb3 */
+ 
++			port@1 {
++				reg = <1>;
++				pm6150_typec_mux_in: endpoint {
++					remote-endpoint = <&usb_1_qmpphy_out>;
++				};
++			};
++
++			/* TODO: Investigate, I don't think fsa4480 exists
+ 			port@2 {
+ 				reg = <2>;
+ 				pm6150_typec_sbu_out: endpoint {
+ 					remote-endpoint = <&fsa4480_sbu_mux>;
+ 				};
+ 			};
++			*/
+ 		};
+ 	};
+ };
+@@ -869,15 +883,12 @@ &ufs_mem_phy {
+ };
+ 
+ &usb_1 {
+-	qcom,select-utmi-as-pipe-clk;
+ 	status = "okay";
+ };
+ 
+ &usb_1_dwc3 {
+ 	dr_mode = "otg";
+ 	usb-role-switch;
+-	/* SM7150 doesn't support USB3 yet */
+-	maximum-speed = "high-speed";
+ };
+ 
+ &usb_1_dwc3_hs {
+@@ -891,6 +902,17 @@ &usb_1_hsphy {
+ 	status = "okay";
+ };
+ 
++&usb_1_qmpphy {
++	vdda-pll-supply = <&vdda_usb_ss_dp_1p2>;
++	vdda-phy-supply = <&vdda_usb_ss_dp_core>;
++	orientation-switch;
++	status = "okay";
++};
++
++&usb_1_qmpphy_out {
++	remote-endpoint = <&pm6150_typec_mux_in>;
++};
++
+ &wifi {
+ 	vdd-0.8-cx-mx-supply = <&vdd_wcss_cx>;
+ 	vdd-1.8-xo-supply = <&vreg_l1c_1p8>;
+diff --git a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-common.dtsi b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-common.dtsi
+index 8562342a8..f8cc80b94 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-common.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-common.dtsi
+@@ -871,6 +871,9 @@ &usb_1_dwc3 {
+ 	dr_mode = "otg";
+ 	usb-role-switch;
+ 	maximum-speed = "high-speed";
++	/* Remove USB3 phy */
++	phys = <&usb_1_hsphy>;
++	phy-names = "usb2-phy";
+ };
+ 
+ &usb_1_dwc3_hs {
+diff --git a/arch/arm64/boot/dts/qcom/sm7150.dtsi b/arch/arm64/boot/dts/qcom/sm7150.dtsi
+index 5b4ca20d0..d3f29f61a 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm7150.dtsi
+@@ -17,6 +17,7 @@
+ #include <dt-bindings/interconnect/qcom,osm-l3.h>
+ #include <dt-bindings/interconnect/qcom,sm7150-rpmh.h>
+ #include <dt-bindings/interrupt-controller/arm-gic.h>
++#include <dt-bindings/phy/phy-qcom-qmp.h>
+ #include <dt-bindings/power/qcom-rpmpd.h>
+ #include <dt-bindings/power/qcom,rpmhpd.h>
+ #include <dt-bindings/soc/qcom,rpmh-rsc.h>
+@@ -3169,6 +3170,51 @@ usb_1_hsphy: phy@88e2000 {
+ 			status = "disabled";
+ 		};
+ 
++		usb_1_qmpphy: phy@88e8000 {
++			compatible = "qcom,sm7150-qmp-usb3-dp-phy";
++			reg = <0 0x088e8000 0 0x3000>;
++
++			clocks = <&gcc GCC_USB3_PRIM_PHY_AUX_CLK>,
++				 <&gcc GCC_USB3_PRIM_CLKREF_CLK>,
++				 <&gcc GCC_USB3_PRIM_PHY_COM_AUX_CLK>,
++				 <&gcc GCC_USB3_PRIM_PHY_PIPE_CLK>,
++				 <&gcc GCC_USB_PHY_CFG_AHB2PHY_CLK>;
++			clock-names = "aux",
++				      "ref",
++				      "com_aux",
++				      "usb3_pipe",
++				      "cfg_ahb";
++
++			resets = <&gcc GCC_USB3_DP_PHY_PRIM_BCR>,
++				 <&gcc GCC_USB3_PHY_PRIM_BCR>;
++			reset-names = "phy", "common";
++
++			#clock-cells = <1>;
++			#phy-cells = <1>;
++
++			status = "disabled";
++
++			ports {
++				#address-cells = <1>;
++				#size-cells = <0>;
++
++				port@0 {
++					reg = <0>;
++
++					usb_1_qmpphy_out: endpoint {
++					};
++				};
++
++				port@1 {
++					reg = <1>;
++
++					usb_1_qmpphy_usb_ss_in: endpoint {
++						remote-endpoint = <&usb_1_dwc3_ss>;
++					};
++				};
++			};
++		};
++
+ 		pmu@90b6300 {
+ 			compatible = "qcom,sm7150-cpu-bwmon",
+ 				     "qcom,sdm845-bwmon";
+@@ -3361,8 +3407,9 @@ usb_1_dwc3: usb@a600000 {
+ 
+ 				iommus = <&apps_smmu 0x540 0>;
+ 
+-				phys = <&usb_1_hsphy>;
+-				phy-names = "usb2-phy";
++				phys = <&usb_1_hsphy>, <&usb_1_qmpphy QMP_USB43DP_USB3_PHY>;
++				phy-names = "usb2-phy", "usb3-phy";
++				maximum-speed = "super-speed";
+ 
+ 				snps,dis_u2_susphy_quirk;
+ 				snps,dis_enblslpm_quirk;
+@@ -3384,7 +3431,9 @@ port@0 {
+ 					port@1 {
+ 						reg = <1>;
+ 
+-						usb_1_dwc3_ss: endpoint { };
++						usb_1_dwc3_ss: endpoint {
++							remote-endpoint = <&usb_1_qmpphy_usb_ss_in>;
++						};
+ 					};
+ 				};
+ 			};
+diff --git a/drivers/phy/qualcomm/phy-qcom-qmp-combo.c b/drivers/phy/qualcomm/phy-qcom-qmp-combo.c
+index c39ced168..e9f569014 100644
+--- a/drivers/phy/qualcomm/phy-qcom-qmp-combo.c
++++ b/drivers/phy/qualcomm/phy-qcom-qmp-combo.c
+@@ -5387,6 +5387,10 @@ static const struct of_device_id qmp_combo_of_match_table[] = {
+ 		.compatible = "qcom,sm6350-qmp-usb3-dp-phy",
+ 		.data = &sm6350_usb3dpphy_cfg,
+ 	},
++	{
++		.compatible = "qcom,sm7150-qmp-usb3-dp-phy",
++		.data = &sdm845_usb3dpphy_cfg,
++	},
+ 	{
+ 		.compatible = "qcom,sm8150-qmp-usb3-dp-phy",
+ 		.data = &sc8180x_usb3dpphy_cfg,
+-- 
+2.43.0
+
