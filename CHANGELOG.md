@@ -11,6 +11,7 @@ Up to v0.1.14 the notes lived only in the message of each annotated tag; this fi
 ## [Unreleased]
 
 ### Added
+- `docs/MAINLINE.md`, section 7c: the mainline root boots by itself to the modem, Wi-Fi, Tailscale (SSH over the tailnet in 133 s), nftables, chrony and the charge limit, with only super's region writable. Still missing: the server's own services and a boot without the PC (#6).
 - `hanoip-ml-charge` (mainline root): holds the battery at 75-80 % through the base's opt-in charging (`/sys/kernel/debug/hanoip-charge`), never charges over 4.30 V or 40 °C and switches charging off when it stops; `scripts/test-mainline-charge` runs it against a fake gauge (#6).
 - The mainline root brings up the modem and Wi-Fi and joins the tailnet: vendor firmware where the mainline DT asks for it, `hanoip-ml-modem` (EFS copied to RAM and served read-only by `rmtfs -r`, `tqftpserv`, SMEM item 134 with the generic values of the 4.14 command line, then the remoteprocs, IPA and ath10k), and from the server the Wi-Fi profiles and MAC, the Tailscale node and the nftables rules. udev does not load the modem, Wi-Fi, display, touch, video, camera or Bluetooth drivers on its own. The guards moved to `kernel/mainline/root-overlay`; `scripts/test-mainline-root` covers the root's rules (#6).
 - `docs/MAINLINE.md`, section 7b: the mainline root in super's free region boots to OpenRC and SSH over USB (73 s), with only `super`, its disk and the root loop writable. No firmware in it yet, so no Wi-Fi or modem (#6).

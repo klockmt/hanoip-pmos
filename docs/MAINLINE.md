@@ -171,6 +171,41 @@ Not there yet: the firmware (ADSP, CDSP, modem, IPA, Wi-Fi, Bluetooth, GPU, vide
 modem; udev loads display, touch, audio and Bluetooth drivers a headless server does not need; the clock is not set
 without a network; and the boot is still two `fastboot boot`s from the PC.
 
+## 7c. 2026-11-07: the root in super becomes a server base
+
+Same boot (two `fastboot boot`s from the PC), with `scripts/mainline-make-root` now copying from the server, on the
+phone, what a server needs, and `kernel/mainline/root-overlay` holding the rest:
+
+- **Modem and Wi-Fi** (the base's recipe, `docs/kernel/checkpoint-2026-10-25-wifi.txt` in its repository): the
+  vendor firmware (`adsp`, `modem`, `ipa_fws`, `wlanmdsp.mbn`) where the DT's `firmware-name` asks for it
+  (`qcom/sm7150/motorola/hanoip/`), `bdwlan_hanoip_ipa.bin` as the ath10k `board.bin`, and
+  `/etc/init.d/hanoip-ml-modem`: it copies the EFS (`modemst1`, `modemst2`, `fsg`, `fsc`) to RAM and serves it with
+  `rmtfs -o /run/efs -r` (read-only: those partitions are never written), starts `tqftpserv`, loads
+  `hanoip_mmi_unit_info` (SMEM item 134, with the generic values of the 4.14 command line: device, carrier, baseband,
+  radio, hardware revision; no serial), `qcom_pd_mapper`, `qcom_q6v5_pas`, `ipa` and `ath10k_snoc`, and starts the
+  modem with its recovery off. udev does not load those drivers on its own (`/etc/modprobe.d/hanoip-ml.conf`), nor the
+  display, touch, video, camera and Bluetooth ones.
+- **Network:** the server's NetworkManager profiles and its Wi-Fi MAC (ath10k picks a random one), the Tailscale state
+  (the same node, `100.72.42.100`) and the nftables rules. usb0 stays the server's `172.16.42.1` with DHCP for the PC.
+- **Clock:** the PMIC RTC does not keep the time (it reads 1974), so `swclock` replaces `hwclock`, and a NetworkManager
+  dispatcher script restarts chrony when a connection comes up.
+- **Charge limit:** `hanoip-ml-charge` switches the base's opt-in charging (`/sys/kernel/debug/hanoip-charge`) on
+  under 75 % and off at 80 %, never over 4.30 V or 40 °C, and off when it stops (`scripts/test-mainline-charge`).
+
+Checked on the phone, with nothing done by hand after the `fastboot boot`: SSH over USB after 72 s and over the
+tailnet after 133 s; ADSP and modem running, `wlan0` connected with the server's MAC, internet and DNS, the clock set
+by chrony, Tailscale up; port 22 closed from the LAN and open over the tailnet; the charge limit idle at 78 %; only
+`loop7`, `sdb` and `sdb23` writable; 198 MB of RAM used, no errors in `dmesg`, which needs root. The modem started by
+hand the first time, before the service did it. With the laptop's USB port (a 500 mA SDP) the input sits at its limit
+and the battery drains about 55 mA with charging off, so a real charger matters.
+
+Three things broke on the way and have tests (`scripts/test-mainline-root`): there is no `fsg` link on mainline (only
+`fsg_a` and `fsg_b`, identical here), the modem does not start by itself (the ADSP does), and chrony started before the
+Wi-Fi had no source, which left the clock in 1974 and Tailscale logged out.
+
+Not there yet: the server's own services (AdGuard Home, Samba, Syncthing, the Telegram bot, `hanoip-status`), the USB
+host for the NAS disk, and a boot that does not need the PC.
+
 ## 8. Commands used to reproduce (first attempt)
 ```
 # Running DTB
