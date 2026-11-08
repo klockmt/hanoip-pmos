@@ -1,0 +1,75 @@
+#!/bin/sh
+# Builds Linux 7.3 for the hanoip: kernel.org's linux-7.3 plus the base's 195 patches (the mainline base) at a pinned commit of its repository, with its config plus
+# kernel/mainline/server.config, and his out-of-tree hanoip_mmi_unit_info module. Nothing touches the phone.
+# Usage: scripts/build-mainline-kernel   (tree in $HANOIP_MAINLINE_DIR, default $HANOIP_SRC_DIR/hanoip-mainline-7.3)
+# Out: $HANOIP_MAINLINE_DIR/out/ Image.gz, kernel.dtb, modules-<release>.tar.gz, config, SHA256SUMS.
+# The source tree is checked twice: tag v7.3's git tree before the patches, the tree that booted after them.
+set -eu
+. "$(dirname "$0")/env.sh"
+k=${HANOIP_MAINLINE_DIR:-$HANOIP_SRC_DIR/hanoip-mainline-7.3}
+ENG_COMMIT=ea0186ba9a556549a004bd14e77d9c53681e0302
+ENG=https://example.invalid/mainline-base/$ENG_COMMIT/work/kernel-7.3/v7
+BASE_TREE=30fd2ef82912c26cf3a58ad0ba6afc375fa851ac # git tree of tag v7.3
+TREE=276fbce0ae673c83e456cfe359c33ed3c4e3468b      # v7.3 + its patches: the tree of the kernel that booted
+KORG=https://cdn.kernel.org/pub/linux/kernel/v7.x
+GIT="git -c user.name=hanoip -c user.email=hanoip@localhost -c core.autocrlf=false"
+frag=$HANOIP_ROOT/kernel/mainline/server.config
+# The banner must not carry this PC's user or host name.
+export KBUILD_BUILD_USER=hanoip KBUILD_BUILD_HOST=hanoip-build
+MAKE="make -C $k/linux O=$k/obj ARCH=arm64 CROSS_COMPILE=${CROSS_COMPILE:-aarch64-linux-gnu-} LOCALVERSION="
+
+mkdir -p "$k/dl" "$k/eng-v7/patches" "$k/eng-v7/extra"
+cd "$k/dl"
+[ -s linux-7.3.tar.xz ] || curl -fL --retry 3 -o linux-7.3.tar.xz "$KORG/linux-7.3.tar.xz"
+[ -s sha256sums.asc ] || curl -fL --retry 3 -o sha256sums.asc "$KORG/sha256sums.asc"
+grep ' linux-7\.3\.tar\.xz$' sha256sums.asc | sha256sum -c -
+
+cd "$k/eng-v7"
+if [ ! -s patches.list ]; then
+	curl -fsSL "https://example.invalid/mainline-base/contents/work/kernel-7.3/v7/patches?ref=$ENG_COMMIT" |
+		python3 -I -c 'import json, sys; print("\n".join(sorted(e["name"] for e in json.load(sys.stdin))))' > patches.list.new
+	mv patches.list.new patches.list
+fi
+[ "$(wc -l < patches.list)" -eq 195 ] || { echo "expected 195 patches at $ENG_COMMIT" >&2; exit 1; }
+while read -r p; do [ -s "patches/$p" ] || curl -fsSL --retry 3 -o "patches/$p" "$ENG/patches/$p"; done < patches.list
+for f in config-7.3-hanoip extra/Kbuild extra/hanoip_mmi_unit_info.c; do [ -s "$f" ] || curl -fsSL --retry 3 -o "$f" "$ENG/$f"; done
+
+cd "$k"
+if [ ! -d linux/.git ]; then
+	rm -rf linux linux-7.3
+	tar -xf dl/linux-7.3.tar.xz && mv linux-7.3 linux
+	(cd linux && $GIT init -q && $GIT add -A -f . && $GIT commit -q -m "v7.3 (linux-7.3.tar.xz)" && $GIT tag base)
+fi
+cd linux
+got=$(git rev-parse base^{tree})
+[ "$got" = $BASE_TREE ] || { echo "base tree $got is not tag v7.3 ($BASE_TREE)" >&2; exit 1; }
+$GIT reset -q --hard base
+while read -r p; do printf '%s\n' "$k/eng-v7/patches/$p"; done < "$k/eng-v7/patches.list" | xargs $GIT am -q
+got=$(git rev-parse HEAD^{tree})
+[ "$got" = $TREE ] || { echo "patched tree $got is not the one that booted ($TREE)" >&2; exit 1; }
+echo "source tree OK ($TREE)"
+
+mkdir -p "$k/obj" "$k/out"
+ARCH=arm64 scripts/kconfig/merge_config.sh -m -O "$k/obj" "$k/eng-v7/config-7.3-hanoip" "$frag" >/dev/null
+$MAKE olddefconfig >/dev/null
+grep '^CONFIG_' "$frag" | while read -r opt; do
+	grep -qx "$opt" "$k/obj/.config" || { echo "$opt did not survive olddefconfig" >&2; exit 1; }
+done
+nice -n 10 $MAKE -j"$(nproc)" Image modules qcom/sm7150-motorola-hanoip.dtb
+rm -rf "$k/extra" && cp -a "$k/eng-v7/extra" "$k/extra"
+$MAKE M="$k/extra" modules
+krel=$(cat "$k/obj/include/config/kernel.release")
+rm -rf "$k/mod"
+$MAKE INSTALL_MOD_PATH="$k/mod" INSTALL_MOD_STRIP=1 DEPMOD=true modules_install >/dev/null
+m=$k/mod/lib/modules/$krel
+rm -f "$m/build" "$m/source"
+mkdir -p "$m/extra"
+"${CROSS_COMPILE:-aarch64-linux-gnu-}strip" --strip-debug -o "$m/extra/hanoip_mmi_unit_info.ko" "$k/extra/hanoip_mmi_unit_info.ko"
+depmod -b "$k/mod" "$krel"
+gzip -9n -c "$k/obj/arch/arm64/boot/Image" > "$k/out/Image.gz"
+cp "$k/obj/arch/arm64/boot/dts/qcom/sm7150-motorola-hanoip.dtb" "$k/out/kernel.dtb"
+cp "$k/obj/.config" "$k/out/config"
+tar -C "$k/mod/lib/modules" --owner=0 --group=0 --sort=name --mtime=@0 -czf "$k/out/modules-$krel.tar.gz" "$krel"
+(cd "$k/out" && sha256sum Image.gz kernel.dtb "modules-$krel.tar.gz" > SHA256SUMS)
+strings "$k/obj/arch/arm64/boot/Image" | grep -m1 "Linux version"
+echo "built $krel in $k/out"

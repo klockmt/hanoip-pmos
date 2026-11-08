@@ -11,6 +11,7 @@ Up to v0.1.14 the notes lived only in the message of each annotated tag; this fi
 ## [Unreleased]
 
 ### Added
+- `scripts/build-mainline-kernel`: Linux 7.3 for this phone from kernel.org plus the base's 195 patches at a pinned commit of its repository, with both source trees checked by hash, its config plus `kernel/mainline/server.config` (the hardware watchdog `QCOM_WDT`) and his `hanoip_mmi_unit_info` module. Run end to end on 2026-11-07; the DTB comes out byte-identical to his (#6).
 - `docs/MAINLINE.md`, section 7: the base's Linux 7.3 boots on this phone RAM-only through its U-Boot, with our own test initramfs that locks every disk read-only: USB network and serial, cpufreq, battery read in hold on the cable, UFS reads matching the backup, and back to the server with a reboot (#6).
 - `docs/PITFALLS.md`: NetworkManager flushes a hand-set address on the USB interface during a RAM test, and U-Boot passes only the boot image's command line to the kernel.
 
