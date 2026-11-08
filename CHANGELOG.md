@@ -21,6 +21,7 @@ Up to v0.1.14 the notes lived only in the message of each annotated tag; this fi
 - `docs/PITFALLS.md`: NetworkManager flushes a hand-set address on the USB interface during a RAM test, and U-Boot passes only the boot image's command line to the kernel.
 
 ### Changed
+- The phone runs device package `0-r41`, built with `pmbootstrap` and installed with `apk add` together with its `-kernel-downstream` and `-modem` subpackages. That also installs the 0.2.1 LED fix, which had only been checked with the script in place. The update re-flashed `boot_b` and `vendor_boot_b` with images byte-identical to the previous ones (partition hashes equal to the 2026-11-07 backup), and the phone booted with no PSI hang (#31).
 - Kernel direction: mainline is the goal again, starting from the mainline base (U-Boot plus Linux 7.3, RAM-only); the downstream 4.14 server stays on slot `b` meanwhile (`docs/STATUS.md`, section 5). The 2026-11-02 plan of a hardened 4.14 fork is on hold (#6).
 
 ### Fixed
