@@ -91,9 +91,24 @@ on `linux-motorola-hanoip-mainline`; `deviceinfo` has the mainline overrides (`d
 
 ### 3. systemd units for the phone's own pieces
 
-**State (2026-11-08, `beta`):** mainline subpackage added in commit 2ea3e8d with systemd units for modem, charge limit, guard, slot marking, watchdog, and network. Files from `kernel/mainline/root-overlay` copied to device package, `amove` in `mainline()` subpackage places them under `/etc/init.d`, `/etc/local.d`, `/usr/bin`, `/etc/modprobe.d`, `/etc/NetworkManager/conf.d`, `/etc/NetworkManager/dispatcher.d`. Still open:
-- Build the mainline kernel package (step 1) so the modules are available.
-- Write systemd unit files (`.service`, `.timer`, etc.) to replace the OpenRC init scripts when Duranium (systemd) is built.
+**State (2026-11-08, `beta`):** the pieces are packaged, still as OpenRC. `device-motorola-hanoip-mainline`
+(commits `2ea3e8d`, `59a2196`, `f81c1c9`) carries the thirteen files of `kernel/mainline/root-overlay` as copies, each
+identical to the overlay and in git, which `scripts/test-device-mainline-subpackage` checks together with the install
+paths and modes; `amove` in `mainline()` keeps them out of the 4.14 server's package. What ships is what the Alpine
+root in super runs today: `/etc/init.d` and `/etc/local.d` scripts, the two binaries, the module blacklist,
+NetworkManager's configuration and chrony's dispatcher. Duranium is systemd, so the units are still to write. In order:
+- Decide what survives. `05-hanoip-ml-guard` (every disk read-only except super), `20-hanoip-deadman` (back to the
+  server after 15 minutes) and `99-hanoip-ml-up` (stage 1's boot deadline) exist because the Alpine root in super is a
+  development root that must never write `userdata`; Duranium lives in `userdata`, so the guard's rule, and the matching
+  line of `AGENTS.md`, ends at the switch, the boot deadline is stage 1's, and the battery needs only the charge limit,
+  not the reboot under 50 %.
+- Write the units: `hanoip-efs` (the modem's EFS copied to `/run/efs`), `rmtfs` and `tqftpserv` (served read-only),
+  `hanoip-modem` (SMEM item 134, the remoteprocs, IPA and ath10k, `Before=NetworkManager`), `hanoip-charge`
+  (`Restart=always`, the modules and the debugfs mount), `hanoip-usb-net` (the configfs gadget and `unudhcpd`),
+  `hanoip-slot-mark` (oneshot after sshd, `systemctl is-active` instead of `rc-service`), `hanoip-bot`, and
+  `RuntimeWatchdogSec=` in `systemd.conf.d` in place of the watchdog daemon. NetworkManager runs
+  `dispatcher.d/50-hanoip-ml-chrony` under systemd too.
+- Build the mainline kernel package (step 1) so the modules the units load exist.
 - Test on the phone once the Duranium image boots.
 
 ### 4. A Duranium image for the hanoip
