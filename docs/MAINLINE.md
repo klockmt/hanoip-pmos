@@ -112,6 +112,36 @@ modules its Kali initramfs loads, and the LCDB regulators switch the panel off a
 The kernel received only the boot image's command line, not the `bootargs` of the U-Boot DTB, so `panic=` has to go in
 the boot image.
 
+**Our own build, same day.** Linux 7.3 from kernel.org (`linux-7.3.tar.xz`, checked against `sha256sums.asc`; its git
+tree is `30fd2ef8`, the tree of tag v7.3) plus his 195 patches (`work/kernel-7.3/v7/patches`) gives tree `276fbce0`,
+the one that booted. Its `config-7.3-hanoip` plus `QCOM_WDT=y` and `WATCHDOG_SYSFS=y`, built with the host's
+`aarch64-linux-gnu-gcc` 16.2 (the first set used 13.3), with no errors. The DTB came out byte-identical to the first set's (`900e11eb`).
+Booted the same way with our modules in the initramfs and `panic=5 oops=panic` on the command line:
+
+| Check | Result |
+|---|---|
+| U-Boot `max-download-size` | `0x07000000` (112 MiB): the upper bound of a RAM-only image |
+| Modules | `modprobe ufs_qcom` and the battery modules load from our `modules.dep`; 78 partitions, all read-only; battery 81 %, "Not charging" |
+| Hardware watchdog | `qcom_wdt` on `/dev/watchdog0`, timeout 30 s (1 to 32). `echo 1 > /dev/watchdog` armed it with nobody feeding it: the phone reset 31 s later, the ABL booted slot `b` and the server answered SSH 42 s after the reset, with nobody touching the phone |
+| Slots | before and after: slot `b` active and successful, retry counts 6/6 (the RAM boots do not use up retries) |
+
+How to repeat it (the U-Boot image is the base's, from its release `artefatos-base-20261031`; check it against his
+`artifacts/base-images.sha256`). `scripts/build-mainline-kernel` was run end to end; `scripts/mainline-ram-image`
+builds the same image as the one booted above (same kernel, DTB, init and command line), but its own output has not
+been booted yet.
+
+```
+scripts/build-mainline-kernel            # Linux 7.3 + its patches, checked tree, kernel/mainline/server.config
+scripts/mainline-ram-image               # $HANOIP_MAINLINE_DIR/out/boot-ram-test.img
+scripts/reboot-bootloader
+fastboot boot u-boot-sm7150-motorola-hanoip-cam-tres.img
+fastboot boot "$HANOIP_MAINLINE_DIR/out/boot-ram-test.img"
+sudo nmcli device set <usb interface> managed no        # see docs/PITFALLS.md
+sudo ip addr add 172.16.42.2/24 dev <usb interface>
+printf 'touch /tmp/keep\n' | socat -t 5 - TCP:172.16.42.1:2323   # stops the 10-minute dead man
+# ... back to the server: printf 'reboot -f\n' | socat -t 3 - TCP:172.16.42.1:2323; nmcli device set <usb interface> managed yes
+```
+
 ## 8. Commands used to reproduce (first attempt)
 ```
 # Running DTB

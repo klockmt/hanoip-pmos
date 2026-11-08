@@ -11,6 +11,7 @@ Up to v0.1.14 the notes lived only in the message of each annotated tag; this fi
 ## [Unreleased]
 
 ### Added
+- `docs/MAINLINE.md`, section 7: our own 7.3 build boots the same way, its modules load (UFS read-only, battery), and an unfed hardware watchdog (`qcom_wdt`, 30 s) resets the phone back to the server by itself, which answered SSH 42 s after the reset. U-Boot takes images up to 112 MiB (#6).
 - `scripts/mainline-ram-image` and `kernel/mainline/ram-test-init`: a RAM-only test image for the mainline kernel, booted from the base's U-Boot with `fastboot boot`. Its initramfs locks every disk read-only, mounts nothing from them, offers a shell on `172.16.42.1:2323` over USB and reboots back to the server after 10 minutes unless someone logs in. `scripts/test-mainline-ram-image` checks those rules and packs fake inputs (#6).
 - `scripts/build-mainline-kernel`: Linux 7.3 for this phone from kernel.org plus the base's 195 patches at a pinned commit of its repository, with both source trees checked by hash, its config plus `kernel/mainline/server.config` (the hardware watchdog `QCOM_WDT`) and his `hanoip_mmi_unit_info` module. Run end to end on 2026-11-07; the DTB comes out byte-identical to his (#6).
 - `docs/MAINLINE.md`, section 7: the base's Linux 7.3 boots on this phone RAM-only through its U-Boot, with our own test initramfs that locks every disk read-only: USB network and serial, cpufreq, battery read in hold on the cable, UFS reads matching the backup, and back to the server with a reboot (#6).
