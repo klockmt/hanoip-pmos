@@ -17,4 +17,14 @@ done
 # update flashes them again. The check above is what keeps that safe: a command line that does not start with the
 # working console must never reach a flash.
 grep -qx 'deviceinfo_flash_kernel_on_update="true"' "$f" || fail "deviceinfo_flash_kernel_on_update must be \"true\""
+
+# Mainline overrides (EFI path, Duranium): no boot.img, no flash on update, DTB from mainline package, cmdline with panic=5
+for v in dtb kernel_cmdline generate_bootimg flash_kernel_on_update; do
+	grep -q "^deviceinfo_${v}_mainline=" "$f" || fail "deviceinfo_${v}_mainline is missing"
+done
+case $(sed -n 's/^deviceinfo_dtb_mainline="\(.*\)"$/\1/p' "$f") in qcom/sm7150-motorola-hanoip) ;; *) fail "deviceinfo_dtb_mainline is not qcom/sm7150-motorola-hanoip" ;; esac
+case $(sed -n 's/^deviceinfo_kernel_cmdline_mainline="\(.*\)"$/\1/p' "$f") in console=ttyMSM0,115200n8\ *panic=5*) ;; *) fail "deviceinfo_kernel_cmdline_mainline must start with console=ttyMSM0,115200n8 and contain panic=5" ;; esac
+[ "$(sed -n 's/^deviceinfo_generate_bootimg_mainline="\(.*\)"$/\1/p' "$f")" = "false" ] || fail "deviceinfo_generate_bootimg_mainline must be false"
+[ "$(sed -n 's/^deviceinfo_flash_kernel_on_update_mainline="\(.*\)"$/\1/p' "$f")" = "false" ] || fail "deviceinfo_flash_kernel_on_update_mainline must be false"
+
 echo "deviceinfo: ok"
