@@ -24,8 +24,8 @@ depends="
 makedepends="devicepkg-dev linux-headers rust"
 install="$pkgname.post-install $pkgname.post-upgrade $pkgname-modem.post-install"
 subpackages="
-	$pkgname-kernel-downstream:kernel_downstream
 	$pkgname-kernel-mainline:kernel_mainline
+	$pkgname-kernel-downstream:kernel_downstream
 	$pkgname-modem:modem
 "
 source="
@@ -148,12 +148,12 @@ kernel_downstream() {
 
 kernel_mainline() {
 	pkgdesc="Mainline kernel for Motorola Moto G (60)"
-	depends="linux-postmarketos-qcom-sm7150"
+	depends="linux-motorola-hanoip-mainline"
 	devicepkg_subpackage_kernel $startdir $pkgname $subpkgname
 }
 
 sha512sums="
-c08d16814bc9ab6df7d73ddd4ab5f7fb12f9c6800902308e30808055e01d49b0d5e5ef00eaf78d0c678504a07760de22ba561f5fa79b583cac02a10fd35eda7c  deviceinfo
+c786a3c0b22ca948fe84b103f937d2396defbf2594e34224dfbafd18aad8ae69fcee0cf24b53e09e62bc247632c53f7e092e58ed678621161cc6b66d8d5237ac  deviceinfo
 743097f8b5390e7a1b409c000dc896d6eadb7c61d2e99492c5de0382bf4a8efa2b85dedb4f08a18e90cc20694403f2c9ee15da626f6a29d97a8eb520725c503a  hanoip-charge-limit
 150faba5a14964a45e27b726386387b334633e03e33a0af2f0435b5c3def74c6c6c98bbd3945dd8508b9f6949fd7ff074cd8a30c6c0a7793bfbc732811d23dfc  hanoip-bot.rs
 9fdf675c97e65639e858b1aaf23ad5954c59c3758daa4d8cc13ecf7993ef67d1b13dbdcc82932a8407f64338606e0fe0adf73ee13a5276d20b54b2d51f568b64  hanoip-bot.initd

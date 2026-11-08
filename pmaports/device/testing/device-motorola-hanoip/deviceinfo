@@ -47,3 +47,9 @@ deviceinfo_flash_offset_tags="0x00000100"
 deviceinfo_rootfs_image_sector_size="4096"
 # 1 GB swap file on the rootfs: 3.6 GB of RAM is little for a server running for weeks
 deviceinfo_swap_size_recommended="1024"
+
+# Mainline kernel overrides (EFI path, Duranium)
+deviceinfo_dtb_mainline="qcom/sm7150-motorola-hanoip"
+deviceinfo_kernel_cmdline_mainline="console=ttyMSM0,115200n8 panic=5 oops=panic"
+deviceinfo_generate_bootimg_mainline="false"
+deviceinfo_flash_kernel_on_update_mainline="false"
