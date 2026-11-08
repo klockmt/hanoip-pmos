@@ -36,6 +36,8 @@ git -C "$u/git" add -A
 [ "$(git -C "$u/git" write-tree)" = $TREE ] || { echo "the patched tree differs from its validated build" >&2; exit 1; }
 echo "source tree OK ($TREE)"
 cp "$ml/hanoip-server.env" "$u/git/board/qualcomm/hanoip-server.env"
+# Our changes on top of his checked tree (the watchdog left running for the kernel).
+for p in "$ml"/*.patch; do git -C "$u/git" apply --whitespace=nowarn "$p"; done
 
 o=$u/obj
 mkdir -p "$o"

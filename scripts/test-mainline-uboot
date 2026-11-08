@@ -25,6 +25,16 @@ grep -qx '# CONFIG_FASTBOOT_FLASH is not set' "$cfg" || fail "this U-Boot could 
 grep -qx 'CONFIG_ENV_DEFAULT_ENV_TEXT_FILE="board/qualcomm/hanoip-server.env"' "$cfg" ||
 	fail "the default environment is not hanoip-server.env (its base.config points at the diagnostic one)"
 grep -qx 'CONFIG_QCOM_UFS=y' "$cfg" || fail "no UFS: the kernel in boot_a cannot be read"
+# The watchdog starts with U-Boot, nothing feeds it until the kernel and the handoff does not stop it (2026-11-08):
+# a U-Boot that fed it sat at its prompt for good, and his handoff left the kernel without one until stage 1.
+grep -qx '# CONFIG_WATCHDOG is not set' "$cfg" && grep -qx 'CONFIG_WATCHDOG_AUTOSTART=y' "$cfg" ||
+	fail "U-Boot would feed the watchdog, or not start it"
+wp=kernel/mainline/uboot/0001-leave-the-watchdog-running-for-the-kernel.patch
+[ "$(grep -c '^-.*wdt_stop_all();' "$wp")" = 2 ] || fail "$wp does not drop both wdt_stop_all() calls"
+grep -qF 'for p in "$ml"/*.patch; do git -C "$u/git" apply' scripts/build-mainline-uboot ||
+	fail "scripts/build-mainline-uboot does not apply kernel/mainline/uboot/*.patch"
+grep -qx 'button_cmd_0=wdt dev watchdog@17c10000; wdt stop; run menucmd' "$env" ||
+	fail "the watchdog would reset the phone while the Volume Down menu waits for a person"
 
 dir=$(mktemp -d)
 trap 'rm -rf "$dir"' EXIT
