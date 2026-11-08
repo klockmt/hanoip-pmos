@@ -112,7 +112,8 @@ cp /etc/nftables.nft $MNT/etc/nftables.nft
 mkdir -p $MNT/etc/nftables.d
 cp -a /etc/nftables.d/. $MNT/etc/nftables.d/
 
-chmod 755 $MNT/etc/local.d/*.start $MNT/etc/init.d/hanoip-ml-modem
+chmod 755 $MNT/etc/local.d/*.start $MNT/etc/init.d/hanoip-ml-modem \
+	$MNT/etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony
 # The pmOS repository brings eudev, which adds udev to sysinit itself: mdev would fight it over /dev.
 for s in mdev hwdrivers; do chroot $MNT rc-update del $s sysinit >/dev/null 2>&1 || true; done
 for s in devfs dmesg; do chroot $MNT rc-update add $s sysinit >/dev/null; done
@@ -123,7 +124,9 @@ chroot $MNT rc-update del unudhcpd.usb0 boot >/dev/null 2>&1 || true
 for s in rmtfs tqftpserv pd-mapper qrtr-ns; do
 	for l in boot default; do chroot $MNT rc-update del $s $l >/dev/null 2>&1 || true; done
 done
-for s in modules sysctl hostname bootmisc syslog nftables; do chroot $MNT rc-update add $s boot >/dev/null; done
+# The PMIC RTC does not keep the time (it reads 1974): swclock restores the time saved at the last shutdown instead.
+chroot $MNT rc-update del hwclock boot >/dev/null 2>&1 || true
+for s in modules sysctl hostname bootmisc syslog nftables swclock; do chroot $MNT rc-update add $s boot >/dev/null; done
 for s in sshd chronyd local dbus hanoip-ml-modem networkmanager tailscale; do
 	chroot $MNT rc-update add $s default >/dev/null
 done

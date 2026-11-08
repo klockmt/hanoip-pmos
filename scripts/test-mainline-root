@@ -36,6 +36,12 @@ grep -qx 'unmanaged-devices=interface-name:usb0' "$ov/etc/NetworkManager/conf.d/
 # The modem does not start by itself on mainline (2026-11-07): the service starts it, after turning its recovery off.
 grep -qF '[ "$(cat "$r/name")" = modem ] && [ "$(cat "$r/state")" = offline ] && echo start > "$r/state"' "$m" ||
 	fail "nothing starts the modem"
+# The clock: no RTC (it read 1974), chrony up before the Wi-Fi had no source, and Tailscale's TLS failed (2026-11-07).
+d=$ov/etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony
+[ -x "$d" ] && grep -qF '[ "$2" = up ] || exit 0' "$d" && grep -qF 'rc-service chronyd restart' "$d" ||
+	fail "nothing restarts chronyd when the network comes up"
+grep -qF 'rc-update del hwclock boot' "$mk" && grep -q 'swclock; do chroot $MNT rc-update add $s boot' "$mk" ||
+	fail "the root still sets the clock from the RTC instead of swclock"
 
 # The guards of the root: other disks read-only, the dead man, the battery floor.
 g=$ov/etc/local.d/05-hanoip-ml-guard.start
