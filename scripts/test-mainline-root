@@ -57,9 +57,56 @@ grep -qx 'install -m755 /usr/bin/hanoip-reboot-bootloader $MNT/usr/bin/hanoip-re
 # The guards of the root: other disks read-only, the dead man, the battery floor.
 g=$ov/etc/local.d/05-hanoip-ml-guard.start
 grep -qF 'case $n in loop7|"$s"|"$disk") continue ;; esac' "$g" || fail "the guard skips more than loop7, super and its disk"
+grep -qF 'case " $rw " in *" $n "*) continue ;; esac' "$g" && grep -qF '[ -e "/sys/block/$x" ] && rw="$rw $x"' "$g" ||
+	fail "the guard does not lend qbootctl only the whole disks named in /run/hanoip-ml-rw-disk"
 grep -q 'blockdev --setro' "$g" || fail "the guard does not lock the other disks"
 grep -qF 'sleep 900; [ -e /run/hanoip-ml-keep ]' "$ov/etc/local.d/20-hanoip-deadman.start" || fail "no 15-minute dead man"
 grep -qF '"$c" -lt 50' "$ov/etc/local.d/30-hanoip-battery.start" || fail "no battery floor"
+
+# Slot a as a second working slot (approved by the user on 2026-11-08, AGENTS.md): after a complete boot from slot a,
+# and only then, qbootctl -m a marks every partition of slot a and writes back the GPT of each disk that holds one
+# (LUN 4, and LUN 2 with xbl_a), lent to it whole. A boot from the PC (the ABL says _b, the server's slot) marks
+# nothing, and the dead man spares a slot-a boot.
+abl=$ov/usr/bin/hanoip-ml-abl-slot
+sm=$ov/etc/local.d/98-hanoip-ml-slot.start
+[ -x "$abl" ] && [ -x "$sm" ] || fail "no hanoip-ml-abl-slot or 98-hanoip-ml-slot.start in the overlay"
+grep -qF '[ "$(hanoip-ml-abl-slot)" = _a ] && exit 0' "$ov/etc/local.d/20-hanoip-deadman.start" ||
+	fail "the dead man would reboot a boot from slot a every 15 minutes"
+sed -n '/^PKGS="/,/"$/p' "$mk" | grep -qw qbootctl || fail "the root has no qbootctl"
+sed -n '/^chmod 755 \$MNT\/etc\/local.d/,/[^\\]$/p' "$mk" | grep -qF '$MNT/usr/bin/hanoip-ml-abl-slot' ||
+	fail "$mk does not make hanoip-ml-abl-slot executable"
+t=$(mktemp -d)
+# The ABL's command line, as U-Boot leaves it in the DT; the real one also holds the serial and the MACs.
+printf 'androidboot.mode=normal androidboot.slot_suffix=_a androidboot.dualsim=true\0' > "$t/args-a"
+printf 'androidboot.mode=normal androidboot.slot_suffix=_b\0' > "$t/args-b"
+[ "$(HANOIP_ML_ABL_ARGS=$t/args-a sh "$abl")" = _a ] && [ "$(HANOIP_ML_ABL_ARGS=$t/args-b sh "$abl")" = _b ] &&
+	[ -z "$(HANOIP_ML_ABL_ARGS=$t/missing sh "$abl")" ] || fail "hanoip-ml-abl-slot does not print just the ABL's slot suffix"
+# 98-hanoip-ml-slot.start against fakes: boot_a is sde22 on sde, xbl_a is sdc1 on sdc, foo_a has no foo_b (so qbootctl
+# leaves it alone); every command the script runs is logged with the disks lent at that moment.
+mkdir -p "$t/bin" "$t/run" "$t/pl" "$t/sysdev/soc/sde/sde22" "$t/sysdev/soc/sdc/sdc1" "$t/sysdev/soc/sdz/sdz9" "$t/sysclass"
+for x in sde/sde22 sdc/sdc1 sdz/sdz9; do ln -s "$t/sysdev/soc/$x" "$t/sysclass/${x#*/}"; done
+ln -s sde22 "$t/pl/boot_a"; ln -s sdf22 "$t/pl/boot_b"; ln -s sdc1 "$t/pl/xbl_a"; ln -s sdd1 "$t/pl/xbl_b"; ln -s sdz9 "$t/pl/foo_a"
+for c in blockdev qbootctl rc-service logger sleep; do
+	printf '#!/bin/sh\necho "%s $* rw=$(echo $(cat %s/run/hanoip-ml-rw-disk 2>/dev/null))" >> %s/log\n[ "%s" != rc-service ] || [ -z "$SSHD_DOWN" ]\n' \
+		"$c" "$t" "$t" "$c" > "$t/bin/$c"
+	chmod +x "$t/bin/$c"
+done
+cp "$abl" "$t/bin/hanoip-ml-abl-slot"
+mark() { rm -f "$t/log"; env PATH="$t/bin:$PATH" HANOIP_ML_ABL_ARGS="$t/args-$1" HANOIP_ML_RUN="$t/run" HANOIP_ML_BYPARTLABEL="$t/pl" \
+	HANOIP_ML_SYSBLOCK="$t/sysclass" SSHD_DOWN="${2:-}" sh "$sm" >/dev/null 2>&1; cat "$t/log" 2>/dev/null; }
+r=$(mark a)
+for l in 'blockdev --setrw /dev/sdc rw=sdc sde' 'blockdev --setrw /dev/sde rw=sdc sde' 'qbootctl -m a rw=sdc sde' \
+	'blockdev --setro /dev/sdc rw=sdc sde' 'blockdev --setro /dev/sde rw=sdc sde'; do
+	printf '%s\n' "$r" | grep -qx "$l" || fail "a slot-a boot did not run '$l': $r"
+done
+printf '%s\n' "$r" | grep -q 'sdz' && fail "a disk with no _b partition was lent: $r"
+[ "$(printf '%s\n' "$r" | grep -E '^(blockdev --set(rw|ro)|qbootctl) ' | cut -d' ' -f1,2 | tr '\n' ' ')" = \
+	"blockdev --setrw blockdev --setrw qbootctl -m blockdev --setro blockdev --setro " ] ||
+	fail "qbootctl does not run between --setrw and --setro: $r"
+[ ! -e "$t/run/hanoip-ml-rw-disk" ] || fail "the disks stay lent to qbootctl after the run"
+mark b | grep -qE 'qbootctl|blockdev' && fail "a boot from the PC (slot b) marked or unlocked something"
+mark a down | grep -qE 'qbootctl|blockdev' && fail "slot a was marked while sshd was not running"
+rm -rf "$t"
 
 # The boot deadline (2026-11-08: a root that stalled before local.d sat 10 minutes with no usb0 and no Wi-Fi while
 # the daemon kept feeding the watchdog). Stage 1 starts it on the new root just before switch_root; local.d's last

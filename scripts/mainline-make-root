@@ -13,7 +13,7 @@ dir=$(dirname "$0")
 OFF=1174405120
 SIZE=2516582400
 PKGS="alpine-base openssh-server sudo kmod e2fsprogs chrony unudhcpd dbus networkmanager networkmanager-wifi
-networkmanager-cli wpa_supplicant rmtfs tqftpserv linux-firmware-ath10k wireless-regdb tailscale nftables iw"
+networkmanager-cli wpa_supplicant rmtfs tqftpserv linux-firmware-ath10k wireless-regdb tailscale nftables iw qbootctl"
 PKGS=$(echo $PKGS)
 if [ -n "${DRY_RUN:-}" ]; then
 	echo "+ check that the phone runs the 4.14 server and that super is not in use"
@@ -118,7 +118,7 @@ mkdir -p $MNT/etc/nftables.d
 cp -a /etc/nftables.d/. $MNT/etc/nftables.d/
 
 chmod 755 $MNT/etc/local.d/*.start $MNT/etc/init.d/hanoip-ml-modem $MNT/etc/init.d/hanoip-ml-charge \
-	$MNT/usr/bin/hanoip-ml-charge $MNT/etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony
+	$MNT/usr/bin/hanoip-ml-charge $MNT/usr/bin/hanoip-ml-abl-slot $MNT/etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony
 # The pmOS repository brings eudev, which adds udev to sysinit itself: mdev would fight it over /dev.
 for s in mdev hwdrivers; do chroot $MNT rc-update del $s sysinit >/dev/null 2>&1 || true; done
 for s in devfs dmesg; do chroot $MNT rc-update add $s sysinit >/dev/null; done

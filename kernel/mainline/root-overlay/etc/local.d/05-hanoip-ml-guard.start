@@ -3,9 +3,12 @@
 super_dev() { for d in /sys/class/block/sd*; do grep -qx 'PARTNAME=super' "$d/uevent" 2>/dev/null && { echo "${d##*/}"; return; }; done; }
 lock() {
 	s=$(super_dev); disk=$(basename "$(dirname "$(readlink -f "/sys/class/block/$s")")")
+	# The disks 98-hanoip-ml-slot.start lends to qbootctl for slot a's GPT bits: whole disks only, never a partition.
+	rw=; for x in $(cat /run/hanoip-ml-rw-disk 2>/dev/null); do [ -e "/sys/block/$x" ] && rw="$rw $x"; done
 	for d in /sys/class/block/*; do
 		n=${d##*/}
 		case $n in loop7|"$s"|"$disk") continue ;; esac
+		case " $rw " in *" $n "*) continue ;; esac
 		[ "$(cat "$d/ro" 2>/dev/null)" = 1 ] || blockdev --setro "/dev/$n" 2>/dev/null
 	done
 }
