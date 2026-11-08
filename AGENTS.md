@@ -12,6 +12,7 @@ The rules are here. Before touching anything read `docs/STATUS.md` (what works),
 - Do not flash partitions beyond what the user asked for, never wipe or factory reset. Inspect the target and compare with `SHA256SUMS` first. `fastboot set_active b` + `reboot` is pre-authorized only to recover the A/B slot (see below).
 - `pmbootstrap` asks for the `sudo` password and needs interactive input, so **the user runs it**: hand over ready-made commands and wait. It is not on PATH; use `$PMBOOTSTRAP`.
 - When zeroing the in-use slot's `dtbo` for a test, restore the backup right afterwards, before `fastboot continue` or any reboot.
+- The mainline development root lives only in the unallocated region of `super` (`sdb23`): offset 1120 MiB, 2400 MiB (approved by the user on 2026-11-07). Write it only through a loop device bounded by that offset and size, hash `super` outside the region before and after every write, and never write the LP metadata, the Android volumes or any other partition from a mainline boot.
 
 ## Working over SSH, securely
 - Use `scripts/hanoip-ssh '<cmd>'`. It uses the dedicated key from `.env` with `IdentitiesOnly` and `BatchMode`; `HANOIP_SSH_TTY=1` only when a password prompt is needed.
