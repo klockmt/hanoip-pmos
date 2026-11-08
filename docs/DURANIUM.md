@@ -50,6 +50,22 @@ it touches the phone, evidence written into `docs/MAINLINE.md`.
 
 ### 1. A pmaports package of our 7.3 kernel
 
+**State (2026-11-08, `beta`):** written and tested without the phone. Package `linux-motorola-hanoip-mainline` in
+`pmaports/device/testing/`; `scripts/test-mainline-kernel-package` checks its copies, its trees, its tarball list and
+its install paths, and its mutations were each caught. **Not built yet.** Still open, in order:
+- Build (the user runs it, `pmbootstrap` needs sudo): `scripts/setup-pmaports`, then
+  `scripts/pmb build --force linux-motorola-hanoip-mainline`. Do not activate envkernel.
+- Compare with `$HANOIP_SRC_DIR/hanoip-mainline-7.3/out`: the DTB must come out `900e11eb…` (it held across GCC 13.3
+  and 16.2). `Image` will differ, since Alpine's cross GCC is not the host's: compare the module list and the `.config`
+  without the compiler lines.
+- Boot evidence before step 5 depends on it: one RAM-only `fastboot boot` of the built `Image` (the method in
+  `docs/MAINLINE.md`, section 7). Not done.
+- Not run: the package's `makedepends` on a clean chroot, and `depmod` with the zstd modules on the phone's `kmod`.
+- Step 2 changes `kernel_mainline` in `device-motorola-hanoip`, which still depends on `linux-postmarketos-qcom-sm7150`.
+  The mainline subpackage must come first: `pmaports.py` takes the first `device-<name>-kernel-*`.
+- Duranium's `mkosi.prepare` takes `/boot/vmlinuz` (moved into `usr/lib/modules/*/`) and the DTB from `/boot/dtbs`:
+  the package installs both where it looks. Check this again when the image is built, not before.
+
 `linux-motorola-hanoip-mainline`, next to the 4.14's `pmaports/device/downstream/linux-motorola-hanoip`, modelled on
 Nura's `device/community/linux-postmarketos-qcom-sm7150/APKBUILD`:
 - sources: `linux-7.3.tar.xz` from kernel.org and, from this repository, the 195 patches in `kernel/mainline/patches`,
@@ -60,8 +76,8 @@ Nura's `device/community/linux-postmarketos-qcom-sm7150/APKBUILD`:
 - `build()`/`package()`: `Image`, modules and `qcom/sm7150-motorola-hanoip.dtb`; the out-of-tree
   `hanoip_mmi_unit_info` (`kernel/mainline/extra/`, SMEM item 134, needed by the modem); install like the Nura
   package (`modules_install zinstall dtbs_install`, the hanoip DTB under `/boot/dtbs/qcom/`).
-- Or package the tree that `scripts/build-mainline-kernel` already builds with `pmbootstrap build --envkernel`, as
-  `scripts/build-image` does for the 4.14 (it needs the build in the tree's `.output`). Pick one and say why.
+- Decided (2026-11-08): from source, not `--envkernel`. envkernel bind-mounts the source tree and needs the kbuild output
+  inside it, and it forces `pkgrel=0`; a source package builds from this repository's copies alone.
 - Test: a `scripts/test-*` that the package pins the same commit and trees as `scripts/build-mainline-kernel`; build
   it and compare `Image`, the DTB and the module list with `$HANOIP_MAINLINE_DIR/out`.
 
