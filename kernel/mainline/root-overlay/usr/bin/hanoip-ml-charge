@@ -1,5 +1,5 @@
 #!/bin/sh
-# Charge limit of the mainline root (docs/MAINLINE.md). the base's qcom_smbx leaves charging off and lets it be
+# Charge limit of the mainline root (docs/MAINLINE.md). The kernel's qcom_smbx (kernel/mainline/patches) leaves charging off and lets it be
 # switched with 0/1 in /sys/kernel/debug/hanoip-charge; float voltage, JEITA and termination stay with the PMIC. This
 # charges under LOW % and stops at HIGH %, and never charges over 4.30 V or with the battery over 40 C. Like the 4.14
 # charge limit, it holds the battery near 80 % on the cable. Charging is switched off when the script stops.

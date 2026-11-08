@@ -1,5 +1,5 @@
 #!/bin/sh
-# Prints the slot the ABL booted (_a or _b), from the ABL's command line, which U-Boot (the base's abl_identity)
+# Prints the slot the ABL booted (_a or _b), from the ABL's command line, which our U-Boot (abl_identity)
 # leaves in the DT as /chosen/u-boot,abl-bootargs. Only androidboot.slot_suffix is read: that line also holds the
 # serial number and the MACs. Prints nothing without it (a boot that did not come through that U-Boot).
 { tr '\0 ' '\n\n' < "${HANOIP_ML_ABL_ARGS:-/proc/device-tree/chosen/u-boot,abl-bootargs}"; } 2>/dev/null |

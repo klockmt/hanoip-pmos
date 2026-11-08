@@ -2,13 +2,12 @@
 
 The mainline kernel on the hanoip. The first attempt (6.6, 6.13.4, 7.1-rc3, booted straight from the ABL) never ran a
 kernel, as recorded on 2026-10-24 (sections 1 to 6). **Since 2026-11-07 Linux 7.3 runs on this phone RAM-only**, through
-the base's U-Boot (section 7); it is not a server yet. The phone runs the downstream 4.14 kernel meanwhile; what works
+a U-Boot built for it (section 7); it is not a server yet. The phone runs the downstream 4.14 kernel meanwhile; what works
 today is in [`STATUS.md`](STATUS.md) and the roadmap is GitHub issue #6. The pitfalls of the pmOS flow itself are in
 [`PITFALLS.md`](PITFALLS.md).
 
 **Resumed on 2026-11-07** ([`STATUS.md`](STATUS.md), section 5), after being parked on 2026-11-02. The new start is
-the base's the mainline base: it
-boots Linux 7.3 on a hanoip through its U-Boot, RAM-only. Sections 1 to 6 and 8 are the record of the first attempt; section 7 is the new start.
+Linux 7.3 with this project's patches (`kernel/mainline`), booted through our U-Boot, RAM-only. Sections 1 to 6 and 8 are the record of the first attempt; section 7 is the new start.
 
 ## 1. What was done
 1. **Backup** of the critical partitions and extraction of the running DTB (`/sys/firmware/fdt`) and of the Android kernel config.
@@ -80,18 +79,18 @@ The errors of the pmOS flow that were not specific to the mainline attempt are i
 3. If physical access is ever possible: UART on GPIO44/45 (1.8 V) to see the kernel and U-Boot logs.
 4. Read pstore through the LineageOS recovery after a failed mainline boot (the guide's way), going straight into it and not through Android.
 
-## 7. 2026-11-07: Linux 7.3 runs on this phone, RAM-only, through the base's U-Boot
+## 7. 2026-11-07: Linux 7.3 runs on this phone, RAM-only, through U-Boot
 
-Nothing was written to the phone. The images are the base's release `artefatos-base-20261031`, checked against his
-`artifacts/base-images.sha256`.
+Nothing was written to the phone. The images were the first validated set (`artefatos-base-20261031`), checked against its
+`base-images.sha256`.
 
 1. `scripts/reboot-bootloader`; the ABL reported `MBM-3.0-hanoip_retail-9522caba9cf-23`, slot `b` active and successful,
    retry counts 6/6.
 2. `fastboot boot u-boot-sm7150-motorola-hanoip-cam-tres.img` (header v3, DTB built into U-Boot). Its `bootcmd` is
    `run fastboot`: it boots nothing on its own. About 4 s later its fastboot answered (`product: motorola-hanoip`,
    `version: 0.4`); `oem console` shows it started the watchdog at `17c10000` (U-Boot stops it before the kernel).
-3. `fastboot boot` of a header-v2 image: his `Image.gz` (7.3.0-sm7150 #64) and DTB, the first cpio of its ramdisk (the
-   modules, `.ko.zst`) and our own busybox initramfs instead of its Kali one. Its Kali initramfs would mount `userdata`
+3. `fastboot boot` of a header-v2 image: that set's `Image.gz` (7.3.0-sm7150 #64) and DTB, the first cpio of its ramdisk (the
+   modules, `.ko.zst`) and our own busybox initramfs instead of its Kali one. That Kali initramfs would mount `userdata`
    read-write as the root, and on this phone `userdata` is the server. Ours locks every block device read-only (and keeps
    locking new ones every second), mounts nothing from the disk, brings up an NCM + ACM gadget with a shell on
    `172.16.42.1:2323` (`nc`, USB only) and reboots itself after 10 minutes unless someone logs in.
@@ -103,18 +102,18 @@ What worked:
 | Boot | the gadget was on the PC about 2 s after the `fastboot boot`; `uname -r` is `7.3.0-sm7150` |
 | CPU | 8 cores, cpufreq with `schedutil`, cpuidle (WFI and two sleep states) |
 | Thermal, RTC, Type-C | 25 thermal zones at about 37 °C, `rtc-pm8xxx`, `qcom,pm6150-typec` sees the PC as partner |
-| Battery (modules `qcom-spmi-adc5`, `nvmem_qcom-spmi-sdam`, `qcom_qg`, `qcom_smbx`) | `qcom_qg`: 81 %, 4.215 V, 28.8 °C, -28 mA, "Not charging"; the charger monitor: online, 5.08 V and 294 mA in, health Good. Its `qcom_smbx` writes nothing to the PMIC ("configuration preserved"), so on the cable the phone runs from USB and the battery holds, like the 4.14 charge limit's hold |
+| Battery (modules `qcom-spmi-adc5`, `nvmem_qcom-spmi-sdam`, `qcom_qg`, `qcom_smbx`) | `qcom_qg`: 81 %, 4.215 V, 28.8 °C, -28 mA, "Not charging"; the charger monitor: online, 5.08 V and 294 mA in, health Good. The `qcom_smbx` driver writes nothing to the PMIC ("configuration preserved"), so on the cable the phone runs from USB and the battery holds, like the 4.14 charge limit's hold |
 | UFS (`ufshcd-core`, `ufshcd-pltfrm`, `ufs-qcom`) | 78 partitions, all read-only; `sha256sum` of `boot_b` read on 7.3 equals the backup |
 | Back to the server | `reboot -f` went through the ABL to slot `b`; SSH answered about 20 s later |
 
-Not there yet: `CONFIG_QCOM_WDT` is off in its config (no hardware watchdog), UFS, battery, remoteprocs and Wi-Fi are
+Not there yet: `CONFIG_QCOM_WDT` is off in that config (no hardware watchdog), UFS, battery, remoteprocs and Wi-Fi are
 modules its Kali initramfs loads, and the LCDB regulators switch the panel off after about 30 s (fine for a server).
 The kernel received only the boot image's command line, not the `bootargs` of the U-Boot DTB, so `panic=` has to go in
 the boot image.
 
 **Our own build, same day.** Linux 7.3 from kernel.org (`linux-7.3.tar.xz`, checked against `sha256sums.asc`; its git
-tree is `30fd2ef8`, the tree of tag v7.3) plus his 195 patches (`work/kernel-7.3/v7/patches`) gives tree `276fbce0`,
-the one that booted. Its `config-7.3-hanoip` plus `QCOM_WDT=y` and `WATCHDOG_SYSFS=y`, built with the host's
+tree is `30fd2ef8`, the tree of tag v7.3) plus the 195 patches (`kernel/mainline/patches`) gives tree `276fbce0`,
+the one that booted. `config-7.3-hanoip` plus `QCOM_WDT=y` and `WATCHDOG_SYSFS=y`, built with the host's
 `aarch64-linux-gnu-gcc` 16.2 (the first set used 13.3), with no errors. The DTB came out byte-identical to the first set's (`900e11eb`).
 Booted the same way with our modules in the initramfs and `panic=5 oops=panic` on the command line:
 
@@ -125,13 +124,13 @@ Booted the same way with our modules in the initramfs and `panic=5 oops=panic` o
 | Hardware watchdog | `qcom_wdt` on `/dev/watchdog0`, timeout 30 s (1 to 32). `echo 1 > /dev/watchdog` armed it with nobody feeding it: the phone reset 31 s later, the ABL booted slot `b` and the server answered SSH 42 s after the reset, with nobody touching the phone |
 | Slots | before and after: slot `b` active and successful, retry counts 6/6 (the RAM boots do not use up retries) |
 
-How to repeat it (the U-Boot image is the base's, from its release `artefatos-base-20261031`; check it against his
-`artifacts/base-images.sha256`). `scripts/build-mainline-kernel` was run end to end; `scripts/mainline-ram-image`
+How to repeat it (the RAM-boot U-Boot image is the first set's, `artefatos-base-20261031`; check it against its
+`base-images.sha256`, or build one with `scripts/build-mainline-uboot`). `scripts/build-mainline-kernel` was run end to end; `scripts/mainline-ram-image`
 builds the same image as the one booted above (same kernel, DTB, init and command line), but its own output has not
 been booted yet.
 
 ```
-scripts/build-mainline-kernel            # Linux 7.3 + its patches, checked tree, kernel/mainline/server.config
+scripts/build-mainline-kernel            # Linux 7.3 + kernel/mainline/patches, checked tree, kernel/mainline/server.config
 scripts/mainline-ram-image               # $HANOIP_MAINLINE_DIR/out/boot-ram-test.img
 scripts/reboot-bootloader
 fastboot boot u-boot-sm7150-motorola-hanoip-cam-tres.img
@@ -176,7 +175,7 @@ without a network; and the boot is still two `fastboot boot`s from the PC.
 Same boot (two `fastboot boot`s from the PC), with `scripts/mainline-make-root` now copying from the server, on the
 phone, what a server needs, and `kernel/mainline/root-overlay` holding the rest:
 
-- **Modem and Wi-Fi** (the base's recipe, `docs/kernel/checkpoint-2026-10-25-wifi.txt` in its repository): the
+- **Modem and Wi-Fi** (the recipe validated on 2026-10-25): the
   vendor firmware (`adsp`, `modem`, `ipa_fws`, `wlanmdsp.mbn`) where the DT's `firmware-name` asks for it
   (`qcom/sm7150/motorola/hanoip/`), `bdwlan_hanoip_ipa.bin` as the ath10k `board.bin`, and
   `/etc/init.d/hanoip-ml-modem`: it copies the EFS (`modemst1`, `modemst2`, `fsg`, `fsc`) to RAM and serves it with
@@ -189,7 +188,7 @@ phone, what a server needs, and `kernel/mainline/root-overlay` holding the rest:
   (the same node, `100.72.42.100`) and the nftables rules. usb0 stays the server's `172.16.42.1` with DHCP for the PC.
 - **Clock:** the PMIC RTC does not keep the time (it reads 1974), so `swclock` replaces `hwclock`, and a NetworkManager
   dispatcher script restarts chrony when a connection comes up.
-- **Charge limit:** `hanoip-ml-charge` switches the base's opt-in charging (`/sys/kernel/debug/hanoip-charge`) on
+- **Charge limit:** `hanoip-ml-charge` switches the kernel's opt-in charging (`/sys/kernel/debug/hanoip-charge`, `kernel/mainline/patches`) on
   under 75 % and off at 80 %, never over 4.30 V or 40 °C, and off when it stops (`scripts/test-mainline-charge`).
 
 Checked on the phone, with nothing done by hand after the `fastboot boot`: SSH over USB after 72 s and over the
@@ -208,7 +207,7 @@ host for the NAS disk, and a boot that does not need the PC.
 
 ## 7d. 2026-11-08: U-Boot in `boot_a` boots the mainline root
 
-`boot_a` now holds the base's U-Boot at its start, built by `scripts/build-mainline-uboot`, and 16 MiB in the kernel
+`boot_a` now holds our U-Boot at its start, built by `scripts/build-mainline-uboot`, and 16 MiB in the kernel
 image of `INIT=super-root scripts/mainline-ram-image`; `scripts/mainline-boot-a-image` packs the two. The ABL starts that
 U-Boot as it starts any kernel. U-Boot scans the UFS, finds `boot_a` by name (LUN 4, partition 22), reads 32 MiB from
 16 MiB in and boots it with the DTB built into U-Boot, as `fastboot boot` does. If that fails it resets, and the ABL
@@ -225,7 +224,7 @@ counts a failed boot of slot a. It cannot flash.
   at every boot; the guard lends it only those whole disks (approved by the user on 2026-11-08). The slot comes from
   the ABL's command line, which U-Boot leaves in the DT as `u-boot,abl-bootargs`; a boot from the PC says `_b` and
   marks nothing.
-- **Toolchain:** a container of the base's toolchain (its Dockerfile: Ubuntu 24.04, GCC 13.3) rebuilt its validated
+- **Toolchain:** a container with the toolchain of the first validated set (Ubuntu 24.04, GCC 13.3) rebuilt its
   `u-boot.bin` and its image byte for byte (the payload is deflate level 6). `scripts/build-mainline-uboot` uses the
   host's GCC 16.2, and that build is the one that booted below.
 
@@ -235,7 +234,7 @@ How it was found, with `fastboot boot` from the ABL and slot b active up to S4 (
 |---|---|---|
 | first try | the persistent U-Boot | sat at its `=>` prompt for good (the user saw it); power key held |
 | D1, D3, D2 | debug builds with fastboot or the serial gadget, watchdog unfed | no gadget; reset by the watchdog |
-| T3 | the base's exact config, only the watchdog unfed | fastboot at 3.2 s. U-Boot's console (`fastboot oem console`): `stop autoboot:  0 ^H^H^H 0`, a key already pending, then `Timeout waiting for command`, which his `bootretry=1` recovers from and our `-1` did not |
+| T3 | the RAM-boot base config, only the watchdog unfed | fastboot at 3.2 s. U-Boot's console (`fastboot oem console`): `stop autoboot:  0 ^H^H^H 0`, a key already pending, then `Timeout waiting for command`, which its `bootretry=1` recovers from and our `-1` did not |
 | D2 again | `bootdelay=-2`, `scsi dev` before `scsi read` | UFS at gear 3 with 6 LUNs, `boot_a` = LUN 4 partition 22, 8192 blocks read, CRC `acab4da4` equal to the image, then the root up to SSH |
 | S1 | the server build, U-Boot never touching USB | kernel and USB gadget up in 4 s, then the root stalled before `local.d` (no `usb0`, no Wi-Fi) for 10 minutes; power key held |
 | S2, S3 | the same with the boot deadline (S3: the root fixed as below) | SSH over USB in 84 s, then the tailnet; chrony in sync; S3 with no log flood and its whole boot in `dmesg` |

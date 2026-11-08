@@ -24,7 +24,7 @@ mainline work: [`MAINLINE.md`](MAINLINE.md). Open work: the GitHub issues, roadm
 | USB host through a hub | Ethernet, a UAS disk at 24.6 MB/s and PD charging in bypass work (issue #3) | 2026-10-30 | NOTES |
 | Not supported | WireGuard (not in 4.14; Tailscale instead), a hardware watchdog (no device node), `CFS_BANDWIDTH` (needs `!SCHED_WALT`), swarm/overlay networks | | NOTES |
 | Package update flashes `boot` and `vendor_boot` | boot-deploy's images from the repo's deviceinfo boot; the 2026-10-30 hang was `console=tty0` first in the command line, now `console=ttyMSM0,115200n8` first; a package update flashed both partitions and booted (issue #21, v0.1.13) | 2026-11-02 | `scripts/test-deviceinfo`; NOTES |
-| Mainline kernel | the goal again (section 5). Linux 7.3 (the base's tree, built here with the hardware watchdog on) boots RAM-only through its U-Boot to our test initramfs: USB network and serial, 8 CPUs with cpufreq, battery read in hold on the cable, UFS read-only with reads matching the backup, and an unfed `qcom_wdt` resets the phone back to the server by itself. A root in super's free region (Alpine edge + pmOS repo, OpenRC) boots by itself to Wi-Fi through the modem, Tailscale (SSH over the tailnet in 133 s), nftables, chrony and a 75-80 % charge limit, with every other disk read-only; U-Boot in `boot_a` reads the kernel from UFS and boots that root with no PC (from slot a itself, SSH in 113 s; slot a then marks itself successful, so both slots work; slot b, the server, is active again), and a boot that stalls reboots by itself after 5 minutes; the server's own services are still missing (issue #6) | 2026-11-08 | [`MAINLINE.md`](MAINLINE.md), sections 7 to 7d |
+| Mainline kernel | the goal again (section 5). Linux 7.3 (our tree, `kernel/mainline`, with the hardware watchdog on) boots RAM-only through our U-Boot to our test initramfs: USB network and serial, 8 CPUs with cpufreq, battery read in hold on the cable, UFS read-only with reads matching the backup, and an unfed `qcom_wdt` resets the phone back to the server by itself. A root in super's free region (Alpine edge + pmOS repo, OpenRC) boots by itself to Wi-Fi through the modem, Tailscale (SSH over the tailnet in 133 s), nftables, chrony and a 75-80 % charge limit, with every other disk read-only; U-Boot in `boot_a` reads the kernel from UFS and boots that root with no PC (from slot a itself, SSH in 113 s; slot a then marks itself successful, so both slots work; slot b, the server, is active again), and a boot that stalls reboots by itself after 5 minutes; the server's own services are still missing (issue #6) | 2026-11-08 | [`MAINLINE.md`](MAINLINE.md), sections 7 to 7d |
 
 ## 1. Device
 | Item | Value |
@@ -72,10 +72,9 @@ mainline work: [`MAINLINE.md`](MAINLINE.md). Open work: the GitHub issues, roadm
 Mainline is the goal again: first make it boot on this phone, then make it the server. Until then the downstream 4.14
 server keeps running on slot `b`, frozen as release v0.2.2.
 
-- **Start from what boots.** the base's the mainline base runs Linux
-  7.3 (the `sm7150-mainline` fork plus its patches) on a hanoip, RAM-only: the ABL `fastboot boot`s its U-Boot, which
-  stops the watchdog and `fastboot boot`s the kernel with the DTB built into U-Boot. It is used here with the author's
-  permission. The first step is to reproduce its chain unmodified on this phone (`MAINLINE.md`).
+- **Start from what boots.** Linux 7.3 (the `sm7150-mainline` fork plus the patches in `kernel/mainline/patches`) runs
+  on this phone RAM-only: the ABL `fastboot boot`s our U-Boot, which `fastboot boot`s the kernel with the DTB built
+  into U-Boot (`MAINLINE.md`, section 7).
 - **RAM-only until approved.** Every test is a `fastboot boot`; a test initramfs locks every disk read-only and never mounts
   `userdata`, which holds the server. Nothing is flashed until the user approves it.
 - **Then the server pieces**, each with its test: the charge limit (the PM6150 charger is not upstream yet), a hardware

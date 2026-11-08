@@ -7,8 +7,8 @@ it touches the phone, evidence written into `docs/MAINLINE.md`.
 
 ## What the user decided
 
-- **2026-11-07:** mainline is the goal; the mainline base may be used (his permission). Its repository
-  has no license file: reference his files by URL at a pinned commit, never copy them into this public repository.
+- **2026-11-07:** mainline is the goal. Its base (the kernel patches, configs and U-Boot board diffs) is this
+  project's own and lives in `kernel/mainline`; never name anyone as its author.
 - **2026-11-08:** Nura's Duranium becomes the server, **in all of `userdata`, in place of the 4.14 server**, after a
   verified backup of the 4.14 root. Duranium comes before moving the services to the Alpine mainline root.
 - **2026-11-08:** slot a must stay a working second slot: after a complete boot from slot a, `qbootctl -m a` may write
@@ -25,8 +25,8 @@ it touches the phone, evidence written into `docs/MAINLINE.md`.
 | Slot a | Successful: `boot_a` (LUN 4, `sde22`) holds our U-Boot at 0 and the kernel image (`INIT=super-root`) at 16 MiB; the ABL boots it with no PC, SSH in about 113 s |
 | Mainline root | Alpine edge + pmOS repo, OpenRC, in super's approved region (`sdb23`, offset 1174405120, size 2516582400); written by `scripts/mainline-make-root` from the 4.14 |
 | `userdata` | `sdb24` (LUN 1), 116 GB: a GPT image with 4096-byte sectors holding the 4.14's boot (503 MB) and root (115 GB, 4.2 GB used) |
-| U-Boot | `scripts/build-mainline-uboot` (sm7150-mainline/u-boot `tauchgang` at `f8c04469`, the base's diffs, tree `a38f1757`), already with the EFI loader, `bootefi`, the EFI boot manager, `blkmap` and FAT |
-| Kernel | `scripts/build-mainline-kernel`: kernel.org 7.3 + the base's 195 patches at `ea0186ba`, trees `30fd2ef8` (v7.3) and `276fbce0` (patched), its config plus `kernel/mainline/server.config`; it already has `EFI_STUB`, `EFI_ZBOOT`, dm-verity, EROFS, dm-crypt, overlayfs and efivarfs |
+| U-Boot | `scripts/build-mainline-uboot` (sm7150-mainline/u-boot `tauchgang` at `f8c04469`, the board diffs in `kernel/mainline/uboot/base`, tree `a38f1757`), already with the EFI loader, `bootefi`, the EFI boot manager, `blkmap` and FAT |
+| Kernel | `scripts/build-mainline-kernel`: kernel.org 7.3 + the 195 patches in `kernel/mainline/patches`, trees `30fd2ef8` (v7.3) and `276fbce0` (patched), `kernel/mainline/config-7.3-hanoip` plus `kernel/mainline/server.config`; it already has `EFI_STUB`, `EFI_ZBOOT`, dm-verity, EROFS, dm-crypt, overlayfs and efivarfs |
 
 ## What Duranium is (`docs/MAINLINE.md`, section 7e)
 
@@ -52,14 +52,13 @@ it touches the phone, evidence written into `docs/MAINLINE.md`.
 
 `linux-motorola-hanoip-mainline`, next to the 4.14's `pmaports/device/downstream/linux-motorola-hanoip`, modelled on
 Nura's `device/community/linux-postmarketos-qcom-sm7150/APKBUILD`:
-- sources: `linux-7.3.tar.xz` from kernel.org, the base's 195 patches and `config-7.3-hanoip` by URL at commit
-  `ea0186ba` (`raw.githubusercontent.com/the mainline base/<commit>/work/kernel-7.3/v7/...`), and
-  `kernel/mainline/server.config` from this repository. Generate the source list from `patches.list` with a script;
-  the checksums with `pmbootstrap checksum`.
+- sources: `linux-7.3.tar.xz` from kernel.org and, from this repository, the 195 patches in `kernel/mainline/patches`,
+  `kernel/mainline/config-7.3-hanoip` and `kernel/mainline/server.config` (copied into the package directory, or
+  referenced from it). The checksums with `pmbootstrap checksum`.
 - `prepare()`: `git am` the patches (one has a rename, none is binary) and check both trees, as
   `scripts/build-mainline-kernel` does; merge the config with `merge_config.sh` and `olddefconfig`.
 - `build()`/`package()`: `Image`, modules and `qcom/sm7150-motorola-hanoip.dtb`; the out-of-tree
-  `hanoip_mmi_unit_info` (`work/kernel-7.3/v7/extra/`, SMEM item 134, needed by the modem); install like the Nura
+  `hanoip_mmi_unit_info` (`kernel/mainline/extra/`, SMEM item 134, needed by the modem); install like the Nura
   package (`modules_install zinstall dtbs_install`, the hanoip DTB under `/boot/dtbs/qcom/`).
 - Or package the tree that `scripts/build-mainline-kernel` already builds with `pmbootstrap build --envkernel`, as
   `scripts/build-image` does for the 4.14 (it needs the build in the tree's `.output`). Pick one and say why.
@@ -86,7 +85,7 @@ Port what `kernel/mainline/root-overlay` does under OpenRC, each with the test i
   `rmtfs -o /run/efs -r`, `tqftpserv`, modules in this order: `hanoip_mmi_unit_info`, `qcom_pd_mapper`, `qrtr_smd`,
   `qcom_q6v5_pas`, `ipa`, `ath10k_snoc`, recovery off, then `echo start` to the modem's remoteproc
   (`scripts/test-mainline-root` has the details);
-- the charge limit (`hanoip-ml-charge`: 75-80 %, never over 4.30 V or 40 °C, through the base's
+- the charge limit (`hanoip-ml-charge`: 75-80 %, never over 4.30 V or 40 °C, through the kernel's
   `/sys/kernel/debug/hanoip-charge`);
 - the guard: every block device read-only except what Duranium owns;
 - the slot marking (`qbootctl -m <slot>` after `boot-complete.target`, the same exception, the same lent disks);

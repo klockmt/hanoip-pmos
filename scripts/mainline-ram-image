@@ -1,6 +1,6 @@
 #!/bin/sh
 # Packs a RAM-only test image for the mainline kernel built by scripts/build-mainline-kernel: an Android boot image
-# header v2 that the base's U-Boot boots with `fastboot boot` (docs/MAINLINE.md, section 7). Its initramfs is
+# header v2 that our U-Boot boots with `fastboot boot` (docs/MAINLINE.md, section 7). Its initramfs is
 # kernel/mainline/$INIT-init, a static busybox, bounded-loop and the kernel's modules. Nothing touches the phone.
 #   INIT=ram-test (default)  locks every disk read-only, mounts nothing, reboots after 10 minutes unless someone logs in;
 #   INIT=super-root          boots the root that scripts/mainline-make-root wrote into super's approved region.
@@ -35,7 +35,7 @@ mkbootimg --header_version 2 --kernel "$k/out/Image.gz" --ramdisk "$tmp/ramdisk"
 	--tags_offset 0x00000100 --dtb_offset 0x01f00000 --cmdline "$cmdline" -o "$out"
 
 # U-Boot finds the DTB of a v2 image at page + kernel + ramdisk + second + recovery_dtbo (each page-aligned) and
-# the base found mkbootimg builds that write a wrong page size there; check where it really is. 112 MiB is U-Boot's
+# some mkbootimg builds write a wrong page size there; check where it really is. 112 MiB is U-Boot's
 # max-download-size.
 python3 -I - "$out" <<'EOF'
 import struct, sys
