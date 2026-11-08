@@ -1,0 +1,25 @@
+From 3c98e3fb831c48e55d60b5c2155d1b981f09ff39 Mon Sep 17 00:00:00 2001
+From: Aelin Reidel <aelin@mainlining.org>
+Date: Wed, 13 May 2026 02:27:21 +0200
+Subject: [PATCH 107/194] arm64: dts: qcom: sm7150-xiaomi-davinci: Fix
+ duplicate amplifier active state bias
+
+---
+ arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi
+index ee7ee17c0..a9bccbbf8 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi
+@@ -538,7 +538,6 @@ amp_reset_default: amp-reset-default-state {
+ 		function = "gpio";
+ 		drive-strength = <2>;
+ 		bias-disable;
+-		bias-pull-down;
+ 		output-low;
+ 	};
+ 
+-- 
+2.43.0
+

@@ -144,7 +144,7 @@ I want to be clear about what has and has not been run end to end.
 
 | Path | What it is |
 | --- | --- |
-| `pmaports/` | `device-motorola-hanoip` and `linux-motorola-hanoip` packages, and `PMAPORTS_COMMIT`, the official pmaports commit they were built on |
+| `pmaports/` | `device-motorola-hanoip` and `linux-motorola-hanoip` packages, and `PMAPORTS_COMMIT`, the official pmaports commit they were built on; `linux-motorola-hanoip-mainline`, the Linux 7.3 package built from kernel.org and copies of `kernel/mainline` (not built yet) |
 | `kernel/downstream-patches/` | Patches for the 4.14 kernel (loop partition rescan, `clk.c` for `DEBUG_FS`, `icnss` BDF/REGDB/`host_cap`, console on the screen, splash framebuffer, serial kept out of the `mmi_info` log) |
 | `kernel/dts/` | Mainline DTS for the hanoip |
 | `userspace/modem/` | Notes on the modem/Wi-Fi userspace for 4.14 (diagnosis history). The files themselves are the `device-motorola-hanoip-modem` subpackage |

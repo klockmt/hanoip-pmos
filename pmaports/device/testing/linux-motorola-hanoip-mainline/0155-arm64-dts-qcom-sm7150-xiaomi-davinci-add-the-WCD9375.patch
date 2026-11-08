@@ -1,0 +1,64 @@
+From d0dd9837aa466da1a74741c6401fedf7294c9c72 Mon Sep 17 00:00:00 2001
+From: Artem Hutsaliuk <artemgutsaliukv@gmail.com>
+Date: Sun, 9 Aug 2026 23:06:23 -0500
+Subject: [PATCH 155/194] arm64: dts: qcom: sm7150-xiaomi-davinci: add the
+ WCD9375 codec node
+
+Describe the codec itself so the SoundWire devices added earlier get a
+driver: supplies, reset line and the microphone bias voltages.
+
+Supplies and the reset line come from the vendor device tree for this
+board. Note that the reset is LPI pin 6, although the vendor tree calls
+it 24: the vendor LPI pin controller starts 0x12000 - eighteen pins -
+below the one mainline describes. The name in gpio-line-names of
+lpass_tlmm confirms it.
+
+The three microphone bias voltages are not the same, again per the
+vendor tree: 2750 mV, 1800 mV and 2750 mV.
+
+Signed-off-by: Artem Hutsaliuk <artemgutsaliukv@gmail.com>
+---
+ .../boot/dts/qcom/sm7150-xiaomi-davinci.dtsi  | 27 +++++++++++++++++++
+ 1 file changed, 27 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi
+index e5272801b..319e9dd46 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi
+@@ -112,6 +112,33 @@ codec {
+ 		};
+ 	};
+ 
++	/*
++	 * WCD9375. Reset is LPI pin 6 - the vendor tree calls it 24, counting
++	 * from a base 0x12000 lower than the one mainline uses. Supplies are
++	 * taken from the vendor tree for this board: L10A for the rxtx and px
++	 * rails, L15A for the buck, BOB for the mic bias.
++	 */
++	wcd9375: audio-codec-0 {
++		compatible = "qcom,wcd9375-codec";
++
++		reset-gpios = <&lpass_tlmm 6 GPIO_ACTIVE_LOW>;
++
++		vdd-buck-supply = <&vreg_l15a_1p8>;
++		vdd-rxtx-supply = <&vreg_l10a_1p8>;
++		vdd-px-supply = <&vreg_l10a_1p8>;
++		vdd-mic-bias-supply = <&vreg_bob>;
++
++		/* From the vendor tree: 2750/1800/2750 mV, not all the same */
++		qcom,micbias1-microvolt = <2750000>;
++		qcom,micbias2-microvolt = <1800000>;
++		qcom,micbias3-microvolt = <2750000>;
++
++		qcom,rx-device = <&wcd_rx>;
++		qcom,tx-device = <&wcd_tx>;
++
++		#sound-dai-cells = <1>;
++	};
++
+ 	camt_avdd_2p8: regulator-camt-avdd-2p8 {
+ 		compatible = "regulator-fixed";
+ 		regulator-name = "camt_avdd_2p8";
+-- 
+2.43.0
+

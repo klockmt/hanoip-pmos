@@ -11,6 +11,7 @@ Up to v0.1.14 the notes lived only in the message of each annotated tag; this fi
 ## [Unreleased]
 
 ### Added
+- `linux-motorola-hanoip-mainline`: a pmaports package of our Linux 7.3, the first step of `docs/DURANIUM.md`. It builds kernel.org's `linux-7.3.tar.xz` plus the 195 patches with GCC, checks both source trees by hash as `scripts/build-mainline-kernel` does (`30fd2ef8`, `276fbce0`), and installs what Duranium's image build takes: the EFI kernel (`EFI_ZBOOT`) as `/boot/vmlinuz`, the hanoip DTB under `/boot/dtbs/qcom/` and the modules, `hanoip_mmi_unit_info` included, in `/usr/lib/modules`. Its patches and configs are copies of `kernel/mainline`, kept identical by `scripts/test-mainline-kernel-package`, which also checks the pinned trees and the kernel release. Not built yet.
 - `scripts/check-repo` refuses the names listed in `HANOIP_PRIVATE_NAMES` (`.env`, any case, whole words), people who asked not to be named, and reports only file and line; `scripts/test-check-repo` covers it.
 - `docs/DURANIUM.md`: the plan for Duranium as the server, step by step with what each needs and how it is checked, the user's decisions, the state it starts from, and the rules and lessons that apply; `AGENTS.md` points to it.
 - `docs/MAINLINE.md`, section 7e: what Nura's Duranium needs on this phone (research): a pmaports device package with the mainline kernel, systemd, EFI (our U-Boot already has it, and `blkmap`), and 16 GB, flashed into `userdata` by design; its LUKS2 unlocks by itself with a blank passphrase; no image exists for SM7150.

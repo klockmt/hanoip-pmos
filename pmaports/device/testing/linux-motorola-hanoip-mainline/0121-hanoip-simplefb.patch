@@ -1,0 +1,136 @@
+From 4491de4a2e09ebe195ce5a19118283ec02f6284d Mon Sep 17 00:00:00 2001
+From: hanoip <hanoip@localhost>
+Date: Sun, 25 Oct 2026 20:56:33 +0000
+Subject: [PATCH 121/194] hanoip: simplefb
+
+---
+ drivers/video/fbdev/simplefb.c | 78 ++++++++++++++++++++++++++++++++--
+ 1 file changed, 74 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/video/fbdev/simplefb.c b/drivers/video/fbdev/simplefb.c
+index 60e5dcec2..fbd26a11c 100644
+--- a/drivers/video/fbdev/simplefb.c
++++ b/drivers/video/fbdev/simplefb.c
+@@ -28,6 +28,11 @@
+ #include <linux/pm_domain.h>
+ #include <linux/regulator/consumer.h>
+ 
++#ifdef CONFIG_ARM64
++#include <asm/cacheflush.h>
++#include <asm/memory.h>
++#endif
++
+ static const struct fb_fix_screeninfo simplefb_fix = {
+ 	.id		= "simple",
+ 	.type		= FB_TYPE_PACKED_PIXELS,
+@@ -74,6 +79,7 @@ struct simplefb_par {
+ 	resource_size_t base;
+ 	resource_size_t size;
+ 	struct resource *mem;
++	bool linear_mapping;
+ #if defined CONFIG_OF && defined CONFIG_COMMON_CLK
+ 	bool clks_enabled;
+ 	unsigned int clk_count;
+@@ -107,7 +113,7 @@ static void simplefb_destroy(struct fb_info *info)
+ 	simplefb_regulators_destroy(info->par);
+ 	simplefb_clocks_destroy(info->par);
+ 	simplefb_detach_genpds(info->par);
+-	if (info->screen_base)
++	if (info->screen_base && !par->linear_mapping)
+ 		iounmap(info->screen_base);
+ 
+ 	framebuffer_release(info);
+@@ -116,6 +122,58 @@ static void simplefb_destroy(struct fb_info *info)
+ 		release_mem_region(mem->start, resource_size(mem));
+ }
+ 
++static void simplefb_hanoip_flush(struct fb_info *info)
++{
++#ifdef CONFIG_ARM64
++	struct simplefb_par *par = info->par;
++
++	dcache_clean_poc((unsigned long)info->screen_buffer,
++			 (unsigned long)info->screen_buffer + par->size);
++#endif
++}
++
++static ssize_t simplefb_hanoip_write(struct fb_info *info,
++				     const char __user *buf, size_t count,
++				     loff_t *ppos)
++{
++	ssize_t ret = fb_sys_write(info, buf, count, ppos);
++
++	simplefb_hanoip_flush(info);
++	return ret;
++}
++
++static void simplefb_hanoip_fillrect(struct fb_info *info,
++				     const struct fb_fillrect *rect)
++{
++	sys_fillrect(info, rect);
++	simplefb_hanoip_flush(info);
++}
++
++static void simplefb_hanoip_copyarea(struct fb_info *info,
++				     const struct fb_copyarea *area)
++{
++	sys_copyarea(info, area);
++	simplefb_hanoip_flush(info);
++}
++
++static void simplefb_hanoip_imageblit(struct fb_info *info,
++				      const struct fb_image *image)
++{
++	sys_imageblit(info, image);
++	simplefb_hanoip_flush(info);
++}
++
++static const struct fb_ops simplefb_hanoip_ops = {
++	.owner		= THIS_MODULE,
++	.fb_read	= fb_sys_read,
++	.fb_write	= simplefb_hanoip_write,
++	.fb_fillrect	= simplefb_hanoip_fillrect,
++	.fb_copyarea	= simplefb_hanoip_copyarea,
++	.fb_imageblit	= simplefb_hanoip_imageblit,
++	.fb_destroy	= simplefb_destroy,
++	.fb_setcolreg	= simplefb_setcolreg,
++};
++
+ static const struct fb_ops simplefb_ops = {
+ 	.owner		= THIS_MODULE,
+ 	FB_DEFAULT_IOMEM_OPS,
+@@ -599,8 +657,19 @@ static int simplefb_probe(struct platform_device *pdev)
+ 	par->size = info->fix.smem_len;
+ 
+ 	info->fbops = &simplefb_ops;
+-	info->screen_base = ioremap_wc(info->fix.smem_start,
+-				       info->fix.smem_len);
++
++#ifdef CONFIG_ARM64
++	if (info->fix.smem_start == 0x9c000000) {
++		par->linear_mapping = true;
++		info->screen_buffer = phys_to_virt(info->fix.smem_start);
++		info->screen_base = (char __iomem *)info->screen_buffer;
++		info->screen_size = info->fix.smem_len;
++		info->flags |= FBINFO_VIRTFB;
++		info->fbops = &simplefb_hanoip_ops;
++	} else
++#endif
++		info->screen_base = ioremap_wc(info->fix.smem_start,
++					       info->fix.smem_len);
+ 	if (!info->screen_base) {
+ 		ret = -ENOMEM;
+ 		goto error_fb_release;
+@@ -654,7 +723,8 @@ static int simplefb_probe(struct platform_device *pdev)
+ error_clocks:
+ 	simplefb_clocks_destroy(par);
+ error_unmap:
+-	iounmap(info->screen_base);
++	if (!par->linear_mapping)
++		iounmap(info->screen_base);
+ error_fb_release:
+ 	framebuffer_release(info);
+ error_release_mem_region:
+-- 
+2.43.0
+

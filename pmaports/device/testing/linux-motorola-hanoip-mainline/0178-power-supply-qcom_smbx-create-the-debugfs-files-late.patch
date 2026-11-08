@@ -1,0 +1,89 @@
+From e4b9a1df6ce6b4d56edd3bf32b4fc51df94cfa2d Mon Sep 17 00:00:00 2001
+From: hanoip <h@l>
+Date: Tue, 27 Oct 2026 15:32:21 -0300
+Subject: [PATCH 178/194] power: supply: qcom_smbx: create the debugfs files
+ late, with retries
+
+Same problem as qcom_qg: the driver probes before systemd mounts debugfs, so the
+register dump and the two control files never appeared at boot and only existed
+after a manual module reload. Create them from a delayed work with retries.
+---
+ drivers/power/supply/qcom_smbx.c | 41 +++++++++++++++++++++++++-------
+ 1 file changed, 33 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/power/supply/qcom_smbx.c b/drivers/power/supply/qcom_smbx.c
+index 344ceeba2..895c447d7 100644
+--- a/drivers/power/supply/qcom_smbx.c
++++ b/drivers/power/supply/qcom_smbx.c
+@@ -252,6 +252,9 @@ struct smb_chip {
+ 	unsigned int current_limit_max_ua;
+ 
+ 	struct delayed_work status_change_work;
++	/* debugfs may not be mounted yet when the driver probes */
++	struct delayed_work dbg_work;
++	int dbg_tries;
+ 	int cable_irq;
+ 	bool wakeup_enabled;
+ 	bool monitor_only;
+@@ -1393,16 +1396,41 @@ static void smb_debugfs_remove(void *data)
+ 	debugfs_remove(data);
+ }
+ 
+-static void smb_debugfs_create(struct smb_chip *chip, const char *name,
++static bool smb_debugfs_create(struct smb_chip *chip, const char *name,
+ 			       umode_t mode, const struct file_operations *fops)
+ {
+ 	struct dentry *d;
+ 
+ 	d = debugfs_create_file(name, mode, NULL, chip, fops);
+ 	if (IS_ERR_OR_NULL(d))
+-		return;
++		return false;
+ 	if (devm_add_action_or_reset(chip->dev, smb_debugfs_remove, d))
+-		dev_warn(chip->dev, "cannot register debugfs cleanup\n");
++		return false;
++
++	return true;
++}
++
++/*
++ * The charger probes at ~1.5 s, before systemd mounts debugfs, so the files
++ * silently never appear when created from probe. Retry from a delayed work.
++ */
++static void smb_debugfs_work(struct work_struct *work)
++{
++	struct smb_chip *chip = container_of(to_delayed_work(work),
++					     struct smb_chip, dbg_work);
++	bool done;
++
++	done = smb_debugfs_create(chip, chip->name, 0444, &smb_regs_fops);
++	if (chip->monitor_only) {
++		done &= smb_debugfs_create(chip, "hanoip-charge", 0200,
++					   &hanoip_charge_fops);
++		done &= smb_debugfs_create(chip, "hanoip-icl", 0200,
++					   &hanoip_icl_fops);
++	}
++	if (done)
++		return;
++	if (chip->dbg_tries++ < 8)
++		schedule_delayed_work(&chip->dbg_work, msecs_to_jiffies(5000));
+ }
+ #endif
+ 
+@@ -1481,11 +1509,8 @@ static int smb_probe(struct platform_device *pdev)
+ 				     "failed to register power supply\n");
+ 
+ #ifdef CONFIG_DEBUG_FS
+-	smb_debugfs_create(chip, chip->name, 0444, &smb_regs_fops);
+-	if (chip->monitor_only) {
+-		smb_debugfs_create(chip, "hanoip-charge", 0200, &hanoip_charge_fops);
+-		smb_debugfs_create(chip, "hanoip-icl", 0200, &hanoip_icl_fops);
+-	}
++	INIT_DELAYED_WORK(&chip->dbg_work, smb_debugfs_work);
++	schedule_delayed_work(&chip->dbg_work, msecs_to_jiffies(8000));
+ #endif
+ 
+ 	if (match_data->monitor_only) {
+-- 
+2.43.0
+

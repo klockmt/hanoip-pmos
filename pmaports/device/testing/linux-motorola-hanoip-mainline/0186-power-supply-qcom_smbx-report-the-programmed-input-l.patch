@@ -1,0 +1,49 @@
+From 2f36d3c1256b20bde94ae49e0a5e1e2d9fada363 Mon Sep 17 00:00:00 2001
+From: hanoip <h@l>
+Date: Tue, 27 Oct 2026 17:15:33 -0300
+Subject: [PATCH 186/194] power: supply: qcom_smbx: report the programmed input
+ limit on SMB5
+
+CURRENT_MAX read the input-current-limit field of STATUS_2 and scaled it by the
+50 mA step size. On SMB5 that field is an encoded table, not a step count, so
+it reported 600 mA while USBIN_CURRENT_LIMIT_CFG held 0x14, that is 1 A. A
+wrong CURRENT_MAX is worse than none: it is the number a user or a power
+daemon reads to decide whether charging is configured as intended.
+
+Read the configuration register on SMB5 and keep the status field for SMB2,
+where it really is a count of steps.
+---
+ drivers/power/supply/qcom_smbx.c | 17 ++++++++++++++++-
+ 1 file changed, 16 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/power/supply/qcom_smbx.c b/drivers/power/supply/qcom_smbx.c
+index 862ae4679..1baf520f7 100644
+--- a/drivers/power/supply/qcom_smbx.c
++++ b/drivers/power/supply/qcom_smbx.c
+@@ -457,7 +457,22 @@ static int smb_get_prop_status(struct smb_chip *chip, int *val)
+ static inline int smb_get_current_limit(struct smb_chip *chip,
+ 					 unsigned int *val)
+ {
+-	int rc = regmap_read(chip->regmap, chip->base + ICL_STATUS(chip), val);
++	int rc;
++
++	/*
++	 * On SMB5 the input-current-limit field lives in STATUS_2 and is an
++	 * encoded table, not a count of 50 mA steps. Scaling it as if it were
++	 * steps reported 600 mA while the commanded limit was 1 A (register
++	 * 0x370 held 0x14), which is exactly the kind of wrong number that
++	 * misleads whoever reads CURRENT_MAX. Report what was programmed;
++	 * SMB2 keeps the old behaviour, where the field really is a count.
++	 */
++	if (chip->gen == SMB5)
++		rc = regmap_read(chip->regmap,
++				 chip->base + USBIN_CURRENT_LIMIT_CFG, val);
++	else
++		rc = regmap_read(chip->regmap, chip->base + ICL_STATUS(chip),
++				 val);
+ 
+ 	if (rc >= 0)
+ 		*val *= chip->current_step_size_ua;
+-- 
+2.43.0
+

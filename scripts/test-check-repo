@@ -2,7 +2,8 @@
 # Checks the private-data scan of scripts/check-repo on a throwaway git repository (no phone, no real data):
 # a 15-digit number (IMEI-like), the login user and the names in HANOIP_PRIVATE_NAMES from .env, planted in a
 # committable file, must each be reported (without echoing them back), and a long hex checksum or a longer word
-# that merely contains one of them must not. Upstream authors' e-mails in kernel/mainline/patches are allowed.
+# that merely contains one of them must not. Upstream authors' e-mails in kernel/mainline/patches, and in the kernel
+# package's copies of those patches, are allowed.
 set -eu
 cd "$(dirname "$0")/.."
 src=$PWD/scripts/check-repo
@@ -42,6 +43,11 @@ em="dev@example"; em="$em.org"; mac=$(printf '12:34:56:%s' '78:9A:BC')
 scan "private name in an upstream patch" "From: plantedname <$em>" hit kernel/mainline/patches/0001-x.patch
 scan "upstream author e-mail in a patch" "From: Kernel Dev <$em>" clean kernel/mainline/patches/0001-x.patch
 scan "the same e-mail anywhere else" "From: Kernel Dev <$em>" hit
+# The kernel package carries copies of those patches (identical, scripts/test-mainline-kernel-package): same rules.
+kp=pmaports/device/testing/linux-motorola-hanoip-mainline
+scan "upstream author e-mail in the kernel package's copy" "From: Kernel Dev <$em>" clean $kp/0001-x.patch
+scan "private name in the kernel package's copy" "From: plantedname <$em>" hit $kp/0001-x.patch
+scan "e-mail in the kernel package's APKBUILD" "maintainer=\"Kernel Dev <$em>\"" hit $kp/APKBUILD
 scan "MAC placeholder" "parse AA:BB:CC:DD:EE:FF here" clean
 scan "MAC-like value" "mac $mac" hit
 # APKBUILD sources: a local file that is missing is reported; a downloaded tarball (.tar.gz, or the kernel's .tar.xz)

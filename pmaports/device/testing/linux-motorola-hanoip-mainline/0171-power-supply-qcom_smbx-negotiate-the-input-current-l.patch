@@ -1,0 +1,149 @@
+From 7bc7328ee88a8cf11f1ea5b1a144a7a082ad4d18 Mon Sep 17 00:00:00 2001
+From: hanoip <h@l>
+Date: Tue, 27 Oct 2026 13:59:06 -0300
+Subject: [PATCH 171/194] power: supply: qcom_smbx: negotiate the input current
+ limit (B4)
+
+With only the charger enable bit set, the input stays at the 500 mA the
+bootloader left. That is less than the phone draws with the screen on, so the
+battery discharges while charging and UPower reports discharging.
+
+Ask the PMIC what is connected (APSD, already implemented here but never used
+in the monitor path) and program USBIN_CURRENT_LIMIT_CFG accordingly: 500 mA
+for a standard port, 1.5 A for a charging data port and 1 A for a dedicated
+charger, all clamped to 1.5 A and adjustable through module parameters. This
+is still well below Android's 3 A on a dedicated charger.
+
+Float voltage, JEITA, termination and the charge current limit are untouched.
+---
+ drivers/power/supply/qcom_smbx.c | 100 +++++++++++++++++++++++++++++++
+ 1 file changed, 100 insertions(+)
+
+diff --git a/drivers/power/supply/qcom_smbx.c b/drivers/power/supply/qcom_smbx.c
+index dd276e3b3..ca55177d6 100644
+--- a/drivers/power/supply/qcom_smbx.c
++++ b/drivers/power/supply/qcom_smbx.c
+@@ -1067,6 +1067,100 @@ static void smb_monitor_work(struct work_struct *work)
+ 	schedule_delayed_work(&chip->status_change_work, msecs_to_jiffies(10000));
+ }
+ 
++/*
++ * Input current limits used once the source type is known (APSD).
++ *
++ * A PC port (SDP) is specified for 500 mA. A dedicated charger (DCP) is
++ * allowed more, but the hanoip port starts well below what Android uses
++ * (Android: 3 A on DCP) and the operator can lower it at runtime.
++ * All three are clamped to HANOIP_ICL_MAX_UA, which is also the ceiling this
++ * driver is willing to program.
++ */
++#define HANOIP_ICL_MAX_UA	1500000
++
++static unsigned int icl_sdp_ua = 500000;
++module_param(icl_sdp_ua, uint, 0644);
++MODULE_PARM_DESC(icl_sdp_ua, "input current limit for a standard USB port (uA)");
++
++static unsigned int icl_cdp_ua = 1500000;
++module_param(icl_cdp_ua, uint, 0644);
++MODULE_PARM_DESC(icl_cdp_ua, "input current limit for a charging data port (uA)");
++
++static unsigned int icl_dcp_ua = 1000000;
++module_param(icl_dcp_ua, uint, 0644);
++MODULE_PARM_DESC(icl_dcp_ua, "input current limit for a dedicated charger (uA)");
++
++static const char *smb_usb_type_name(int type)
++{
++	switch (type) {
++	case POWER_SUPPLY_USB_TYPE_SDP: return "SDP (porta USB padrão)";
++	case POWER_SUPPLY_USB_TYPE_CDP: return "CDP (porta com dados)";
++	case POWER_SUPPLY_USB_TYPE_DCP: return "DCP (carregador)";
++	default: return "desconhecido";
++	}
++}
++
++/*
++ * Ask the PMIC what kind of source is connected (APSD) and program the input
++ * current limit accordingly. Without this the input stays at whatever the
++ * bootloader left (500 mA), which is not enough to run the phone and charge
++ * it at the same time.
++ */
++static int smb_negotiate_input(struct smb_chip *chip)
++{
++	unsigned int limit;
++	int type, rc, count;
++
++	for (count = 0; count < 5; count++) {
++		rc = smb_apsd_get_charger_type(chip, &type);
++		if (rc != -EAGAIN)
++			break;
++		msleep(100);
++	}
++
++	if (rc == -EAGAIN) {
++		/* detection never completed: ask for one rerun */
++		rc = regmap_update_bits(chip->regmap, chip->base + CMD_APSD,
++					APSD_RERUN_BIT, APSD_RERUN_BIT);
++		if (rc)
++			return rc;
++		msleep(500);
++		rc = smb_apsd_get_charger_type(chip, &type);
++	}
++	if (rc < 0) {
++		dev_warn(chip->dev, "hanoip: cannot detect the input source (%d), keeping the current limit\n",
++			 rc);
++		return rc;
++	}
++
++	switch (type) {
++	case POWER_SUPPLY_USB_TYPE_CDP:
++		limit = icl_cdp_ua;
++		break;
++	case POWER_SUPPLY_USB_TYPE_DCP:
++		limit = icl_dcp_ua;
++		break;
++	case POWER_SUPPLY_USB_TYPE_SDP:
++	default:
++		limit = icl_sdp_ua;
++		break;
++	}
++
++	limit = min_t(unsigned int, limit, HANOIP_ICL_MAX_UA);
++	limit = max_t(unsigned int, limit, 100000);
++
++	rc = smb_set_current_limit(chip, limit);
++	if (rc < 0) {
++		dev_err(chip->dev, "hanoip: cannot set the input limit: %d\n", rc);
++		return rc;
++	}
++
++	dev_info(chip->dev, "hanoip: fonte %s -> limite de entrada %u uA\n",
++		 smb_usb_type_name(type), limit);
++
++	return 0;
++}
++
+ /*
+  * Opt-in charging for the hanoip monitor.
+  *
+@@ -1109,6 +1203,9 @@ static int smb_set_charging(struct smb_chip *chip, bool on)
+ 		    charge_current_ua < HANOIP_CHARGE_MIN_UA)
+ 			return -EINVAL;
+ 
++		/* more input current first, then switch the charger on */
++		smb_negotiate_input(chip);
++
+ 		rc = regmap_write(chip->regmap, chip->base + SNARL_BARK_BITE_WD_CFG, 0);
+ 		if (rc)
+ 			return rc;
+@@ -1221,6 +1318,9 @@ static int smb_regs_show(struct seq_file *s, void *unused)
+ 	}
+ 
+ 	seq_puts(s, "\n-- derivados --\n");
++	if (!smb_apsd_get_charger_type(chip, &val))
++		seq_printf(s, "tipo de fonte (APSD)   = %s\n",
++			   smb_usb_type_name(val));
+ 	if (!smb_get_current_limit(chip, &val))
+ 		seq_printf(s, "limite de entrada (ICL) = %u uA\n", val);
+ 	if (!regmap_read(chip->regmap, chip->base + POWER_PATH_STATUS(chip), &val))
+-- 
+2.43.0
+

@@ -1,0 +1,36 @@
+From caa7b76a89727b9cde3e82413b3488169bd8073f Mon Sep 17 00:00:00 2001
+From: Danila Tikhonov <danila@jiaxyga.com>
+Date: Fri, 8 Sep 2023 22:30:21 +0300
+Subject: [PATCH 001/194] FROMLIST: dt-bindings: cpufreq: qcom-hw: Add the
+ SM7150 compatible
+
+Add the compatible for the cpufreq present on SM7150 platforms.
+
+Signed-off-by: Danila Tikhonov <danila@jiaxyga.com>
+---
+ Documentation/devicetree/bindings/cpufreq/cpufreq-qcom-hw.yaml | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/Documentation/devicetree/bindings/cpufreq/cpufreq-qcom-hw.yaml b/Documentation/devicetree/bindings/cpufreq/cpufreq-qcom-hw.yaml
+index 98eb36bff..09cdb8b40 100644
+--- a/Documentation/devicetree/bindings/cpufreq/cpufreq-qcom-hw.yaml
++++ b/Documentation/devicetree/bindings/cpufreq/cpufreq-qcom-hw.yaml
+@@ -29,6 +29,7 @@ properties:
+               - qcom,sdm845-cpufreq-hw
+               - qcom,sm6115-cpufreq-hw
+               - qcom,sm6350-cpufreq-hw
++              - qcom,sm7150-cpufreq-hw
+               - qcom,sm8150-cpufreq-hw
+           - const: qcom,cpufreq-hw
+ 
+@@ -148,6 +149,7 @@ allOf:
+               - qcom,sm6115-cpufreq-hw
+               - qcom,sm6350-cpufreq-hw
+               - qcom,sm6375-cpufreq-epss
++              - qcom,sm7150-cpufreq-hw
+     then:
+       properties:
+         reg:
+-- 
+2.43.0
+

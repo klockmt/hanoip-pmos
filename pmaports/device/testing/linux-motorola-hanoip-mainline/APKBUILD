@@ -1,0 +1,489 @@
+# Linux 7.3 for the Moto G60 (hanoip): kernel.org's linux-7.3 plus this project's patches (kernel/mainline/patches),
+# configured with kernel/mainline/config-7.3-hanoip plus kernel/mainline/server.config, and the out-of-tree
+# hanoip_mmi_unit_info module (SMEM item 134: without it the modem crashes and there is no Wi-Fi). It builds the same
+# source trees as scripts/build-mainline-kernel, each checked by its git hash, from copies identical to kernel/mainline
+# (scripts/test-mainline-kernel-package). GCC, like the build that booted on the phone. It installs what Duranium's
+# image build takes: the EFI kernel (EFI_ZBOOT) as /boot/vmlinuz, the DTB under /boot/dtbs and the modules in /usr.
+pkgname=linux-motorola-hanoip-mainline
+pkgver=7.3
+pkgrel=0
+pkgdesc="Motorola Moto G (60) mainline kernel (Linux 7.3 and this project's patches)"
+arch="aarch64"
+_carch="arm64"
+_flavor="motorola-hanoip-mainline"
+url="https://www.kernel.org"
+license="GPL-2.0-only"
+options="!strip !check !tracedeps pmb:cross-native"
+makedepends="
+	bash
+	bc
+	bison
+	diffutils
+	elfutils-dev
+	findutils
+	flex
+	git
+	gmp-dev
+	kmod
+	linux-headers
+	mpc1-dev
+	mpfr-dev
+	openssl-dev
+	perl
+	python3
+	sed
+	xz
+	zstd
+"
+
+_base_tree=30fd2ef82912c26cf3a58ad0ba6afc375fa851ac # git tree of tag v7.3
+_tree=276fbce0ae673c83e456cfe359c33ed3c4e3468b      # v7.3 + the patches: the tree that booted on the phone
+source="
+	https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-$pkgver.tar.xz
+	0001-FROMLIST-dt-bindings-cpufreq-qcom-hw-Add-the-SM7150-.patch
+	0002-FROMLIST-dt-bindings-watchdog-qcom-wdt-Add-the-SM715.patch
+	0003-FROMLIST-dt-bindings-thermal-tsens-Add-the-SM7150-co.patch
+	0004-FROMLIST-dt-bindings-interrupt-controller-qcom-pdc-A.patch
+	0005-FROMLIST-dt-bindings-usb-dwc3-Add-the-SM7150-compati.patch
+	0006-FROMLIST-dt-bindings-phy-qcom-qusb2-Add-the-SM7150-c.patch
+	0007-FROMLIST-dt-bindings-mfd-qcom-tcsr-Add-the-SM7150-co.patch
+	0008-FROMLIST-dt-bindings-net-qcom-ipa-Add-the-SM7150-com.patch
+	0009-FROMLIST-dt-bindings-ufs-qcom-Add-the-SM7150-compati.patch
+	0010-FROMLIST-dt-bindings-dmaengine-qcom-gpi-Add-the-SM71.patch
+	0011-FROMLIST-dt-bindings-nvmem-qfprom-Add-the-SM7150-com.patch
+	0012-FROMLIST-dt-bindings-crypto-qcom-inline-crypto-engin.patch
+	0013-FROMLIST-dt-bindings-interconnect-qcom-bwmon-Add-the.patch
+	0014-FROMLIST-dt-bindings-i2c-qcom-cci-Add-the-SM7150-com.patch
+	0015-FROMLIST-dt-bindings-clock-qcom-rpmhcc-Add-the-SM715.patch
+	0016-FROMLIST-dt-bindings-interconnect-OSM-L3-Add-the-SM7.patch
+	0017-FROMLIST-dt-bindings-arm-smmu-Add-the-SM7150-compati.patch
+	0018-FROMLIST-dt-bindings-clock-qcom-gpucc-Add-the-SM7150.patch
+	0019-FROMLIST-dt-bindings-remoteproc-qcom-sc7180-pas-Add-.patch
+	0020-FROMLIST-remoteproc-qcom-pas-Add-SM7150-remoteproc-s.patch
+	0021-FROMLIST-cpufreq-Add-SM7150-to-cpufreq-dt-platdev-bl.patch
+	0022-FROMLIST-arm64-dts-qcom-Add-dtsi-for-Snapdragon-730-.patch
+	0023-FROMLIST-dt-bindings-display-panel-samsung-ams581vf0.patch
+	0024-FROMLIST-arm64-dts-qcom-sm7150-Add-device-tree-for-G.patch
+	0025-HACK-drm-msm-adreno-Add-support-for-SM7150-SoC-machi.patch
+	0026-DOWNSTREAM-wifi-ath10k-make-in-order-rx-amsdu-buffer.patch
+	0027-DOWNSTREAM-wifi-ath10k-only-wait-for-response-to-SET.patch
+	0028-FROMLIST-dt-bindings-input-document-Goodix-GTX8-Touc.patch
+	0029-FROMLIST-Input-add-support-for-Goodix-GTX8-Touchscre.patch
+	0030-FROMLIST-MAINTAINERS-add-an-entry-for-Goodix-GTX8-To.patch
+	0031-iommu-arm-smmu-qcom-add-actlr-settings-for-mdss-on-S.patch
+	0032-ufs-qcom-Add-some-missing-frequency-to-gear-mappings.patch
+	0033-drm-panel-Generate-huaxing-nt36672c-driver.patch
+	0034-drm-panel-Generate-tianma-nt36672c-driver.patch
+	0035-drm-panel-Add-Samsung-AMS667YR01-panel-driver.patch
+	0036-ASoC-codecs-add-driver-for-tfa9872.patch
+	0037-input-touchscreen-nt36xxx-Rewrite-nt36xxx_spi-vendor.patch
+	0038-dt-bindings-input-Add-bindings-for-Awinic-AW8695-hap.patch
+	0039-Input-aw8695-Add-driver-for-AW8695-haptics.patch
+	0040-input-misc-aw8695-Add-initial-support-for-aw8624.patch
+	0041-iio-spmi-adc5-Add-adc-configure-for-bat_therm-100k.patch
+	0042-WIP-power-supply-Add-rude-driver-for-QGauge.patch
+	0043-power-supply-qcom_qg-sort-includes.patch
+	0044-power-supply-qcom_qg-use-chip-dev-in-probe-instead-o.patch
+	0045-power-supply-qcom_qg-add-error-handling-to-sysfs-pro.patch
+	0046-power-supply-qcom_qg-fix-temp-unit.patch
+	0047-power-supply-qcom_qg-set-technology-to-Li-ion.patch
+	0048-power-supply-qcom_qg-use-nvmem-framework-for-reading.patch
+	0049-power-supply-qcom_qg-invert-charging-current.patch
+	0050-power-supply-qcom_qg-6.17-compile-fix.patch
+	0051-pinctrl-qcom-Introduce-SM7150-LPI-pinctrl-driver.patch
+	0052-arm64-dts-qcom-sm7150-Add-common-device-tree-for-SM7.patch
+	0053-arm64-dts-qcom-sm7150-xiaomi-common-raise-l6c-voltag.patch
+	0054-arm64-dts-qcom-sm7150-Add-device-tree-for-Xiaomi-POC.patch
+	0055-arm64-dts-qcom-sm7150-Add-device-tree-for-Xiaomi-Mi-.patch
+	0056-arm64-dts-qcom-sm7150-Add-device-tree-for-Xiaomi-Red.patch
+	0057-arm64-dts-qcom-sm7150-Add-device-tree-for-Xiaomi-Mi-.patch
+	0058-arm64-dts-qcom-sm7150-Add-device-tree-for-Xiaomi-Mi-.patch
+	0059-dts-qcom-pm6150-Add-missing-bat_therm-ADC.patch
+	0060-arm64-dts-qcom-pm6150-Add-a-QGauge-node.patch
+	0061-dts-am7150-xiaomi-common-enable-QGauge-add-simple-ba.patch
+	0062-dts-xiaomi-surya-add-charge-full-design-microamp-hou.patch
+	0063-dts-xiaomi-davinci-add-charge-full-design-microamp-h.patch
+	0064-arm64-dts-qcom-sm7150-Configure-CAMSS.patch
+	0065-arm64-dts-qcom-sm7150-xiaomi-common-Enable-camss.patch
+	0066-arm64-dts-qcom-sm7150-xiaomi-davinci-Add-amplifier-n.patch
+	0067-arm64-dts-qcom-sm7150-xiaomi-davinci-Add-ov8856-tele.patch
+	0068-arm64-dts-qcom-sm7150-xiaomi-davinci-Add-s5k3l6-ultr.patch
+	0069-WIP-arm64-dts-qcom-sm7150-Add-venus-node.patch
+	0070-WIP-arm64-dts-qcom-sm7150-Add-lpass_tlmm-node.patch
+	0071-arch-arm64-configs-Add-sm7150.config-efi.config-and-.patch
+	0072-dt-bindings-crypto-qcom-prng-document-SM7150.patch
+	0073-arm64-dts-qcom-sm7150-add-TRNG-node.patch
+	0074-DONTSQUASH-fixup-FROMLIST-arm64-dts-qcom-sm7150-Add-.patch
+	0075-wip-USB-3-for-sunfish.patch
+	0076-dts-sm7150-xiaomi-common-cd-gpio-is-active-low.patch
+	0077-Revert-ASoC-codecs-aw88261-Remove-non-existing-reset.patch
+	0078-sound-soc-codecs-aw88261-Allow-AW88263S.patch
+	0079-dt-bindings-regulator-qcom-sdm845-refgen-regulator-d.patch
+	0080-arm64-dts-qcom-sm7150-Add-refgen-regulator-to-DSIs.patch
+	0081-sound-soc-dai-Avoid-a-nullptr-deref-if-driver-has-no.patch
+	0082-media-qcom-camss-csiphy-3ph-Add-Gen2-v1.2-2PH-MIPI-C.patch
+	0083-media-qcom-camss-Add-CAMSS_SM7150-enum.patch
+	0084-media-qcom-camss-Add-SM7150-resources.patch
+	0085-media-qcom-camss-Add-SM7150-support.patch
+	0086-fixup-camss.patch
+	0087-WIP-cam-stuff.patch
+	0088-media-i2c-Import-s5k3l6xx-driver.patch
+	0089-media-i2c-s5k3l6xx-Port-to-kernel-6.8.patch
+	0090-media-i2c-s5k3l6xx-Permit-19.2MHz-clock.patch
+	0091-media-i2c-s5k3l6xx-Fix-accidental-string-concatenati.patch
+	0092-media-i2c-ov8856-Not-reset-media-bus-code-on-get-for.patch
+	0093-media-i2c-ov8856-comment-3280x2464-2-lane-mode.patch
+	0094-video-backlight-qcom-wled-Set-don-t-enable-WLED-OVP-.patch
+	0095-arm64-dts-qcom-sm7150-xiaomi-davinci-Split-up-DTS.patch
+	0096-drm-panel-Add-driver-for-Visionox-G1639FP106.patch
+	0097-arm64-dts-qcom-sm7150-xiaomi-common-describe-WiFi-BT.patch
+	0098-FROMLIST-v1-dt-bindings-power-supply-qcom-pmi89980-c.patch
+	0099-FROMLIST-v1-power-supply-qcom_smbx-respect-battery-c.patch
+	0100-FROMLIST-v1-power-supply-qcom_smbx-bump-up-the-max-c.patch
+	0101-FROMLIST-v1-power-supply-qcom_smbx-remove-unused-reg.patch
+	0102-FROMLIST-v1-power-supply-qcom_smbx-add-smb5-support.patch
+	0103-SQUASHME-power-supply-qcom_smbx-fixups-for-smb5-intr.patch
+	0104-SQUASHME2-power-supply-qcom_smbx-fixups-for-smb5-int.patch
+	0105-FROMLIST-v1-power-supply-qcom_smbx-program-aicl-reru.patch
+	0106-WIP-smb5-stuff.patch
+	0107-arm64-dts-qcom-sm7150-xiaomi-davinci-Fix-duplicate-a.patch
+	0108-arm64-dts-qcom-sm7150-xiaomi-common-Mark-lpass-lpi-g.patch
+	0109-q6afe-set-client_handle-properly.patch
+	0110-arm64-dts-qcom-sm7150-xiaomi-common-Drop-redefinitio.patch
+	0111-sound-soc-codecs-wcd937x-Resolve-some-warnings.patch
+	0112-WIP-WCD-stuff.patch
+	0113-Revert-WIP-WCD-stuff.patch
+	0114-arm64-dts-qcom-sm7150-xiaomi-davinci-GPIO-hacks.patch
+	0115-more-camera-work.patch
+	0116-FROMLIST-resolve_btfids-preserve-tag-and-parameter-n.patch
+	0117-hanoip-dt-bindings.patch
+	0118-hanoip-pinctrl-clk-soc.patch
+	0119-hanoip-lcdb-regulator.patch
+	0120-hanoip-panel-ili7807s.patch
+	0121-hanoip-simplefb.patch
+	0122-hanoip-ufs.patch
+	0123-hanoip-iommu-smmu.patch
+	0124-hanoip-msm-display.patch
+	0125-hanoip-touch.patch
+	0126-hanoip-power-supply.patch
+	0127-hanoip-dts.patch
+	0128-power-supply-qcom_qg-import-the-IIO_CONSUMER-namespa.patch
+	0129-power-supply-qcom_smbx-Fix-battery-overvoltage-statu.patch
+	0130-power-supply-qcom_smbx-Fix-float-voltage-encoding-fo.patch
+	0131-power-supply-qcom_smbx-Don-t-scale-USBIN-voltage-twi.patch
+	0132-power-supply-qcom_smbx-Decode-the-SMB5-charger-state.patch
+	0133-power-supply-qcom_qg-Pick-the-battery-current-LSB-fr.patch
+	0134-power-supply-qcom_qg-Use-the-OCV-table-to-estimate-c.patch
+	0135-power-supply-qcom_qg-Smooth-the-reported-capacity.patch
+	0136-ASoC-dt-bindings-awinic-aw88395-Add-AW88263S.patch
+	0137-ASoC-codecs-aw88261-Don-t-touch-register-0-for-the-A.patch
+	0138-ASoC-codecs-aw88261-Add-AW88263S-support.patch
+	0139-ASoC-qcom-q6routing-Handle-S32_LE-in-hw_params.patch
+	0140-ASoC-dt-bindings-qcom-sm8250-Add-Xiaomi-Redmi-Note-1.patch
+	0141-ASoC-qcom-sm8250-Use-32-bit-slots-on-PRIMARY_MI2S_RX.patch
+	0142-arm64-dts-qcom-sm7150-xiaomi-sweet-Enable-both-speak.patch
+	0143-ASoC-qcom-q6afe-Don-t-read-status-from-HW-vote-respo.patch
+	0144-pinctrl-qcom-sm7150-lpass-lpi-Fix-functions-of-gpio1.patch
+	0145-arm64-dts-qcom-sm7150-Use-gpio-function-for-the-WCD9.patch
+	0146-arm64-dts-qcom-sm7150-Add-LPASS-macros-and-SoundWire.patch
+	0147-arm64-configs-sm7150-Enable-QRTR_SMD-and-LPASS-VA-ma.patch
+	0148-arm64-dts-qcom-sm7150-xiaomi-sweet-Add-WCD9370-and-m.patch
+	0149-ASoC-codecs-wcd937x-Survive-card-rebind-after-ADSP-r.patch
+	0150-soundwire-qcom-Survive-iface-clock-loss-during-ADSP-.patch
+	0151-attempt-at-basic-soundwire-support.patch
+	0152-pinctrl-qcom-sm7150-lpass-lpi-fix-swr_tx_data-mux-va.patch
+	0153-arm64-dts-qcom-sm7150-add-wakeup-interrupt-to-the-TX.patch
+	0154-arm64-dts-qcom-sm7150-xiaomi-davinci-fix-WCD9375-TX-.patch
+	0155-arm64-dts-qcom-sm7150-xiaomi-davinci-add-the-WCD9375.patch
+	0156-arm64-dts-qcom-sm7150-xiaomi-davinci-wire-up-microph.patch
+	0157-arm64-dts-qcom-sm7150-disable-the-RX-and-VA-LPASS-ma.patch
+	0158-pinctrl-qcom-sm7150-lpass-lpi-fix-swr_rx_data-mux-va.patch
+	0159-power-supply-qcom_qg-OCV-capacity-smoothing-and-char.patch
+	0160-arm64-dts-qcom-sm7150-keep-one-set-of-LPASS-audio-no.patch
+	0161-ASoC-codecs-add-a-minimal-Awinic-AW882xx-0x1852-driv.patch
+	0162-pinctrl-qcom-sm7150-lpass-lpi-add-the-SSC-SEC_MI2S-p.patch
+	0163-Input-pm8xxx-vibrator-optional-maximum-drive-voltage.patch
+	0164-Input-pm8xxx-vibrator-fix-the-upper-drive-level-byte.patch
+	0165-net-qrtr-ns-wait-for-the-HELLO-before-announcing-ser.patch
+	0166-media-venus-add-SM7150-resources-experimental.patch
+	0167-power-supply-qcom_qg-report-a-steady-state-of-charge.patch
+	0168-power-supply-qcom_smbx-add-a-read-only-register-dump.patch
+	0169-power-supply-qcom_smbx-opt-in-charging-for-the-hanoi.patch
+	0170-power-supply-qcom_qg-never-freeze-on-a-bad-first-sam.patch
+	0171-power-supply-qcom_smbx-negotiate-the-input-current-l.patch
+	0172-power-supply-qcom_smbx-allow-forcing-the-input-curre.patch
+	0173-power-supply-qcom_qg-cap-the-charging-rise-with-coul.patch
+	0174-power-supply-qcom_qg-limit-the-charging-rise-only-by.patch
+	0175-power-supply-qcom_qg-smoother-release-and-immediate-.patch
+	0176-power-supply-qcom_qg-qcom_smbx-remove-debugfs-files-.patch
+	0177-power-supply-qcom_qg-reject-implausible-voltage-samp.patch
+	0178-power-supply-qcom_smbx-create-the-debugfs-files-late.patch
+	0179-power-supply-qcom_qg-fall-back-when-a-voltage-sample.patch
+	0180-power-supply-qcom_qg-use-the-last-ADC-current-for-th.patch
+	0181-power-supply-qcom_qg-fix-the-voltage-choice-and-the-.patch
+	0182-power-supply-qcom_qg-during-charging-follow-only-the.patch
+	0183-power-supply-qcom_qg-filter-the-current-and-fix-the-.patch
+	0184-power-supply-qcom_qg-only-trust-OCV-at-rest-one-poin.patch
+	0185-power-supply-qcom_smbx-reconcile-the-input-limit-wit.patch
+	0186-power-supply-qcom_smbx-report-the-programmed-input-l.patch
+	0187-power-supply-qcom_qg-document-what-100-means-on-this.patch
+	0188-ASoC-codecs-wcd937x-sdw-bound-the-static-channel-map.patch
+	0189-soundwire-qcom-allow-DT-to-opt-out-of-clock-stop.patch
+	0190-media-qcom-camss-roll-back-started-subdevices-when-s.patch
+	0191-media-qcom-camss-sm7150-give-every-CSIPHY-the-stock-.patch
+	0192-media-qcom-camss-sm7150-add-C-PHY-receive-and-bring-.patch
+	0193-i2c-qcom-cci-reset-the-controller-on-runtime-resume.patch
+	0194-media-i2c-add-Motorola-hanoip-camera-sensor-and-VCM-.patch
+	0195-firmware-qcom-add-a-legacy-QSEECOM-transport-for-HLO.patch
+	config-7.3-hanoip
+	server.config
+	Kbuild
+	hanoip_mmi_unit_info.c
+"
+builddir="$srcdir/linux-$pkgver"
+
+# Every make goes through here: LOCALVERSION= keeps the release 7.3.0-sm7150 (in a git tree it would get a "+", and
+# the modules would sit where the kernel does not look), and the banner must not carry this PC's user or host name.
+_make() { make ARCH="$_carch" LOCALVERSION= KBUILD_BUILD_USER=hanoip KBUILD_BUILD_HOST=hanoip-build "$@"; }
+_git() { git -c user.name=hanoip -c user.email=hanoip@localhost -c core.autocrlf=false "$@"; }
+
+prepare() {
+	# Not default_prepare, which would apply the patches with patch -p1: git am them, as scripts/build-mainline-kernel
+	# does, and check the tree before and after.
+	_git init -q
+	_git add -A -f .
+	_git commit -q -m "v$pkgver (linux-$pkgver.tar.xz)"
+	[ "$(git rev-parse 'HEAD^{tree}')" = "$_base_tree" ] || die "the source is not tag v$pkgver's tree ($_base_tree)"
+	_git am -q $(ls "$srcdir"/*.patch | LC_ALL=C sort)
+	[ "$(git rev-parse 'HEAD^{tree}')" = "$_tree" ] || die "the patched tree is not the one that booted ($_tree)"
+
+	ARCH="$_carch" scripts/kconfig/merge_config.sh -m "$srcdir"/config-7.3-hanoip "$srcdir"/server.config >/dev/null
+	_make olddefconfig >/dev/null
+	_lost=$(grep '^CONFIG_' "$srcdir"/server.config | grep -vxF -f .config || true)
+	[ -z "$_lost" ] || die "did not survive olddefconfig: $_lost"
+
+	mkdir -p "$srcdir"/hanoip-extra
+	cp "$srcdir"/Kbuild "$srcdir"/hanoip_mmi_unit_info.c "$srcdir"/hanoip-extra/
+}
+
+build() {
+	unset LDFLAGS
+	_make Image vmlinuz.efi modules qcom/sm7150-motorola-hanoip.dtb
+	_make M="$srcdir"/hanoip-extra modules
+}
+
+package() {
+	_krel=$(cat include/config/kernel.release)
+	install -Dm644 arch/arm64/boot/vmlinuz.efi "$pkgdir"/boot/vmlinuz
+	install -Dm644 arch/arm64/boot/dts/qcom/sm7150-motorola-hanoip.dtb \
+		"$pkgdir"/boot/dtbs/qcom/sm7150-motorola-hanoip.dtb
+	_make INSTALL_MOD_PATH="$pkgdir"/usr INSTALL_MOD_STRIP=1 DEPMOD=true modules_install
+	_make M="$srcdir"/hanoip-extra INSTALL_MOD_PATH="$pkgdir"/usr INSTALL_MOD_STRIP=1 INSTALL_MOD_DIR=extra \
+		DEPMOD=true modules_install
+	rm -f "$pkgdir"/usr/lib/modules/"$_krel"/build
+	depmod -b "$pkgdir"/usr "$_krel"
+	install -Dm644 include/config/kernel.release "$pkgdir"/usr/share/kernel/$_flavor/kernel.release
+}
+
+sha512sums="
+14b99ea7cc2adc0798a183ac5f3e184587f2496c3b2d1d53b625574389891c69e8be375b5d03875fe859b09ac9314aa15da604087274ba815671135bd6a0e590  linux-7.3.tar.xz
+a6c3bc381b284161d3f5996105e01ae9074bbd5a64c26549c6c5e20262f82ad86b6b77a5cc9b6bdfe06677246d82944dd29681482f9692fc1fac01017c949854  0001-FROMLIST-dt-bindings-cpufreq-qcom-hw-Add-the-SM7150-.patch
+1bf9feb130937b4dc1cda078c350dace4e9e688c032052091ccd4b9271840b7f9d2ff10e627adfa22a62d7e4f05ce469074f070a163505f7e98338356d72312e  0002-FROMLIST-dt-bindings-watchdog-qcom-wdt-Add-the-SM715.patch
+93f4419ddd019c55efb232a81838391f80eb3c155c27a15f1cd89ec99c56eaa95ce1f8949b5f094c85a51f28644599398328a1a12580a1210d9ad05b294d4190  0003-FROMLIST-dt-bindings-thermal-tsens-Add-the-SM7150-co.patch
+d9ad021c73a85327093ee3199e4109f3c41ea9ddf6c4260cf90ceec59285cca1f3beb29d556ce30163778f9a33f8b350b03d506b50516a040543f5a30851ece1  0004-FROMLIST-dt-bindings-interrupt-controller-qcom-pdc-A.patch
+b9b1596c2e0aec9f3702f6cbb7ffbaa53113e61abaea23cf8043561e034df60d7f1b73518ed1bc54a51d9bebd22a95a9c873403fe5f491f75baf42121f1c1810  0005-FROMLIST-dt-bindings-usb-dwc3-Add-the-SM7150-compati.patch
+805a5b2915e1d713d96101f49fb2fd9c22df40d9ced8c37f7185725ca3468ce3c1a395583ca2585c0f79cb66209ec147f555213927bbd796483a5afdce4840d8  0006-FROMLIST-dt-bindings-phy-qcom-qusb2-Add-the-SM7150-c.patch
+5ea91e36805d1721a1ef7a41e65cf6e94edee24c70c614a0553746033fe6394ccc6f64f94e1e55656daa45f25f7948cd24fc65d4b07ffc2363071c5cb659290f  0007-FROMLIST-dt-bindings-mfd-qcom-tcsr-Add-the-SM7150-co.patch
+b18b04bce14f41b7fe903ff829913c7fbeee3fca3419c1f442670f48236664daf5d17f0d56ce7c51861cdd16292f86f094ce6fa5b7e196827eec69a72fb34290  0008-FROMLIST-dt-bindings-net-qcom-ipa-Add-the-SM7150-com.patch
+b3d09f3aa5f32741b458c6128de647807761e74459e78bcf30619291b6a2f39b0125e1efbed8e72732b27018a57b24944455aa14040382491b08fb1477370007  0009-FROMLIST-dt-bindings-ufs-qcom-Add-the-SM7150-compati.patch
+f6416b6828fedd36baa78a03ac3067f01c31197bf9a1af5715fc4bb8e91361063b8ea275a20e2e54a2ff6baa817b528de82f20d9690719bad957caf4e391dcf1  0010-FROMLIST-dt-bindings-dmaengine-qcom-gpi-Add-the-SM71.patch
+bf402907560754d9299d7cc76c9b0b5d4827cc887bd4158aab3143ab5020d8329f4a661acee1c36da6df2ab833723a3933ea86dd3617f292a3e4cbb3cd2f806f  0011-FROMLIST-dt-bindings-nvmem-qfprom-Add-the-SM7150-com.patch
+3a20c937edc20458dbd713741ed5c7682f9f0d212edff7373c6c13ce28f8d8bff17b10d9a6dcb1ff02a6fb8dfaa9ce79ef745ecf5dac0e4e034aceed946aa22e  0012-FROMLIST-dt-bindings-crypto-qcom-inline-crypto-engin.patch
+ab3772e6cc49f4e9638cd71a7a6cbebbc2b7f747af9c583392b7960ddcac9cc2fcc8a7e3e8718a944486447c927176577bdde3a3c75170a173b53739fb689e0b  0013-FROMLIST-dt-bindings-interconnect-qcom-bwmon-Add-the.patch
+c07203b9874976e92a9e0f227a1d252245748172022b6440e41527bb5c196ec809b9d8359d6685dbbca5dc9a2ab783de5de004e3092f549837b397606dfd1ff1  0014-FROMLIST-dt-bindings-i2c-qcom-cci-Add-the-SM7150-com.patch
+22282b2e47b2d13a3edbf1e58c67fef08de4dd38710d15e6820a6c2fa0c155a35e3e40a8d2bc198dd2c40b2b6ae877bac781eab616cec5f006c79554b1208196  0015-FROMLIST-dt-bindings-clock-qcom-rpmhcc-Add-the-SM715.patch
+bdab90891345ba2be5f27998b5f07f3a1a13fbb6122591aebf71af518c658bce25ee9cb87c9114ca0d2b949219c0f10b76c1e01fddbe764e41d5303ec461dd6f  0016-FROMLIST-dt-bindings-interconnect-OSM-L3-Add-the-SM7.patch
+df0e38c3fc88700359ba6257c2a4650c6cc4d35451512473cbf5b2e5f8948bf2d13e434bf295b248c847e85be83d77ccb1c9820326e71324d604e91f67836252  0017-FROMLIST-dt-bindings-arm-smmu-Add-the-SM7150-compati.patch
+bd8710863dd2650d3f3b56ea5416ed51f11b10030552f2b554dc1aa275a40a9b9aa0de184db456ad9c06a2b005ab0cfa5ee41e8cea25082733e3fa77168ad33c  0018-FROMLIST-dt-bindings-clock-qcom-gpucc-Add-the-SM7150.patch
+6b70b784aac60becafd4da3e53b7c0b0c2f940372ab22da7ac83b5a411614a7a8f1974fbfb66f8fa75798ce28c3d207cc37acfc363efa32fbbbccf8e9c088651  0019-FROMLIST-dt-bindings-remoteproc-qcom-sc7180-pas-Add-.patch
+334bc5244a93b12d1140b61f0e38e41c4fe87ec5fb0a446f154a0d71acc7fdb0b8ff676130fec505cdaa8b34cfbe305fe2ec49a0579c9a87e1f37a1d65fabe4b  0020-FROMLIST-remoteproc-qcom-pas-Add-SM7150-remoteproc-s.patch
+3980f77dc38de47d138f666a9fcf6dca81eb3d0691e6a9e5e4ecd398849a9c201d9a08476d4496ea487d5cae1ae558561b2f63a3ffa277998faab7332114bf28  0021-FROMLIST-cpufreq-Add-SM7150-to-cpufreq-dt-platdev-bl.patch
+b4dd5cbe1d5b3aa0823f6e37aa69836a5af42f7faa6edae9bdf3009068da4b61ee8693d668748e497c975faf9836ab4c34a26791768bbead185130fdd89ee7b6  0022-FROMLIST-arm64-dts-qcom-Add-dtsi-for-Snapdragon-730-.patch
+a7efb0421146dd82bbd10b7052108b2f1a23620f89993c1e2f5200d49f61d287380a07b77808d6c5dbd304feface13a8c7e14962c11c4686683571986aa2ffa0  0023-FROMLIST-dt-bindings-display-panel-samsung-ams581vf0.patch
+f45665d701431bb39bc1b280438904e00e71e51cafc9fec57da7b3dec8e1c2f6821d2311af5ee4fac7bc36cf43f0613c517f9c4a4927f71c53966cea08175509  0024-FROMLIST-arm64-dts-qcom-sm7150-Add-device-tree-for-G.patch
+f8292bc88cc3ccf4f1f20ef99d079bdbc4645ef8ade9bd47d90d210b2cc3a670070c7129dc0e771ca9cebb79e94317a2537c8ed77549d4b18dae96042f5c58bd  0025-HACK-drm-msm-adreno-Add-support-for-SM7150-SoC-machi.patch
+39f7e60aa450d1f123305eb1a7435117ad0e5151ef5564d845aa7302c1753dbec2046ba1a897e3057ea2e9485f2226bcec8ec076e577d3b126b237f4cf0d8446  0026-DOWNSTREAM-wifi-ath10k-make-in-order-rx-amsdu-buffer.patch
+b4d9f9e36a0dd1d61b123abe6bffcf7a9b1102091d9acd6136541ced6fcd0932794ab434761150733441e3665fa5b8dae51a9591719f7aadc20079c1a742e433  0027-DOWNSTREAM-wifi-ath10k-only-wait-for-response-to-SET.patch
+caae13c3b951360f11b84415cc96f4c16c02ec660cced8370c9dc1d1f501c6fe39c567d185c89c2a01a8d57169d31410ecd9a322546b262be5ba977a0974d4df  0028-FROMLIST-dt-bindings-input-document-Goodix-GTX8-Touc.patch
+d21e392d66e9f82487d427c90d3830ce1dc07115db6c1fbb59636ce217b1323d3298bee58e1a80c39ff4c080f4bd81845e30a818366544c8c57b0c0f9bdb60d1  0029-FROMLIST-Input-add-support-for-Goodix-GTX8-Touchscre.patch
+d7b557184e9176febc25949fc7a4d5d33854c94c955216595cc00ca69446f20bbd4cbbe7159151c03137930926fb35946a0be959c31166c7e700c2035f2f0cd8  0030-FROMLIST-MAINTAINERS-add-an-entry-for-Goodix-GTX8-To.patch
+3f91b6b690c54fc01565f78127fddd37b4b179c64fafe5e0ebd47be0b3ac6ead705fa6a9dd7b1e77e71ae07a060bb13b82e6cefdc0b000d210eaba86be1a6f4e  0031-iommu-arm-smmu-qcom-add-actlr-settings-for-mdss-on-S.patch
+17dda43d1085209447b944a7f3fe0e4a01d52369280e81dff79e077aad3493e308c7df25893a6a64336cc39c09c9658445b5360999ba16d783a7b5cd992a5829  0032-ufs-qcom-Add-some-missing-frequency-to-gear-mappings.patch
+01b203c9e4070dc9013f8c273cd7d697acb435be92363f15f4241dad468b95db622523680b95531e6c124cff1062c713ed20639cca122852a3524cb5ccebff87  0033-drm-panel-Generate-huaxing-nt36672c-driver.patch
+3c2178d7d8bca4ff47c19ca9fdb20aba8995f4b4b844633c3a5872e10ac8bef44a3cfa0054e35cbefb74834f72f16eb750b7fb5238f93100981cc0702b90f05a  0034-drm-panel-Generate-tianma-nt36672c-driver.patch
+d1ff3147a1ab3e9c80ff07dfa26033abf39b7ed48c007bd25e187a68fdff82a45e979376b3caabd843f05ca1f11bbb0757d2cb48cd07646166505f94bea3fb4a  0035-drm-panel-Add-Samsung-AMS667YR01-panel-driver.patch
+0ae1a60891736cc069830b581abfb0f6d0a8d584111b914a15c70e738b0b530345b42e65c3f570cf418848147b05b6974ce0ffb1cd4502e4ecf20258beed4b9e  0036-ASoC-codecs-add-driver-for-tfa9872.patch
+ec12e1ed0973a18cb5e086ead2adbb876f5b8105928a03393da780ba36339104c08662319aa8e53ce42ca308a4c95ef9910cfc568978a691e714fbd5427d7575  0037-input-touchscreen-nt36xxx-Rewrite-nt36xxx_spi-vendor.patch
+d83eaa810b2387a7d288e573597151c98e73f52cca40582a4ec0bfa4196c72d0dc7cfed257734ec61ae7430e81f4fa5311cc7b0e59686abc9edc62a7b115dc8b  0038-dt-bindings-input-Add-bindings-for-Awinic-AW8695-hap.patch
+86e212aa8f2eff3f1254c5efdf499682d9d72ff233eaf2e390ccd1e23c9e9e698ce46f4e15c852004b5167f8c8eb0cdf0eb7b38787fe67204ac1d4b4cdad3877  0039-Input-aw8695-Add-driver-for-AW8695-haptics.patch
+e909f8e749901daf4c0980ed9ece1c6c4be1465b3b4ed4bdc509ae8ea35b7a3c92665bbf0a08a661693d4fd4162269806cbcb81db42e48fc956776d6455f5365  0040-input-misc-aw8695-Add-initial-support-for-aw8624.patch
+0de1ec62f680c76d9ae4a626fcfe97b81d37f634e83218825327fd799eb675c3524ed9896aacbd5be6a80611024803bd0115c559e0564885ef0de1fa3ab99de6  0041-iio-spmi-adc5-Add-adc-configure-for-bat_therm-100k.patch
+c4b466f160349c6ce31cf3036d5cfe587a730f6657c6b5b209dc5ef302a045d975ed3d022678759ce6674a3b17a3b46942920989638c6f4af1816990b3931e24  0042-WIP-power-supply-Add-rude-driver-for-QGauge.patch
+57efdba2336076b8328ed74c2bb7c2bf3cc4804a281acaaa727efde6b9bcc17ac1af68a4376467b9517b0b0f9a5e25202dcdb7af2923274b449c1101a137818e  0043-power-supply-qcom_qg-sort-includes.patch
+c00fa9de1f3c6271773adaa66c056b3498c4144a1a2ac678b4160b0b92016ca726148ed7aaacf4a6387f5eb1b0da222c505bf6db1ee2c071255760b73ae232e7  0044-power-supply-qcom_qg-use-chip-dev-in-probe-instead-o.patch
+376a33f23334a3a5ecad31237aa192dba75f6a828d1b370759bf683f3037133a9d251eb7e99cc9861136db3703699f3e8b7da31c0bf1339ba920fea766fb72e5  0045-power-supply-qcom_qg-add-error-handling-to-sysfs-pro.patch
+009f7c4947bdb0709dac40a7d243d2503e65f796c0fdaf62091bc9f71f1e2c4784dc1f61308f551dfca8d8d11dc948d3befce5059cec2b361e49e85be7c76a4d  0046-power-supply-qcom_qg-fix-temp-unit.patch
+1128d3e728395ce0bdb2398991002cc18de6c7e3a129e8330409158413539c0ac0a0f740d99baa01530585b7c085ce086557bbfba5cf94239304c40bcb89034c  0047-power-supply-qcom_qg-set-technology-to-Li-ion.patch
+ca43200fed00bc98088d2bfcfda4e3d12e3e40089193ff82cb42564b2e13e42f1e4e630906b19430507d6716dd23cd9da0431ce435e073fb9539751378af1194  0048-power-supply-qcom_qg-use-nvmem-framework-for-reading.patch
+bbb7871bc713558a9de0a575b2d1f89c5a93dc3ad002d7b72da6959139fc1127633113c1e216a7e1fa6f320bfe6fc2bb621b352d6029cb96ffbb6845fd52f3fd  0049-power-supply-qcom_qg-invert-charging-current.patch
+fcef32731c8d1626a38dba3bcd15b375e803d863e6561d9c97fa23db1c88918e754f387fa7122d2ebd5699bf2c49538d1b019d058b5f358c6c7b31f006805adf  0050-power-supply-qcom_qg-6.17-compile-fix.patch
+21524ec04ee80e3e897d3999beb3835b14b03a938de12e7829bbc36ea665a4e35749995d845ed1d9329fbe18e633ca449a6be65d0b928031ee84e2edd189e07b  0051-pinctrl-qcom-Introduce-SM7150-LPI-pinctrl-driver.patch
+09f93c2f13297e7f6c35e1defe602b104dbdbe5214a768147572bc22fe4678d758c4d8f34a3b8f719f291becefd6b2afda2783a891a1308940bbb60384c8fb55  0052-arm64-dts-qcom-sm7150-Add-common-device-tree-for-SM7.patch
+4c8d1118d4c0850f978088cb17b707a47fa4d6c58f6c8e9e999b942b11640b7575ea445bbf44380da607a2f24d77b95ed594d6fc3cd28adf72129126309552c2  0053-arm64-dts-qcom-sm7150-xiaomi-common-raise-l6c-voltag.patch
+7323e44b6f0a17153258a07e0055dea9fa03f72cd17732d72e5bfb34a362c605e6d9933aba3fa908b38d78af28fc270d74364763a3a23e1c06dc3239d1d5b9aa  0054-arm64-dts-qcom-sm7150-Add-device-tree-for-Xiaomi-POC.patch
+8806589d81f7f6f5dd399b2977e80ca5f6adb8c64bc630df85bc8f7837abe3d008fc82349dccd571251a9e15682b528a94e6c618e12be24cf8d189f7ca9b934d  0055-arm64-dts-qcom-sm7150-Add-device-tree-for-Xiaomi-Mi-.patch
+faa64b18b3164add28faa085f9486a33a3d276bfcfdba000f566cf2c5fcfd8358163de33e874aac9ee04749671b185df47e25fe9ffb7f76e702c680a37189a2a  0056-arm64-dts-qcom-sm7150-Add-device-tree-for-Xiaomi-Red.patch
+044ca7660bd64bcff23b4fa07e1aa635d0b85607f190672b9e48f583c55e465a0bbecd8f668c4a71736710b00d41266c338ad1e8dd0ac906b90ada3242bc1b86  0057-arm64-dts-qcom-sm7150-Add-device-tree-for-Xiaomi-Mi-.patch
+1410159a8c2088996dce93a299d2ce3bd2635006a685b51b90b2808cc52592c66ea3e3008add955aadccabc7c6870d765016b512db1fc79d396de55cbfc7d721  0058-arm64-dts-qcom-sm7150-Add-device-tree-for-Xiaomi-Mi-.patch
+93a03945df2a783b090509d6a2b43a02d4f1c9d0aed7e9d58ef40252b68514b2ee46902b6658f44dc0b7d431750e926b30ba110b580cae702f9ca36cf2599c1b  0059-dts-qcom-pm6150-Add-missing-bat_therm-ADC.patch
+fefa13e85a42c72761a107812c2d165058549b3d45e736db8f738388a2c69dca41f8b758e93f57b1efd99a6801d6d92a1eafbacce0dc5f7a82143df23790e9c0  0060-arm64-dts-qcom-pm6150-Add-a-QGauge-node.patch
+b7b57b56cc2787f5d164c69f37f588f2fa72edd27c9076bfde41fe5816d399fdb930890a6dbed7beda2f58fa9ae3709f5bf28a5e9e9da4b4c97274feff1111cf  0061-dts-am7150-xiaomi-common-enable-QGauge-add-simple-ba.patch
+6f155302611bc5540f7c5d79301377432cd2b55d6d2017805e538833239860979e31b0ee803ed921b108ef05fece07e78599206a2323cd48434f5cb4db821ae4  0062-dts-xiaomi-surya-add-charge-full-design-microamp-hou.patch
+0d1f2cfd7fea62f886a28baa2e47a4f2e45c5a184c57ce963218bdf860c98ec6b44b2f799d709b7be2d5ed3aad74c2f41d64b367ca6d936e1a48a742479989c0  0063-dts-xiaomi-davinci-add-charge-full-design-microamp-h.patch
+d3c3016e5b128900e3620047014544ec867c33374d23573460d77bb4455d7d7593196b870fb4d7ec96606425dadd649d898ea8186b79b4dbc4befd523eca2991  0064-arm64-dts-qcom-sm7150-Configure-CAMSS.patch
+61ba39e0c6e6002ec07e210f79bb828fdee70581622ccde655e5b2570f53fd43167a9a3cf86a2fb4b0b0028f0613fdc94b28f6540a870d2b949a84a3caeed18c  0065-arm64-dts-qcom-sm7150-xiaomi-common-Enable-camss.patch
+fc7c1f2ee66ef8650ad08f7c87c80cc58033a6095625f38a032520fe615f706cc00a5ee989d0d11fed8896ec721e6ad60120e4d6e8f34083120dac32d89c6177  0066-arm64-dts-qcom-sm7150-xiaomi-davinci-Add-amplifier-n.patch
+58da2896d72d4cf039d3e190c02c2a8330d3de1064ad5b2e255fee2c364c11c04b2ee1850d76a7dfbf358c15c9a08b5e40904db7677d214d2a04a2a80619ef1f  0067-arm64-dts-qcom-sm7150-xiaomi-davinci-Add-ov8856-tele.patch
+d7a92d29edee2e789a639b653fd20d26738f8ad3ae577da779f51013c6edd51ea14da58d0e52b7e64de9e163951078836b98f3f34f176f9b9ef02ebff2c25efd  0068-arm64-dts-qcom-sm7150-xiaomi-davinci-Add-s5k3l6-ultr.patch
+f37c75f259b79840ca06cf9081d555e6c8433be3c6ef8b96a9d98bf3a525b5beb1de91c385f10d15fd6a8e9c4f8297b77051d05fe8aae27d68a26cb1cf42e2af  0069-WIP-arm64-dts-qcom-sm7150-Add-venus-node.patch
+05e80274a294f306c73ef7189a7f21b0afec34ddc2b60b70da67aecc692cc0ce950f2700537e0ca3608f11f88c966e20a00592bd85ec2a50d10ce2fa47001679  0070-WIP-arm64-dts-qcom-sm7150-Add-lpass_tlmm-node.patch
+ab82c739975f279847a3a5a80d91cace2287a013ce6bd9d4a621d460be29655bd90904c2e67e9a030d622bdf4b2b2949c27cb7c70698d6a61d6852d7030bde49  0071-arch-arm64-configs-Add-sm7150.config-efi.config-and-.patch
+c4a07090a3e0f02a5c5a47435af0f75a7facdafdadda2e0289932435918a67dc64b7f37bdd223d1974f1a624e1a974eeec534b5e2807f26037d329c394f915a3  0072-dt-bindings-crypto-qcom-prng-document-SM7150.patch
+c215f05ebea14ec7a81f64ab0764051c73e2535255732e126d704c41ce1041e472d679df61e92969bbfe5928d2a5d936b494f77211136108ccb544980f521431  0073-arm64-dts-qcom-sm7150-add-TRNG-node.patch
+bea3fa9d276f53a7a446b3de9e53f49fae4e8917527af458ea6398fc80ec27c4a7e7e632bd44f860945ebc98e31028ebbc42ccee18af7d832e7f587c7368a977  0074-DONTSQUASH-fixup-FROMLIST-arm64-dts-qcom-sm7150-Add-.patch
+379ed979e890af02884259c12b7fb4bfe0084116266223c5a06f76a2ca007fccb2f93f3d483d80a03e9ac5b1d7eae52ff2d546b3cace3ee919721038e31cb084  0075-wip-USB-3-for-sunfish.patch
+88bf692ac028a6b7cafa89d7263ff9605bbfe3d6f421b1db02afff8df7a0603adf465e5e3e7be30dc4169281cc697c6e1c5bcc5fec0206e173974cb781830fa5  0076-dts-sm7150-xiaomi-common-cd-gpio-is-active-low.patch
+892834142f921ab634958385683a3ed9e9f9e62632bfbe7f10357e58f894275a3ae87f422bc01597ef9f2ab5eb6dc55fb2d6e9b4a1803d8f86612f4fe1c214d2  0077-Revert-ASoC-codecs-aw88261-Remove-non-existing-reset.patch
+cc14ae128bd64093e90c0e562c124b7f200d01dc91c2dbaaa12e0f3c2aceecdcd9cba8aa5ffeaf71a0af2905cea323539e607c2adc8a7531c652f623380fb59a  0078-sound-soc-codecs-aw88261-Allow-AW88263S.patch
+9aad88af73985be67a8866f9b990a2372a690d116a8bcf56690dbed86a3e1f06a7004f8d8d8f53d95ac39783c496f9542e383bc0b462bd880343310570b9f2d8  0079-dt-bindings-regulator-qcom-sdm845-refgen-regulator-d.patch
+67e1282720243ada9790b54a94ca71b326df373e2ec32aba1255580acb3d1d06d54d5b24513d56bbcdc203dd15ef7870acd88461a8a50978329bac7103cb55ff  0080-arm64-dts-qcom-sm7150-Add-refgen-regulator-to-DSIs.patch
+f31c215e219cf5db674dfa9b188c9e8b4e0d6a810cf16e7c8dbdc8290aaba4db495fc4e05c625f2fc0a6ea2c204e4dd5b0f113f73ec0ada66ac6f51651804089  0081-sound-soc-dai-Avoid-a-nullptr-deref-if-driver-has-no.patch
+46d2a54f5f481e4519cfcdad1de30b9635a05e629bc26b033b53423cac65deecdae00801bf3d9581a37a3b43f32400eecfc455a7db658d4dff3f3e21383f1220  0082-media-qcom-camss-csiphy-3ph-Add-Gen2-v1.2-2PH-MIPI-C.patch
+36f4827b7215f92b03299f7c6b5449346e5057de39f20b1392525679c1dcc70ad2c48be2379c626a1f457f31c37ca00ee630c2d2e34ce9d95804f96018d8be0b  0083-media-qcom-camss-Add-CAMSS_SM7150-enum.patch
+feb7e4185da4775b3ac6aa034f82c9c6ad6115c8f5094371e3076959280f6004cd015ecc9005b7104bd3443df2932a5cae76c8e1c4c53f05b50f0ac874907f59  0084-media-qcom-camss-Add-SM7150-resources.patch
+cb5e203d8bf6ad40d6a2df791104f44444ec667d705ccd65784fdd6a0dd4d9e0c9a6475e8395a3b3ad9d799bdf17ef85fa74b88df3bd3169bfbebf82730e94ac  0085-media-qcom-camss-Add-SM7150-support.patch
+95e35a13f6cba40ef9c7a2184ec8a473bd39c8afece3bffdc64fc50770fafad11cd6d90b2b7d48581a0a2bf8ec883cf380e1fd52b5250518cdbfb5e951bc0ab2  0086-fixup-camss.patch
+bbb2fb8fc4ba8be637244ca3c784fac5dbf864807546e09382a71b3c334c1ff4c654ead2f85fac792d0bbe8585f57c12dfa2e22988d5a833cfed2736042b55b6  0087-WIP-cam-stuff.patch
+61c3d4bdd25cef2e52a10aae337a62f20b73814a7203c14746f01abee876d968446d2ed4ab27f2d94de64e45c6f8a8da64f6303d2a052c6855f64e24050800b4  0088-media-i2c-Import-s5k3l6xx-driver.patch
+7ba9c8423f77610a4fcc0531356b70c2ffcc10624dc56edb6f4c238a6b30af8ade26b356ad56bf0f84d0c492715da58c3ae7921a2713d8183fb2e5cbfc8962ff  0089-media-i2c-s5k3l6xx-Port-to-kernel-6.8.patch
+6c7840598df6d79a380ce24537a84c0510ef67d615243691cecc102a7b2b70aaa13004bbc929a321191ca5a9a671934bd326a11244200b3c1dfea421119f5460  0090-media-i2c-s5k3l6xx-Permit-19.2MHz-clock.patch
+cd87446b0b43f4ed65829a6ab70c3dc6cab8608d03b9a02b3fa1f2eb250a6ddf42a8a85945aa093c7f30c0f4eeaa6c6d80dc2290d94dde4a1470944176f2c311  0091-media-i2c-s5k3l6xx-Fix-accidental-string-concatenati.patch
+e12db0f90b15e04702cb7b06eaeda246a30caa5415f77efa7b598d0a595f77650c052a61ab08912262571d51be57359879d07dd866dda78ca1fc6cb0e13f2c0b  0092-media-i2c-ov8856-Not-reset-media-bus-code-on-get-for.patch
+4c39fed3ffdb90b8abd5d23d9ff709b78611d6fe4f2f40c4479f54970a39f7be955c71e4a49d10bffaaed67eb91a7247e34a95eb85b61ae778dc9798c6b451ba  0093-media-i2c-ov8856-comment-3280x2464-2-lane-mode.patch
+031f9ab679edcb0f165f36fc575377646b370e874bceef54771b6d8797965c81e8fb95fc751b93010b1aca407cf9b54752a3abf1addaf2a27c9886450c53a6bd  0094-video-backlight-qcom-wled-Set-don-t-enable-WLED-OVP-.patch
+20b326ff8c381355e05adc3317c00c755828038ee1f15ca8fe38d52042f557bd846566fe6a43dc2d1225ed23068dbcf08a40af1420db1000b3b420a88637039a  0095-arm64-dts-qcom-sm7150-xiaomi-davinci-Split-up-DTS.patch
+0c6e04f1aed76dac4c83fc0fc5032e475f8944248684c9b9f10d3e838658c27d64fd2b15dabaadc8da0e8f363410edab57aec9dd469c441bb7887b43c90a0c8e  0096-drm-panel-Add-driver-for-Visionox-G1639FP106.patch
+63b51690b811bc25ab94291808d8574e1d8740c7dbf85cb86a2ccc328b60426ea9ccd8d0e3585ed40e43865a60b43f041e64638db7b0efddf2bc4c677974a6b5  0097-arm64-dts-qcom-sm7150-xiaomi-common-describe-WiFi-BT.patch
+5b159c4598c757a1892f6a042a4edd582b8c3b597b26637f7299cad700bc5e9072ebdb97cf2403aaee03d42b0e8f17e3f4b40268c997caf7624504299ae31193  0098-FROMLIST-v1-dt-bindings-power-supply-qcom-pmi89980-c.patch
+29158988c493cb3b251365c40bc6cba98b196849293c064c15c6308c6cd83fedf5934063b2d2e9aed61654971d26c3f184e62949a87392846ab7ea031fbfc13d  0099-FROMLIST-v1-power-supply-qcom_smbx-respect-battery-c.patch
+ad2ae2dbdc3188ac6a8888673d18090d235218e39b1eb063e8a8fc12dfe4902276a0a03bab2ee0c56e0772953355b8bd3b0ab71860a9b1476260ff6ad115a79b  0100-FROMLIST-v1-power-supply-qcom_smbx-bump-up-the-max-c.patch
+fdbdbce927b6a33f8e1b276ffcb4cb5f5cacedcc6e5d6738ece9b90d41c122b7b016fba2c63d96a18d7cef4880ecf5157e503c692ac4982416151b9e01e95534  0101-FROMLIST-v1-power-supply-qcom_smbx-remove-unused-reg.patch
+35d61238d7526c9d8915e02b106beabe3a449f3b5c825159b57983caebbe1a9fd1c42a4cc942b4f2b4be91c7311030892db5f2778fb5aad7ae7fac76b882b465  0102-FROMLIST-v1-power-supply-qcom_smbx-add-smb5-support.patch
+a4ad158b5e289ece837033eda4ab227b58c2a6e449a92257db5a9d7b37a7c4b496137d53e02994c83e6dbdb3f9f84a483b250528500e585150eaacd85ea041b4  0103-SQUASHME-power-supply-qcom_smbx-fixups-for-smb5-intr.patch
+3faab6534862c7eace3320448ce4e932673d9aee36747df1f1a8a5e40f365b1af97a4e524559eb54f9bda8c5d40ffc1329019b259dd6bd619076de495f96058f  0104-SQUASHME2-power-supply-qcom_smbx-fixups-for-smb5-int.patch
+5e199235da8af3df7d48a032a2e88e0ed94b51aa03aabeeafee7478fa25c4aa3d0a7a5e941de21c25e4dd37fa26761a44fd5b03db95cd00cfe62878b7544dcb0  0105-FROMLIST-v1-power-supply-qcom_smbx-program-aicl-reru.patch
+8dc57af31db3ad901cf29c72ea39c9b5c84dbf711e3b41d4ce4e5120f85320bdda9566f852953e2bac2485e624ddafc22cc65d7ab10d8ec6226c58c2825b075e  0106-WIP-smb5-stuff.patch
+d86bb194583e3ea038dd4672d61f5540141306f6c9b262212796f4612c3726f9bc90d71ad41e81f42285ea74a148d40b653b0a4a9e4408fe4df83c6693839fd7  0107-arm64-dts-qcom-sm7150-xiaomi-davinci-Fix-duplicate-a.patch
+9ad72d8e6717da929cecc73503da5635e8e46fa5f6ac3fc09b72c332e4493f6ffe5a95cb027aaef48c782827570990350642b21470846e2e380c05288fb1df30  0108-arm64-dts-qcom-sm7150-xiaomi-common-Mark-lpass-lpi-g.patch
+d5cbc41fccdcce2e7c401352b1e9c145fbbc99419c4845b1a44a99432bb60680ddcdbfa48a856cf9f4ef30f2cab8bae9a9605d766bc579d3f76750aed49505b1  0109-q6afe-set-client_handle-properly.patch
+c23f9a81ffc35738be4fc145df857b7ee4db412495965a88bc4e92e79081fdc1fb06a6b27ac8a40629b33fed53b2d62b6a6074df92ebd8179f0df523a5937084  0110-arm64-dts-qcom-sm7150-xiaomi-common-Drop-redefinitio.patch
+8ceb018aec6c14b36cb258379f912df304a56e43433834fb5a708edf6f5f8b07eb1e8a4290484d91eb9a44c826bdd7d75c4e0c782fc351fba105fe65a08194ef  0111-sound-soc-codecs-wcd937x-Resolve-some-warnings.patch
+0da01c3174db04e02bc9defb8c3f6464f0ed9329350803cbecb2a0e75552175bb7da9d1dcb55c3e56ea53ee984d952926ed5be19a2739caab22de778fd090634  0112-WIP-WCD-stuff.patch
+43524df8181597b5a44f6ac55202e85dae8290c27332d498fb5bcc53e21164191199ec675e83cc3bfedae58798d90633841e8d9e011051c5662d0479f53df757  0113-Revert-WIP-WCD-stuff.patch
+f3c63789f1a3e14aee5448ce1d97a11787785226feb6d27f021664941af47a0cc43b5830ec8c65220f46e83bb90380f90aaea61a619ef5f2aa88674059ad20d4  0114-arm64-dts-qcom-sm7150-xiaomi-davinci-GPIO-hacks.patch
+f1d5660d6a0a8d44056a29eebb6ffbf19d966b5bbebb77a37eef996b67eaa03c62d8a2b40a434781410ef103803d7031854a0a5dba36c99c4ea4076bdccb3ce8  0115-more-camera-work.patch
+6707c030c305546a8dc3e771b54a888a562ef5f0bff458a180e01ee09d1be5343c64fc0d774a78f3aaee8d758a0f811e2d60fe2f855e4379af135b82ce8501cb  0116-FROMLIST-resolve_btfids-preserve-tag-and-parameter-n.patch
+7a00a3ad7725dece3d1381a8521e7f270070f638eb4cd15d1141b7a991270dc5dbe7659217a0cef7c74eed2ebf6d8c3cd3a6c4eda857a0631334c63fa7abbf28  0117-hanoip-dt-bindings.patch
+ef3a94cf884eb27f5796bf5ce4ac003a66a0ca1fdccb0b66dd72e18defe7e934f2f71d236d5b8d8e31456c94ab13b086b437edea0cb8e36cb7b2507133d662ad  0118-hanoip-pinctrl-clk-soc.patch
+3f6f300b89771f67735abf61f4d7c40d311900ad9f44d01f8616bbdcebde6b251de2f008d6ede702f8b92b92216eb408960e13f7e5bfc366bfee955c33253665  0119-hanoip-lcdb-regulator.patch
+cc250e367ff45d722376f59612c14e7706b4e9c9fe30f83f8772c89cb2de6bc4d5bb8e03b6d49de9d0e141f717f786e61581bdc963e51fafebfdcfca8da5f995  0120-hanoip-panel-ili7807s.patch
+3e929edb22d1d831f9a6fd532718fe0dede69398c34de1e11c2d5da1674a34649c028c01c2a93d41d90694e813dbcd2138d5f6b8cb428021acfd2548a5f433a3  0121-hanoip-simplefb.patch
+d46928e1319ac41d2a133714d14dfc470fe7e9ca69262567554cf64f3bf9de9b30a7f4f7eba7c4f303c22edb16a3bdb3d2ad34101091244a7413cffc6a2281d5  0122-hanoip-ufs.patch
+8cf42c4361a5eed4d521c105bd727d90d629e7a8e29d7462f58da88246a8506da4eadee5821d9f12ac8883d620d7c5b4545b80700fadd2da5eef7f4522b64a92  0123-hanoip-iommu-smmu.patch
+1cb9e6c62db533201fa173aa0aa02124bf62f6eeab7f74a6cd52066558571c6326a4fd48ff22d910424a9a16e25f2ddab79655a34b80eb26444cda699aba10f9  0124-hanoip-msm-display.patch
+17e7c9943acdaf2f5c4ed6b55a82132f99c00b189745d0d892e95fbaa65a54073bcfd8d9e1d96e71e949acfccc702996ff98924d1e9fb324ba50fba9936f8ad3  0125-hanoip-touch.patch
+91aa90d1fff41c08ba3693d9f67544a2e99111521c2393a115acf81bb9580fcf81347919ee279e91ac489cc2e00cfd91f9d180aaee60075d8485d017d016ac2e  0126-hanoip-power-supply.patch
+8ba7cc84ffae63bed16a1f173487d708659895b1bd0cc003d929a11f87dd3f835d8787d4b20d1cd5765f9cdbd966893695449b354d7023822a0a81f6060aa271  0127-hanoip-dts.patch
+157adb063a298352819b779cab5f374d235ed4c98bb4fbfe129ea5a80ff6774d6cf6bf3b47c2558fa4fe44f73cf07df99cce8a5a58ee888eace38cbc77d8d715  0128-power-supply-qcom_qg-import-the-IIO_CONSUMER-namespa.patch
+a70ab64b2a9c798e09ffce07fe27650790a4af3046d4904f9eb57546dd00ecd156fececb45510da2c1d9f80849ccae43ced2ac16efd755fc7adbf60d8f9db886  0129-power-supply-qcom_smbx-Fix-battery-overvoltage-statu.patch
+65303054aca51bad2dc7cdffec0ae20d869acbd5e2da54381815dad195550f31ef4b69199e954313dd694e83215c2f74e41fe157716b4fca0509784fa222d86b  0130-power-supply-qcom_smbx-Fix-float-voltage-encoding-fo.patch
+c0ada3363fa6dcc9e64c9aa43353f9cf314c386e3d5249728bd204aee11250dbb8e69c6e14fb5c355f3c2efc5dc22747e5c7729ac2f709aeb6fbd3947b1e99f2  0131-power-supply-qcom_smbx-Don-t-scale-USBIN-voltage-twi.patch
+4798023ea5a1112b1899c5d5df243a98af4e1c43dbad9b191668aedf8deeab5351f9908eb1786eed3c359c29935bfd9f32162346c18163f80574aed582cd0634  0132-power-supply-qcom_smbx-Decode-the-SMB5-charger-state.patch
+556fcb1ec72e72f1c78920bb6bd1bf87b14d0cc74a1b131bc096e6234e3a426ae630d8542d5f48c82e513d7c16b9ec6cb1f9453ffb33c121a93997990b36e8fb  0133-power-supply-qcom_qg-Pick-the-battery-current-LSB-fr.patch
+71033e9da195885af4167802c9c3348c5d347bba574aa23dac2dd1180198540d070757443a761735290db9ac3607313fdb13598e87f9edba300dce9dd3775007  0134-power-supply-qcom_qg-Use-the-OCV-table-to-estimate-c.patch
+ca5b1ffe148a20850dbb2b68872d006a903e154eb33bdec8f88fad4416427f8121a0205b21afb6d73ac65f66ceec79bbe2cb58494cb69d2dc2493f2ec4acd74d  0135-power-supply-qcom_qg-Smooth-the-reported-capacity.patch
+d5a4f49c1257ef5d2c8757d46c0c3c664216a48462460410967e89651f406350dcad3af3b504a57a31be59a55ee89859170727f45235c36537d8fb89227f52d2  0136-ASoC-dt-bindings-awinic-aw88395-Add-AW88263S.patch
+c087a8e8ad779a5958c38f64620eee0285e9513253b2a7186e8a44b9cc9317383e1224f5292de23deb41f0dea06c1187436dfe26c6049102a59fcb4ca854cf61  0137-ASoC-codecs-aw88261-Don-t-touch-register-0-for-the-A.patch
+417c0c8eddeaca6aee3608d7d8ace55605250e2cb639aab62d1d645ece907f50255bf8a0866551357fe743775e4a94f98e2d18b8fa9849cb57a85eeeaf6f3902  0138-ASoC-codecs-aw88261-Add-AW88263S-support.patch
+08bac3a07ab34d8b440ad7d6ecb46274614c540940c5907401d7132ab7f56feafcc2ba407f2d0640409010a1da2c7716e2f5b6dc801f219d258644afbc524179  0139-ASoC-qcom-q6routing-Handle-S32_LE-in-hw_params.patch
+a27da9031d134fab0330a33c859899238b7e3672b5dc204a55f91ee44da012c8ce8901d985cf4d3085da98c6110136c3c5a578747a40cbde050c76bd335e81f9  0140-ASoC-dt-bindings-qcom-sm8250-Add-Xiaomi-Redmi-Note-1.patch
+1e5c5c1bd2302b544d8fe52f7fd9c80cfd39a560563cc594cf656c6d5994a8d9f0c00aff0becc762222489e4d664af49e5fba988a0fe3198159bfd58c75e1a55  0141-ASoC-qcom-sm8250-Use-32-bit-slots-on-PRIMARY_MI2S_RX.patch
+4eb7cf8ce82ba5e5db04d65e4e07d1f5b18b0067a4302701015c539f7c2b394ba1ffedce85c46ab72912f7e0e2a5b30cc4bc09309180ef48b693bd62b341d0c1  0142-arm64-dts-qcom-sm7150-xiaomi-sweet-Enable-both-speak.patch
+74dede11cfeec14ea515df3b17ecbbef7c03d0c0c4da38743d5e3e7bbe878ce8dbdfc55cbf20d9e013086cd07d816af7e1e1964d6341faf20efa88e01eac0db3  0143-ASoC-qcom-q6afe-Don-t-read-status-from-HW-vote-respo.patch
+5bc4d1da26aed0dae6c4bbc8f15fbcf7b830299674ce79dbf7bb32f5a4079963c34eb6719a3b5bdc32288785129efb956ac7f3f7bc3c94b8a1bc8eb43193df02  0144-pinctrl-qcom-sm7150-lpass-lpi-Fix-functions-of-gpio1.patch
+c0799c7dc9a29019d938211aaa0686afcc0b19edaef322c189df1eda16db0829bcf52ada31547a2f9aaea9ef3b6cc7d1d57cf4343ea20213b07cd0e4debef8e4  0145-arm64-dts-qcom-sm7150-Use-gpio-function-for-the-WCD9.patch
+8b1d16794bca6598a0ddab12016ef40bfab78a52583a133802e97fc474fd6b8bad4c1cbe1961e3a349eee6b66207cd1e62e86ff6dddcbc41917b273e202ccf2c  0146-arm64-dts-qcom-sm7150-Add-LPASS-macros-and-SoundWire.patch
+cb6d96792038c83f0426093085fdcc4befbeb1fda797a9e54d3f8afc6a0c3d124d113e7364105a3716e086efcc4dadb764c9d1db46767136758d9e673eced1cb  0147-arm64-configs-sm7150-Enable-QRTR_SMD-and-LPASS-VA-ma.patch
+3811195f091190a00fb7b6fc7b0a039ed748def016d25f9860ca511adf4a70369cbbed9d39b1330b07e2f8284c9593abfb476d9901b87858c1f08b29047fbfd8  0148-arm64-dts-qcom-sm7150-xiaomi-sweet-Add-WCD9370-and-m.patch
+ae50d94ba7bad0dee093b307991fb6ecdfeb36b6310c1ed9d9a44f184e5ce75c71f608f1eaf0ce7ffb157be7ac3b7479f5e3d9063c9289e25f86d3ac6f9f9ad8  0149-ASoC-codecs-wcd937x-Survive-card-rebind-after-ADSP-r.patch
+c964e4f208bdf44636bf036985140c143e8c7ce561dedc500ec4e80ec3745928894fb07a88461ea0e6aedc62222a20e8fe26ef4c1a13d4b829d9e52ac3ed0118  0150-soundwire-qcom-Survive-iface-clock-loss-during-ADSP-.patch
+dab54edf8351c00d90553e05f36de8811be5f742ebf5f2bad2aa097e78374e26e2911d5f69f7f5e8a2663def4acc586a38071dde82b369fb0741a73f606a0147  0151-attempt-at-basic-soundwire-support.patch
+088c02ca4224c995b461dc6863e5879cdf08bbb0c001a19c9af8602824e8b6b4f19eead3653f57653f5c3ada58c082ad9ca53c0c19ce591c59de5ad9cef01c28  0152-pinctrl-qcom-sm7150-lpass-lpi-fix-swr_tx_data-mux-va.patch
+c19e40b387bcd5075bf6b5d06d014e27969c0f1f02a5cbb399cfe51ac606ef6c56c954f8c6a6334b9411901c5ec84344f2cf50db617a79ce28266b51ed11757a  0153-arm64-dts-qcom-sm7150-add-wakeup-interrupt-to-the-TX.patch
+f3ab167e7566015a6c77463c8a8c5ce072762ebc65574eb3d89b33f418a304e91882fb9b887c4cf6b8e411096012c39e6fae0c7dd646e71ca7a59cda0b5d874a  0154-arm64-dts-qcom-sm7150-xiaomi-davinci-fix-WCD9375-TX-.patch
+a19cbf807956833d09ed34de7ace6901a913fd2c9c52aa5d7c82a10aef33341737729c2a925212ac51102e16e970d3c9eb69826ba71afc3c3a016931bd2446b0  0155-arm64-dts-qcom-sm7150-xiaomi-davinci-add-the-WCD9375.patch
+53f8456660ad47f1c2ba597eea47aa3192f011aecf53ec77c8c6e6928288a23c313001ee7114071132ae72ad540c94b0504c2377ce37d2d8d5cc1a4d2290f099  0156-arm64-dts-qcom-sm7150-xiaomi-davinci-wire-up-microph.patch
+fc557226642a3721e3e5c9d0f8f8a3d5bbfde5cf5ab5890d84ca0253f9c4a3aa0107bb088f3df7be66aedba0c3518bd490758e7180e3d32fef82b9e3cebe0865  0157-arm64-dts-qcom-sm7150-disable-the-RX-and-VA-LPASS-ma.patch
+9eb07310d4d4e99a5bd4b32a2863332bb86a5a4064b6bed7d6e32a3cbc981d5b0cc1bf0d2fece75a0e90c63a8019db028053e3e132d439fc19361d71fb9f29a5  0158-pinctrl-qcom-sm7150-lpass-lpi-fix-swr_rx_data-mux-va.patch
+012d1ec1c06772197ae1876cf25e4dcb667b78920ea6ab0254f9bb0776e153575aa7ad6d09f4fe6672da332151c508bef81d8ba99e0ff93d4e3bef27033737b2  0159-power-supply-qcom_qg-OCV-capacity-smoothing-and-char.patch
+29682ba0009f25ddfe37015c8d309e0596fd323ef1fb843db8332ceb223f76ed458c1e87c3a34970ea13f050db5aa60bdd0becc4e37cd4087aa18066fe0e657e  0160-arm64-dts-qcom-sm7150-keep-one-set-of-LPASS-audio-no.patch
+f0bd184527bf4ef045bdb5c9055aeeedddcf592011af1f801d610e805d94f2470bea2c89a890c29056dfa7751bf0dbad587dbfb3ddacb49ba590734c5c0bc9a1  0161-ASoC-codecs-add-a-minimal-Awinic-AW882xx-0x1852-driv.patch
+ebc57e5413bdab217f38f29691fcfae9bc5947c47ce674fc5f4edfb0e9560740746e3fde2f52ddb3175e3ef540cf82756d1607393505a2dc403782c1e69aca30  0162-pinctrl-qcom-sm7150-lpass-lpi-add-the-SSC-SEC_MI2S-p.patch
+9efa864bd82287b66f130035890e7e0ee84650ed5a6bf6263d51ec7df219560a400f0294400175c97ff399ed6dd8dd31dae5aaca4c8aa6de5b09261878af083b  0163-Input-pm8xxx-vibrator-optional-maximum-drive-voltage.patch
+cdb7bfba8fdd8766c75b69e2172ed15269579a1d3868ad8934e256d54cde2003c976c8946b9679dbbcee3a7f53fcbab38af36b1399fc4dfc21a07fa6c1d3774b  0164-Input-pm8xxx-vibrator-fix-the-upper-drive-level-byte.patch
+200c379fc28430db9562f8d335191db9d8fbab78e1359964a37d314bafc18421b7a2860802cb45532837d29765014553cb007f1d12907c80187e3e9b371a002d  0165-net-qrtr-ns-wait-for-the-HELLO-before-announcing-ser.patch
+60f3b416ba4266d52c5ad87d64afa32adeeb5caea091afdff21a555de3bcca555d8174691f2bf4115f307076438a86ce110f7003d060789d340ce95147c53ee4  0166-media-venus-add-SM7150-resources-experimental.patch
+05d96a90a16c917896e9366b91945cb1ab41c5ad3f7340eb1ebe26f465d560f912d42568fa2a41b1b7438fe0a9c6521ab22aa347371b1decff39ac6b633aafef  0167-power-supply-qcom_qg-report-a-steady-state-of-charge.patch
+c8262d850550444f5bb1a6c855704b7c6cd3dbf337229bf8f000f41af141f8266586e1cf072f5f73f3bbba4b0ba049e0b28d65a0d9e6c3d26e3cdb07e97d36f9  0168-power-supply-qcom_smbx-add-a-read-only-register-dump.patch
+2bfe7ab4f37aadbc050b39a88785023e7d0b4cefae74c2c3d69f50cabddfe87bf93864320ecf284e08352dc057cf796f98fa4bd314c62ffc993ef42f9f95183b  0169-power-supply-qcom_smbx-opt-in-charging-for-the-hanoi.patch
+4ca1ba04b3032897614975e8b308d19712d4b7484dd3c0453216a3b7537d0ee18c2019c09e47a4c876b2fdb9ca94a716835714188b51bec25bcc59be094f4bd1  0170-power-supply-qcom_qg-never-freeze-on-a-bad-first-sam.patch
+c2771ccd24573f8db49abc7c3c392127903d9e0d949330b6354da2460d8dd976629b29f9018e2ceabbd1401b55edef81cfec57577d47ae005e89ce44a24d9fc2  0171-power-supply-qcom_smbx-negotiate-the-input-current-l.patch
+bf48ad4a9d78f23223e2b49439cd00591e93b1a4f49b924112ae2bbb67e14b80dba0ace761e2915f2f61b8fa88d523e3dbc90f9c473bd315d5aeac23427e170f  0172-power-supply-qcom_smbx-allow-forcing-the-input-curre.patch
+e1dd2434301a72fcdd26b57ef068690dc9c06dfa65a136e6301e0f2b90adf988ccc20cd9ff096a4e08c36272d238cd07be6dc3624387132684b3e3d29ccaa962  0173-power-supply-qcom_qg-cap-the-charging-rise-with-coul.patch
+9aa5548fc05741cbfd37badf145aa23453c918660aca0dcedbfdd44879713680ae5f0ae88fb66fed7a4b82c218282ea2f34ccd08af9f48387ccc6eb313713188  0174-power-supply-qcom_qg-limit-the-charging-rise-only-by.patch
+c36250eec848096806069dd1b08be96efbea2c0c600499ccf49c878db4a109157bc8a3a31d44fa3ea51e3134c8d45fea79aa279f57b75dbf5e96f04571bae25f  0175-power-supply-qcom_qg-smoother-release-and-immediate-.patch
+b407dc9b2b6cc506aee90fd5cff4c04c43f6bdf31d3b0a8a2587d293b57ff7a629f28299363dc7f10c8a99115831a3091900c93cf6e3b91f45fe09cb8bd8f434  0176-power-supply-qcom_qg-qcom_smbx-remove-debugfs-files-.patch
+27cbf1a1618166018cd22d103c77c5455222d73eff1d30bc3fd6d2dcd4ff98583d7541b3e208ab50763ae817c5b9d0dfe5e4d5fc3f398119727bd18a9c8d0393  0177-power-supply-qcom_qg-reject-implausible-voltage-samp.patch
+19575c4f26e4816cf45816e7e7ba5868f54815270b084d2ed666b3096041657324259f31285ee0696d980802e7ead0e5112d629a586a7d6c0c81c7a2810875da  0178-power-supply-qcom_smbx-create-the-debugfs-files-late.patch
+2adea12e07f9b8e8a80c52cfc1b474db1e3ba508c608504c04e49aefc3f30fe7f2c1c719809904a654046793e735c8cfd8eb7fb69d4810c2877e2cf05a8e9f14  0179-power-supply-qcom_qg-fall-back-when-a-voltage-sample.patch
+77ca04b64eba63ddc022f99b2371659846e1d45b661d9463f4c2d065a3daa524f521af7742490d9ef800bdf8a273cdac1e84cce696a1fb329247c3a058d990af  0180-power-supply-qcom_qg-use-the-last-ADC-current-for-th.patch
+1a0a602854b0259ea05b269a7723fd5422073d0b8788848cbf217169b21b1399eb29573356739b264a3a76f3877806d2c0089e5519ad378642725b48b56f4d81  0181-power-supply-qcom_qg-fix-the-voltage-choice-and-the-.patch
+bb9cfd92d0dd8fa68f1f03bcc7d20a7bc0523562dfe32003b9a9559cb480d4130e3162bfa43b7a3dca52dc3fe4a99c0177cad7ea9d1f587f68fe3fc04e35d7cf  0182-power-supply-qcom_qg-during-charging-follow-only-the.patch
+f51c7780761ee527142563224a08eb4b09966f2c152e6cf26522ecd0740c800c020731f2a884ab8cbe5daf2427bd91b3b564e1cc2c30125fe39696e6db17d7d6  0183-power-supply-qcom_qg-filter-the-current-and-fix-the-.patch
+ff8b5ebba9767b29acee68ace8bb7ba6fb6a963aac618c0dc2cd42d8494a9d6f226ac564802e7f20e1023b0ce0a651252df6bf70764836718b1a5b35c98d0f97  0184-power-supply-qcom_qg-only-trust-OCV-at-rest-one-poin.patch
+118fb474b49b03a516744344b9c01fcb696816079b731f932476fe433492326d208c06dd13633f10aa4ff6ec8c4974f43ea320bf977879d68474a3812377af17  0185-power-supply-qcom_smbx-reconcile-the-input-limit-wit.patch
+2bb3509d23c4f9f337c0f6b121dd01c9ea376152b1fbb803deabb0677b9e30259b846cfd9b7508142f04ab5e7c811c47d5c1260d06a60a2a8c707377945f9c11  0186-power-supply-qcom_smbx-report-the-programmed-input-l.patch
+e6bd5e8625e65ce160f072cf74b124dbb722d76045226d5990b981eb7cc7573be96e6a296492b4088100f90871f5a91b5ed0ddd6706f4284dca4b5c0e5256661  0187-power-supply-qcom_qg-document-what-100-means-on-this.patch
+c6cb855d64ed9ebd51eb6714e6b59b6d310cb0b558c1d00d9c49647171806677810a568369d5cf6c68269aac5747cb9c0428d7ddc198a8a6cc0c07d45777f503  0188-ASoC-codecs-wcd937x-sdw-bound-the-static-channel-map.patch
+1c569b97651cbda60a822ec19c45427d31a9524237eaca24f549e24b040f7a5e88600230f65149e1cdd60ce687fe9d59e2d4a1b5f98f54f4a25f9259f4cfec7a  0189-soundwire-qcom-allow-DT-to-opt-out-of-clock-stop.patch
+3c02b730cdf34e6e1b0240cba195dd045f63da9ff09d17179834027947fb7d8d2b22f4e3cc2e5709bd66e6644c538431cdd663d4c845af6a2b1647ed9265d9ec  0190-media-qcom-camss-roll-back-started-subdevices-when-s.patch
+aecc10a5db7319694d13b844c103fb63bc80a5a7a0a436d51506d48831721c0af822b36b349f54587f6f3e772d93c5a3f2b17809ee071acdf87b55bf875e9ac6  0191-media-qcom-camss-sm7150-give-every-CSIPHY-the-stock-.patch
+3c5fe7214c86278d62d9af9fa4d10f4d65227718c362e432167c4e7cc36b60f7415764edb33aed1043b80e1770754a4f25027f63460a84442bd8988f73061fa9  0192-media-qcom-camss-sm7150-add-C-PHY-receive-and-bring-.patch
+9de9d52bc0453ffd11710de60617e25e63d92f5eef88b840b4ab364231883b189b834688c4387d5decabb5ceb89e4739093be64bb754413852575d072b1a07b5  0193-i2c-qcom-cci-reset-the-controller-on-runtime-resume.patch
+e5426e1efa4f3fe45bb8ebbc7370f62e20c8f1897edb5d1ffd6835d0ec3156a5604ae36164b77de7f0f56b5ee1498ddc58f75ce51a4865ded5b02aa6d761db27  0194-media-i2c-add-Motorola-hanoip-camera-sensor-and-VCM-.patch
+60176f56ea78c830b61dc672c9319019c9b4e0d35400614ad740fd646c95655ef9d8ff72b44b1b8901ee582ebf0d0ad755a3c9e36f3af4f90ecd01475a338a96  0195-firmware-qcom-add-a-legacy-QSEECOM-transport-for-HLO.patch
+c4b1aa49449dc80b1b261f5853107791904ce2fdec9f7d5b1d54d2ca6764c9a4b89a107724274f142a51b9bdb4b4bef5a48e69df701f1e8e1f56cc6816489f04  config-7.3-hanoip
+b5a2841687f8fc0efcdca9cbf40986e1a4c29ccd3def54d893e91e2887f8f91e1bcb8786f4e3495e8584ea8ef4c330050db57b6a6aeb95060d8b4cc16c1bda91  server.config
+968fdec98e1b098e9f39e9ee9425fbbf5b41f29490be352b34c0497584fecaefbd683ad5abb353844119f621fa49f0145365e2831d51db692a4d04ff44cff659  Kbuild
+98c83d13f693179d1c118b7b361c187ccdc9e684fd78f57fec3b845d11d7204196722bbcbf92e45218f7245265f793346826feccdef03adc241332e7f42aada2  hanoip_mmi_unit_info.c
+"

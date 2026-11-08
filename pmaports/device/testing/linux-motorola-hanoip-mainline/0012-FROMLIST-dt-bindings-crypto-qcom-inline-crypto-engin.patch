@@ -1,0 +1,28 @@
+From ec8a75cc168027f1d17b7fcf37c83dfd5cd0dc6d Mon Sep 17 00:00:00 2001
+From: Danila Tikhonov <danila@jiaxyga.com>
+Date: Fri, 21 Feb 2025 21:46:31 +0300
+Subject: [PATCH 012/194] FROMLIST: dt-bindings: crypto:
+ qcom,inline-crypto-engine: Add the SM7150 compatible
+
+Document the Inline Crypto Engine (ICE) on the SM7150 Platform.
+
+Signed-off-by: Danila Tikhonov <danila@jiaxyga.com>
+---
+ .../devicetree/bindings/crypto/qcom,inline-crypto-engine.yaml    | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/Documentation/devicetree/bindings/crypto/qcom,inline-crypto-engine.yaml b/Documentation/devicetree/bindings/crypto/qcom,inline-crypto-engine.yaml
+index 23bf98c2b..c6a3250ae 100644
+--- a/Documentation/devicetree/bindings/crypto/qcom,inline-crypto-engine.yaml
++++ b/Documentation/devicetree/bindings/crypto/qcom,inline-crypto-engine.yaml
+@@ -24,6 +24,7 @@ properties:
+           - qcom,sc7180-inline-crypto-engine
+           - qcom,sc7280-inline-crypto-engine
+           - qcom,shikra-inline-crypto-engine
++          - qcom,sm7150-inline-crypto-engine
+           - qcom,sm8450-inline-crypto-engine
+           - qcom,sm8550-inline-crypto-engine
+           - qcom,sm8650-inline-crypto-engine
+-- 
+2.43.0
+

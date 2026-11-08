@@ -1,0 +1,26 @@
+From f76e7c7e80578f8e28834513774a462dfa07d68c Mon Sep 17 00:00:00 2001
+From: Danila Tikhonov <danila@jiaxyga.com>
+Date: Sat, 9 Mar 2024 21:02:24 +0300
+Subject: [PATCH 041/194] iio: spmi-adc5: Add adc configure for bat_therm 100k
+
+Signed-off-by: Danila Tikhonov <danila@jiaxyga.com>
+---
+ drivers/iio/adc/qcom-spmi-adc5.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/iio/adc/qcom-spmi-adc5.c b/drivers/iio/adc/qcom-spmi-adc5.c
+index 83ecd3adf..74ba0e26e 100644
+--- a/drivers/iio/adc/qcom-spmi-adc5.c
++++ b/drivers/iio/adc/qcom-spmi-adc5.c
+@@ -542,6 +542,8 @@ static const struct adc5_channels adc5_chans_pmic[ADC5_MAX_CHANNEL] = {
+ 					SCALE_HW_CALIB_DEFAULT)
+ 	[ADC5_XO_THERM_100K_PU]	= ADC5_CHAN_TEMP("xo_therm", 0,
+ 					SCALE_HW_CALIB_XOTHERM)
++	[ADC5_BAT_THERM_100K_PU] = ADC5_CHAN_TEMP("bat_therm", 0,
++					SCALE_HW_CALIB_THERM_100K_PULLUP)
+ 	[ADC5_BAT_ID_100K_PU]	= ADC5_CHAN_TEMP("bat_id", 0,
+ 					SCALE_HW_CALIB_DEFAULT)
+ 	[ADC5_AMUX_THM1_100K_PU] = ADC5_CHAN_TEMP("amux_thm1_100k_pu", 0,
+-- 
+2.43.0
+

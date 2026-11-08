@@ -1,0 +1,53 @@
+From 2809a0547d66e9d1ffa811dd0876d4a7def19fa4 Mon Sep 17 00:00:00 2001
+From: Danila Tikhonov <danila@jiaxyga.com>
+Date: Fri, 1 Mar 2024 19:11:32 +0300
+Subject: [PATCH 060/194] arm64: dts: qcom: pm6150: Add a QGauge node
+
+Signed-off-by: Danila Tikhonov <danila@jiaxyga.com>
+---
+ arch/arm64/boot/dts/qcom/pm6150.dtsi | 22 ++++++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/pm6150.dtsi b/arch/arm64/boot/dts/qcom/pm6150.dtsi
+index 6f7009ccb..53cb1070d 100644
+--- a/arch/arm64/boot/dts/qcom/pm6150.dtsi
++++ b/arch/arm64/boot/dts/qcom/pm6150.dtsi
+@@ -150,6 +150,20 @@ pm6150_adc_tm: adc-tm@3500 {
+ 			status = "disabled";
+ 		};
+ 
++		pm6150_qgauge: qgauge@4800 {
++			compatible = "qcom,pm6150-qg";
++			reg = <0x4800>;
++
++			io-channels = <&pm6150_adc ADC5_BAT_THERM_100K_PU>,
++				      <&pm6150_adc ADC5_BAT_ID_100K_PU>;
++			io-channel-names = "batt-therm",
++					   "batt-id";
++
++			nvmem = <&pm6150_qg_sdam>;
++
++			status = "disabled";
++		};
++
+ 		pm6150_rtc: rtc@6000 {
+ 			compatible = "qcom,pm8941-rtc";
+ 			reg = <0x6000>, <0x6100>;
+@@ -158,6 +172,14 @@ pm6150_rtc: rtc@6000 {
+ 			status = "disabled";
+ 		};
+ 
++		pm6150_qg_sdam: nvram@b600 {
++			compatible = "qcom,spmi-sdam";
++			reg = <0xb600>;
++			#address-cells = <1>;
++			#size-cells = <1>;
++			ranges = <0 0xb600 0x100>;
++		};
++
+ 		pm6150_gpios: gpio@c000 {
+ 			compatible = "qcom,pm6150-gpio", "qcom,spmi-gpio";
+ 			reg = <0xc000>;
+-- 
+2.43.0
+

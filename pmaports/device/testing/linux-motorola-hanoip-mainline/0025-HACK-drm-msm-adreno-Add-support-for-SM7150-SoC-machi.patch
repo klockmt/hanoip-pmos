@@ -1,0 +1,25 @@
+From 7e2afde738627b6c7f214d61a9e82d6bf6c9f3f1 Mon Sep 17 00:00:00 2001
+From: Danila Tikhonov <danila@jiaxyga.com>
+Date: Sat, 24 Feb 2024 21:52:58 +0300
+Subject: [PATCH 025/194] HACK: drm/msm/adreno: Add support for SM7150 SoC
+ machine
+
+---
+ drivers/gpu/drm/msm/adreno/a6xx_catalog.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/gpu/drm/msm/adreno/a6xx_catalog.c b/drivers/gpu/drm/msm/adreno/a6xx_catalog.c
+index 90a0c7ffb..239e46395 100644
+--- a/drivers/gpu/drm/msm/adreno/a6xx_catalog.c
++++ b/drivers/gpu/drm/msm/adreno/a6xx_catalog.c
+@@ -762,6 +762,7 @@ static const struct adreno_info a6xx_gpus[] = {
+ 		.machine = "qcom,sm7150",
+ 		.chip_ids = ADRENO_CHIP_IDS(0x06010800),
+ 		.family = ADRENO_6XX_GEN1,
++		.revn = 618,
+ 		.fw = {
+ 			[ADRENO_FW_SQE] = "a630_sqe.fw",
+ 			[ADRENO_FW_GMU] = "a630_gmu.bin",
+-- 
+2.43.0
+

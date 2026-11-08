@@ -1,0 +1,106 @@
+From af0f47a430dcfa9049bf458407bb52ebfa154de8 Mon Sep 17 00:00:00 2001
+From: Jens Reidel <adrian@travitia.xyz>
+Date: Tue, 9 Apr 2024 09:08:51 +0200
+Subject: [PATCH 068/194] arm64: dts: qcom: sm7150-xiaomi-davinci: Add s5k3l6
+ ultra camera sensor
+
+Signed-off-by: Jens Reidel <adrian@travitia.xyz>
+---
+ .../boot/dts/qcom/sm7150-xiaomi-davinci.dts   | 60 +++++++++++++++++++
+ 1 file changed, 60 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dts b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dts
+index 04de5b99f..392f27558 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dts
++++ b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dts
+@@ -124,6 +124,13 @@ &battery {
+ 
+ &camss {
+ 	ports {
++		port@2 {
++			csiphy2_ep: endpoint  {
++				data-lanes = <0 1>;
++				remote-endpoint = <&s5k3l6xx_ep>;
++			};
++		};
++
+ 		port@3 {
+ 			csiphy3_ep: endpoint {
+ 				data-lanes = <0 1>;
+@@ -168,6 +175,38 @@ ov8856_ep: endpoint {
+ 	};
+ };
+ 
++&cci1 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&cci2_default>,
++		    <&mclk1_active>;
++};
++
++&cci1_i2c0 {
++	camera@10 {
++		compatible = "samsung,s5k3l6xx";
++		reg = <0x10>;
++
++		rstn-gpios = <&tlmm 29 GPIO_ACTIVE_LOW>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&ultra_ldo_active &ultra_active>;
++
++		clocks = <&camcc CAMCC_MCLK1_CLK>;
++		clock-names = "mclk";
++		clock-frequency  = <19200000>;
++
++		vdda-supply = <&vreg_l9c_3p1>;
++		vddd-supply = <&vreg_s8c_1p35>;
++		vddio-supply = <&vreg_l16a_2p8>;
++
++		port {
++			s5k3l6xx_ep: endpoint {
++				data-lanes = <1 2>;
++				remote-endpoint = <&csiphy2_ep>;
++			};
++		};
++	};
++};
++
+ &framebuffer {
+ 	reg = <0x0 0x9c000000 0x0 (1080 * 2340 * 4)>;
+ 	height = <2340>;
+@@ -481,6 +520,13 @@ amp_reset_default: amp-reset-default-state {
+ 		output-low;
+ 	};
+ 
++	mclk1_active: mclk1-active {
++		pins = "gpio14";
++		function = "cam_mclk";
++		drive-strength = <2>;
++		bias-disable;
++	};
++
+ 	mclk3_active: mclk3-active {
+ 		pins = "gpio16";
+ 		function = "cam_mclk";
+@@ -495,6 +541,20 @@ tele_active: tele-active {
+ 		bias-pull-up;
+ 	};
+ 
++	ultra_active: ultra-active {
++		pins = "gpio25";
++		function = "gpio";
++		drive-strength = <2>;
++		bias-pull-up;
++	};
++
++	ultra_ldo_active: ultra-ldo-active {
++		pins = "gpio29";
++		function = "gpio";
++		drive-strength = <2>;
++		bias-disable;
++	};
++
+ 	amp_int_default: amp-int-default-state {
+ 		pins = "gpio56";
+ 		function = "gpio";
+-- 
+2.43.0
+

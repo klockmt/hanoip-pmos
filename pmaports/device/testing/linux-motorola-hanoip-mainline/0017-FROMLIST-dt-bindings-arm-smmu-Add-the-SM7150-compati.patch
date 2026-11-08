@@ -1,0 +1,44 @@
+From 1580933a7188c039a7ea0bef50e27913c8dc14af Mon Sep 17 00:00:00 2001
+From: Danila Tikhonov <danila@jiaxyga.com>
+Date: Fri, 21 Feb 2025 22:47:04 +0300
+Subject: [PATCH 017/194] FROMLIST: dt-bindings: arm-smmu: Add the SM7150
+ compatible
+
+Document the SM7150 SMMU block.
+
+Signed-off-by: Danila Tikhonov <danila@jiaxyga.com>
+---
+ Documentation/devicetree/bindings/iommu/arm,smmu.yaml | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/Documentation/devicetree/bindings/iommu/arm,smmu.yaml b/Documentation/devicetree/bindings/iommu/arm,smmu.yaml
+index ffa33b7f4..9229b780c 100644
+--- a/Documentation/devicetree/bindings/iommu/arm,smmu.yaml
++++ b/Documentation/devicetree/bindings/iommu/arm,smmu.yaml
+@@ -64,6 +64,7 @@ properties:
+               - qcom,sm6125-smmu-500
+               - qcom,sm6350-smmu-500
+               - qcom,sm6375-smmu-500
++              - qcom,sm7150-smmu-500
+               - qcom,sm8150-smmu-500
+               - qcom,sm8250-smmu-500
+               - qcom,sm8350-smmu-500
+@@ -114,6 +115,7 @@ properties:
+               - qcom,shikra-smmu-500
+               - qcom,sm6115-smmu-500
+               - qcom,sm6125-smmu-500
++              - qcom,sm7150-smmu-500
+               - qcom,sm8150-smmu-500
+               - qcom,sm8250-smmu-500
+               - qcom,sm8350-smmu-500
+@@ -611,6 +613,7 @@ allOf:
+               - qcom,sdx75-smmu-500
+               - qcom,sm6350-smmu-500
+               - qcom,sm6375-smmu-500
++              - qcom,sm7150-smmu-500
+     then:
+       properties:
+         clock-names: false
+-- 
+2.43.0
+

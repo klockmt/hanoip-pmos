@@ -1,0 +1,912 @@
+From fe56f896b8c67e25add4b95d52d9be47ab1bfa8c Mon Sep 17 00:00:00 2001
+From: Aelin Reidel <aelin@mainlining.org>
+Date: Wed, 13 May 2026 02:08:33 +0200
+Subject: [PATCH 087/194] WIP cam stuff
+
+---
+ .../boot/dts/qcom/sm7150-xiaomi-common.dtsi   |   3 +-
+ .../boot/dts/qcom/sm7150-xiaomi-davinci.dts   |  59 +++++--
+ arch/arm64/boot/dts/qcom/sm7150.dtsi          | 108 ++++++++++---
+ .../platform/qcom/camss/camss-csid-gen2.c     |   2 +
+ .../media/platform/qcom/camss/camss-csid.c    |  15 +-
+ .../qcom/camss/camss-csiphy-3ph-1-0.c         |   9 ++
+ .../media/platform/qcom/camss/camss-csiphy.c  |   6 +-
+ .../media/platform/qcom/camss/camss-ispif.c   |   4 +-
+ .../media/platform/qcom/camss/camss-vfe-17x.c |   3 +
+ drivers/media/platform/qcom/camss/camss-vfe.c |  15 +-
+ .../media/platform/qcom/camss/camss-video.c   |  14 +-
+ drivers/media/platform/qcom/camss/camss.c     | 147 ++++++++++--------
+ drivers/media/v4l2-core/v4l2-subdev.c         |   2 +-
+ 13 files changed, 278 insertions(+), 109 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-common.dtsi b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-common.dtsi
+index 14db8f024..e563c205e 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-common.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-common.dtsi
+@@ -435,7 +435,8 @@ vreg_bob: bob {
+ };
+ 
+ &camss {
+-	vdda-supply = <&vdda_csi0_1p25>;
++	vdda-phy-supply = <&vdda_mipi_csi0_0p9>;
++	vdda-pll-supply = <&vdda_csi0_1p25>;
+ 	status = "okay";
+ };
+ 
+diff --git a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dts b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dts
+index 392f27558..17258df85 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dts
++++ b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dts
+@@ -8,6 +8,8 @@
+ 
+ /dts-v1/;
+ 
++#include <dt-bindings/media/video-interfaces.h>
++
+ #include "sm7150-xiaomi-common.dtsi"
+ 
+ /delete-node/ &wlan_msa_mem;
+@@ -116,6 +118,30 @@ codec {
+ 			};
+ 		};
+ 	};
++
++	camt_avdd_2p8: regulator-camt-avdd-2p8 {
++		compatible = "regulator-fixed";
++		regulator-name = "camt_avdd_2p8";
++		regulator-min-microvolt = <2800000>;
++		regulator-max-microvolt = <2800000>;
++		regulator-enable-ramp-delay = <100>;
++		enable-active-high;
++		gpio = <&pm6150l_gpios 8 GPIO_ACTIVE_HIGH>;
++		// FIXME: vin is bob here, l9c is vbat for dvdd
++		//vin-supply = <&vreg_bob>;
++		vin-supply = <&vreg_l9c_3p1>;
++	};
++
++	camt_dvdd_1p2: regulator-camt-dvdd-1p2 {
++		compatible = "regulator-fixed";
++		regulator-name = "camt_dvdd_1p2";
++		regulator-min-microvolt = <1200000>;
++		regulator-max-microvolt = <1200000>;
++		regulator-enable-ramp-delay = <100>;
++		enable-active-high;
++		gpio = <&pm6150l_gpios 8 GPIO_ACTIVE_HIGH>;
++		vin-supply = <&vreg_s8c_1p35>;
++	};
+ };
+ 
+ &battery {
+@@ -124,16 +150,20 @@ &battery {
+ 
+ &camss {
+ 	ports {
++		/*
+ 		port@2 {
+ 			csiphy2_ep: endpoint  {
+ 				data-lanes = <0 1>;
+ 				remote-endpoint = <&s5k3l6xx_ep>;
+ 			};
+ 		};
++		*/
+ 
+ 		port@3 {
+ 			csiphy3_ep: endpoint {
+-				data-lanes = <0 1>;
++				clock-lanes = <0>;
++				data-lanes = <1 2>;
++				bus-type = <MEDIA_BUS_TYPE_CSI2_DPHY>;
+ 				remote-endpoint = <&ov8856_ep>;
+ 			};
+ 		};
+@@ -152,23 +182,27 @@ camera@36 {
+ 		compatible = "ovti,ov8856";
+ 		reg = <0x36>;
+ 
+-		reset-gpios = <&pm6150l_gpios 8 GPIO_ACTIVE_LOW>;
++		reset-gpios = <&tlmm 24 GPIO_ACTIVE_LOW>;
+ 		pinctrl-names = "default";
+-		pinctrl-0 = <&tele_active &tele_ldo_active>;
++		pinctrl-0 = <&tele_active>;
+ 
+ 		clocks = <&camcc CAMCC_MCLK3_CLK>;
+ 		clock-names = "xvclk";
+ 		clock-frequency = <19200000>;
+ 
+ 		dovdd-supply = <&vreg_l16a_2p8>;
+-		avdd-supply = <&vreg_l9c_3p1>;
+-		dvdd-supply = <&vreg_s8c_1p35>;
++		avdd-supply = <&camt_avdd_2p8>;
++		dvdd-supply = <&camt_dvdd_1p2>;
++
++		orientation = <1>;
++		rotation = <180>;
+ 
+ 		port {
+ 			ov8856_ep: endpoint {
++				clock-lanes = <0>;
++				data-lanes = <1 2>;
+ 				link-frequencies = /bits/ 64
+ 					<720000000 360000000>;
+-				data-lanes = <1 2>;
+ 				remote-endpoint = <&csiphy3_ep>;
+ 			};
+ 		};
+@@ -181,6 +215,7 @@ &cci1 {
+ 		    <&mclk1_active>;
+ };
+ 
++/*
+ &cci1_i2c0 {
+ 	camera@10 {
+ 		compatible = "samsung,s5k3l6xx";
+@@ -206,6 +241,7 @@ s5k3l6xx_ep: endpoint {
+ 		};
+ 	};
+ };
++*/
+ 
+ &framebuffer {
+ 	reg = <0x0 0x9c000000 0x0 (1080 * 2340 * 4)>;
+@@ -222,6 +258,8 @@ &i2c4 {
+ 	clock-frequency = <100000>;
+ 	status = "okay";
+ 
++	/* Unknown @ 0e */
++
+ 	tfa9874: codec@34 {
+ 		compatible = "nxp,tfa9874";
+ 		reg = <0x34>;
+@@ -339,13 +377,6 @@ &pm6150l_gpios {
+ 			  "MOTOR_STEP_CLK", /* GPIO_10 */
+ 			  "CAMT_VCM_2P8_EN",
+ 			  "NC";
+-
+-	tele_ldo_active: tele-ldo-active {
+-		pins = "gpio8";
+-		function = "normal";
+-		power-source = <0>;
+-		output-low;
+-	};
+ };
+ 
+ &pm6150l_lpg {
+@@ -534,7 +565,7 @@ mclk3_active: mclk3-active {
+ 		bias-disable;
+ 	};
+ 
+-	tele_active: tele-active {
++	tele_active: tele-active-default-state {
+ 		pins = "gpio24";
+ 		function = "gpio";
+ 		drive-strength = <2>;
+diff --git a/arch/arm64/boot/dts/qcom/sm7150.dtsi b/arch/arm64/boot/dts/qcom/sm7150.dtsi
+index 4843108e5..cd81391fb 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm7150.dtsi
+@@ -3641,6 +3641,7 @@ camss: camss@ace0000 {
+ 				    "vfe0",
+ 				    "vfe1",
+ 				    "vfe_lite";
++			// FIXME: missing regs
+ 
+ 			clocks = <&gcc GCC_CAMERA_HF_AXI_CLK>,
+ 				 <&gcc GCC_CAMERA_SF_AXI_CLK>,
+@@ -3677,7 +3678,28 @@ camss: camss@ace0000 {
+ 				 <&camcc CAMCC_IFE_LITE_CLK_SRC>,
+ 				 <&camcc CAMCC_IFE_LITE_CPHY_RX_CLK>,
+ 				 <&camcc CAMCC_IFE_LITE_CSID_CLK>,
+-				 <&camcc CAMCC_IFE_LITE_CSID_CLK_SRC>;
++				 <&camcc CAMCC_IFE_LITE_CSID_CLK_SRC>,
++				 <&camcc CAMCC_BPS_CLK>,
++				 <&camcc CAMCC_BPS_CLK_SRC>,
++				 <&camcc CAMCC_BPS_AHB_CLK>,
++				 <&camcc CAMCC_BPS_AXI_CLK>,
++				 <&camcc CAMCC_BPS_AREG_CLK>,
++				 <&camcc CAMCC_ICP_CLK>,
++				 <&camcc CAMCC_ICP_CLK_SRC>,
++				 <&camcc CAMCC_ICP_AHB_CLK>,
++				 <&camcc CAMCC_IPE_0_CLK>,
++				 <&camcc CAMCC_IPE_0_CLK_SRC>,
++				 <&camcc CAMCC_IPE_0_AHB_CLK>,
++				 <&camcc CAMCC_IPE_0_AREG_CLK>,
++				 <&camcc CAMCC_IPE_0_AXI_CLK>,
++				 <&camcc CAMCC_IPE_1_CLK>,
++				 <&camcc CAMCC_IPE_1_AHB_CLK>,
++				 <&camcc CAMCC_IPE_1_AREG_CLK>,
++				 <&camcc CAMCC_IPE_1_AXI_CLK>,
++				 <&camcc CAMCC_JPEG_CLK>,
++				 <&camcc CAMCC_JPEG_CLK_SRC>,
++				 <&camcc CAMCC_LRME_CLK>,
++				 <&camcc CAMCC_LRME_CLK_SRC>;
+ 			clock-names = "cam_hf_axi",
+ 				      "cam_sf_axi",
+ 				      "camnoc_axi",
+@@ -3713,30 +3735,74 @@ camss: camss@ace0000 {
+ 				      "vfe_lite_src",
+ 				      "vfe_lite_cphy_rx",
+ 				      "vfe_lite_csid",
+-				      "vfe_lite_csid_src";
+-
+-			interrupts = <GIC_SPI 477 IRQ_TYPE_EDGE_RISING>,
+-				     <GIC_SPI 478 IRQ_TYPE_EDGE_RISING>,
+-				     <GIC_SPI 479 IRQ_TYPE_EDGE_RISING>,
+-				     <GIC_SPI 607 IRQ_TYPE_EDGE_RISING>,
+-				     <GIC_SPI 464 IRQ_TYPE_EDGE_RISING>,
+-				     <GIC_SPI 466 IRQ_TYPE_EDGE_RISING>,
+-				     <GIC_SPI 465 IRQ_TYPE_EDGE_RISING>,
+-				     <GIC_SPI 467 IRQ_TYPE_EDGE_RISING>,
+-				     <GIC_SPI 434 IRQ_TYPE_EDGE_RISING>;
++				      "vfe_lite_csid_src",
++				      "bps",
++				      "bps_src",
++				      "bps_ahb",
++				      "bps_axi",
++				      "bps_areg",
++				      "icp",
++				      "icp_src",
++				      "icp_ahb",
++				      "ipe0",
++				      "ipe0_src",
++				      "ipe0_ahb",
++				      "ipe0_areg",
++				      "ipe0_axi",
++				      "ipe1",
++				      "ipe1_ahb",
++				      "ipe1_areg",
++				      "ipe1_axi",
++				      "jpeg",
++				      "jpeg_src",
++				      "lrme",
++				      "lrme_src";
++
++			interrupts = <GIC_SPI 477 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 478 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 479 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 607 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 464 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 466 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 438 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 465 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 467 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 434 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 459 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 468 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 463 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 475 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 474 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 476 IRQ_TYPE_LEVEL_HIGH>;
+ 			interrupt-names = "csiphy0",
+ 					  "csiphy1",
+ 					  "csiphy2",
+ 					  "csiphy3",
+ 					  "csid0",
+ 					  "csid1",
++					  "csid_lite",
+ 					  "vfe0",
+ 					  "vfe1",
+-					  "vfe_lite";
++					  "vfe_lite",
++					  "camnoc",
++					  "cdm",
++					  "icp",
++					  "jpeg_dma",
++					  "jpeg_enc",
++					  "lrme";
+ 
+ 			power-domains = <&camcc IFE_0_GDSC>,
+ 					<&camcc IFE_1_GDSC>,
+-					<&camcc TITAN_TOP_GDSC>;
++					<&camcc TITAN_TOP_GDSC>,
++					<&camcc BPS_GDSC>,
++					<&camcc IPE_0_GDSC>,
++					<&camcc IPE_1_GDSC>;
++			power-domain-names = "ife0",
++					     "ife1",
++					     "top",
++					     "bps",
++					     "ipe0",
++					     "ipe1";
+ 
+ 			iommus = <&apps_smmu 0x900 0x460>,
+ 				 <&apps_smmu 0xd00 0x460>,
+@@ -3753,14 +3819,18 @@ camss: camss@ace0000 {
+ 				 <&apps_smmu 0x8c0 0x460>,
+ 				 <&apps_smmu 0xcc0 0x460>;
+ 
+-			/*interconnects = <&gem_noc MASTER_AMPSS_M0 0 &config_noc SLAVE_CAMERA_CFG 0>,
+-					<&mmss_noc MASTER_CAMNOC_HF 0 &mc_virt SLAVE_EBI_CH0 0>,
+-					<&mmss_noc MASTER_CAMNOC_SF 0 &mc_virt SLAVE_EBI_CH0 0>,
+-					<&mmss_noc MASTER_CAMNOC_ICP 0 &mc_virt SLAVE_EBI_CH0 0>;
++			interconnects = <&gem_noc MASTER_AMPSS_M0 QCOM_ICC_TAG_ACTIVE_ONLY
++					 &config_noc SLAVE_CAMERA_CFG QCOM_ICC_TAG_ACTIVE_ONLY>,
++					<&mmss_noc MASTER_CAMNOC_HF0 QCOM_ICC_TAG_ALWAYS
++					 &mc_virt SLAVE_EBI_CH0 QCOM_ICC_TAG_ALWAYS>,
++					<&mmss_noc MASTER_CAMNOC_SF QCOM_ICC_TAG_ALWAYS
++					 &mc_virt SLAVE_EBI_CH0 QCOM_ICC_TAG_ALWAYS>,
++					<&mmss_noc MASTER_CAMNOC_RT QCOM_ICC_TAG_ALWAYS
++					 &mc_virt SLAVE_EBI_CH0 QCOM_ICC_TAG_ALWAYS>;
+ 			interconnect-names = "cam_ahb",
+ 					     "cam_hf_0_mnoc",
+ 					     "cam_sf_0_mnoc",
+-					     "cam_sf_icp_mnoc";*/
++					     "cam_sf_icp_mnoc";
+ 
+ 			status = "disabled";
+ 
+diff --git a/drivers/media/platform/qcom/camss/camss-csid-gen2.c b/drivers/media/platform/qcom/camss/camss-csid-gen2.c
+index eadcb2f7e..8b7ec3ffd 100644
+--- a/drivers/media/platform/qcom/camss/camss-csid-gen2.c
++++ b/drivers/media/platform/qcom/camss/camss-csid-gen2.c
+@@ -356,6 +356,7 @@ static int csid_configure_testgen_pattern(struct csid_device *csid, s32 val)
+  */
+ static irqreturn_t csid_isr(int irq, void *dev)
+ {
++	printk(KERN_INFO "CSID got IRQ\n");
+ 	struct csid_device *csid = dev;
+ 	u32 val;
+ 	u8 reset_done;
+@@ -392,6 +393,7 @@ static irqreturn_t csid_isr(int irq, void *dev)
+  */
+ static int csid_reset(struct csid_device *csid)
+ {
++	printk(KERN_INFO "csid_reset called\n");
+ 	unsigned long time;
+ 	u32 val;
+ 
+diff --git a/drivers/media/platform/qcom/camss/camss-csid.c b/drivers/media/platform/qcom/camss/camss-csid.c
+index d97cc21b1..50937d6cd 100644
+--- a/drivers/media/platform/qcom/camss/camss-csid.c
++++ b/drivers/media/platform/qcom/camss/camss-csid.c
+@@ -7,6 +7,7 @@
+  * Copyright (c) 2011-2015, The Linux Foundation. All rights reserved.
+  * Copyright (C) 2015-2018 Linaro Ltd.
+  */
++#define DEBUG
+ #include <linux/clk.h>
+ #include <linux/completion.h>
+ #include <linux/interrupt.h>
+@@ -27,7 +28,7 @@
+ #include "camss.h"
+ 
+ /* offset of CSID registers in VFE region for VFE 480 */
+-#define VFE_480_CSID_OFFSET 0x1200
++#define VFE_480_CSID_OFFSET 0x4000
+ #define VFE_480_LITE_CSID_OFFSET 0x200
+ 
+ #define CSID_HW_VERSION		0x0
+@@ -1051,8 +1052,10 @@ static int csid_set_test_pattern(struct csid_device *csid, s32 value)
+ 	struct csid_testgen_config *tg = &csid->testgen;
+ 
+ 	/* If CSID is linked to CSIPHY, do not allow to enable test generator */
+-	if (value && media_pad_remote_pad_first(&csid->pads[MSM_CSID_PAD_SINK]))
++	if (value && media_pad_remote_pad_first(&csid->pads[MSM_CSID_PAD_SINK])) {
++		printk("csid_set_test_pattern\n");
+ 		return -EBUSY;
++	}
+ 
+ 	tg->enabled = !!value;
+ 
+@@ -1251,8 +1254,10 @@ static int csid_link_setup(struct media_entity *entity,
+ 			   const struct media_pad *remote, u32 flags)
+ {
+ 	if (flags & MEDIA_LNK_FL_ENABLED)
+-		if (media_pad_remote_pad_first(local))
++		if (media_pad_remote_pad_first(local)) {
++			printk("csid_link_setup media_pad_remote_pad_first\n");
+ 			return -EBUSY;
++		}
+ 
+ 	if ((local->flags & MEDIA_PAD_FL_SINK) &&
+ 	    (flags & MEDIA_LNK_FL_ENABLED)) {
+@@ -1268,8 +1273,10 @@ static int csid_link_setup(struct media_entity *entity,
+ 		/* If test generator is enabled */
+ 		/* do not allow a link from CSIPHY to CSID */
+ 		if (csid->testgen.nmodes != CSID_PAYLOAD_MODE_DISABLED &&
+-		    csid->testgen_mode->cur.val != 0)
++		    csid->testgen_mode->cur.val != 0) {
++			printk("csid_link_setup test generator\n");
+ 			return -EBUSY;
++		}
+ 
+ 		sd = media_entity_to_v4l2_subdev(remote->entity);
+ 		if (sd->grp_id == TPG_GRP_ID) {
+diff --git a/drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c b/drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c
+index 669765df4..a1faa4298 100644
+--- a/drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c
++++ b/drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c
+@@ -7,6 +7,7 @@
+  * Copyright (c) 2011-2015, The Linux Foundation. All rights reserved.
+  * Copyright (C) 2016-2018 Linaro Ltd.
+  */
++#define DEBUG
+ 
+ #include "camss.h"
+ #include "camss-csiphy.h"
+@@ -1074,6 +1075,8 @@ static void csiphy_reset(struct csiphy_device *csiphy)
+ {
+ 	struct csiphy_device_regs *regs = csiphy->regs;
+ 
++	printk(KERN_DEBUG "csiphy_reset id %d with base %p and offset %d\n", csiphy->id, csiphy->base, regs->offset);
++
+ 	writel_relaxed(0x1, csiphy->base +
+ 		      CSIPHY_3PH_CMN_CSI_COMMON_CTRLn(regs->offset, 0));
+ 	usleep_range(5000, 8000);
+@@ -1087,6 +1090,8 @@ static irqreturn_t csiphy_isr(int irq, void *dev)
+ 	struct csiphy_device_regs *regs = csiphy->regs;
+ 	int i;
+ 
++	printk(KERN_DEBUG "csiphy_isr called\n");
++
+ 	for (i = 0; i < 11; i++) {
+ 		int c = i + 22;
+ 		u8 val = readl_relaxed(csiphy->base +
+@@ -1351,6 +1356,10 @@ static int csiphy_init(struct csiphy_device *csiphy)
+ 		regs->lane_regs = &lane_regs_sm6350[0];
+ 		regs->lane_array_size = ARRAY_SIZE(lane_regs_sm6350);
+ 		break;
++	case CAMSS_7150:
++		regs->lane_regs = &lane_regs_sm7150[0];
++		regs->lane_array_size = ARRAY_SIZE(lane_regs_sm7150);
++		break;
+ 	case CAMSS_7280:
+ 	case CAMSS_8250:
+ 		regs->lane_regs = &lane_regs_sm8250[0];
+diff --git a/drivers/media/platform/qcom/camss/camss-csiphy.c b/drivers/media/platform/qcom/camss/camss-csiphy.c
+index 539ac4888..7e4edd48f 100644
+--- a/drivers/media/platform/qcom/camss/camss-csiphy.c
++++ b/drivers/media/platform/qcom/camss/camss-csiphy.c
+@@ -7,6 +7,7 @@
+  * Copyright (c) 2011-2015, The Linux Foundation. All rights reserved.
+  * Copyright (C) 2016-2018 Linaro Ltd.
+  */
++#define DEBUG
+ #include <linux/clk.h>
+ #include <linux/delay.h>
+ #include <linux/interrupt.h>
+@@ -722,14 +723,17 @@ static int csiphy_link_setup(struct media_entity *entity,
+ 			     const struct media_pad *local,
+ 			     const struct media_pad *remote, u32 flags)
+ {
++	printk(KERN_INFO "csiphy_link_setup called\n");
+ 	if ((local->flags & MEDIA_PAD_FL_SOURCE) &&
+ 	    (flags & MEDIA_LNK_FL_ENABLED)) {
+ 		struct v4l2_subdev *sd;
+ 		struct csiphy_device *csiphy;
+ 		struct csid_device *csid;
+ 
+-		if (media_pad_remote_pad_first(local))
++		if (media_pad_remote_pad_first(local)) {
++			printk("media_pad_remote_pad_first\n");
+ 			return -EBUSY;
++		}
+ 
+ 		sd = media_entity_to_v4l2_subdev(entity);
+ 		csiphy = v4l2_get_subdevdata(sd);
+diff --git a/drivers/media/platform/qcom/camss/camss-ispif.c b/drivers/media/platform/qcom/camss/camss-ispif.c
+index 20ccd7b1f..b6aa2866d 100644
+--- a/drivers/media/platform/qcom/camss/camss-ispif.c
++++ b/drivers/media/platform/qcom/camss/camss-ispif.c
+@@ -1309,8 +1309,10 @@ static int ispif_link_setup(struct media_entity *entity,
+ 			    const struct media_pad *remote, u32 flags)
+ {
+ 	if (flags & MEDIA_LNK_FL_ENABLED) {
+-		if (media_pad_remote_pad_first(local))
++		if (media_pad_remote_pad_first(local)) {
++			printk(KERN_INFO "ispif_link_setup\n");
+ 			return -EBUSY;
++		}
+ 
+ 		if (local->flags & MEDIA_PAD_FL_SINK) {
+ 			struct v4l2_subdev *sd;
+diff --git a/drivers/media/platform/qcom/camss/camss-vfe-17x.c b/drivers/media/platform/qcom/camss/camss-vfe-17x.c
+index e5ee7e717..7033dd94d 100644
+--- a/drivers/media/platform/qcom/camss/camss-vfe-17x.c
++++ b/drivers/media/platform/qcom/camss/camss-vfe-17x.c
+@@ -201,6 +201,7 @@ static void vfe_global_reset(struct vfe_device *vfe)
+ 	/* Make sure IRQ mask has been written before resetting */
+ 	wmb();
+ 
++	printk(KERN_INFO "Writing reset_bits=%x to vfe->base=%p with id %d\n", reset_bits, vfe->base, vfe->id);
+ 	writel_relaxed(reset_bits, vfe->base + VFE_GLOBAL_RESET_CMD);
+ }
+ 
+@@ -327,6 +328,8 @@ static void vfe_violation_read(struct vfe_device *vfe)
+  */
+ static irqreturn_t vfe_isr(int irq, void *dev)
+ {
++	printk(KERN_INFO "vfe irq handled!\n");
++
+ 	struct vfe_device *vfe = dev;
+ 	u32 status0, status1, vfe_bus_status[VFE_LINE_NUM_MAX];
+ 	int i, wm;
+diff --git a/drivers/media/platform/qcom/camss/camss-vfe.c b/drivers/media/platform/qcom/camss/camss-vfe.c
+index 227028674..7bb4fe478 100644
+--- a/drivers/media/platform/qcom/camss/camss-vfe.c
++++ b/drivers/media/platform/qcom/camss/camss-vfe.c
+@@ -7,6 +7,7 @@
+  * Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
+  * Copyright (C) 2015-2018 Linaro Ltd.
+  */
++#define DEBUG
+ #include <linux/clk.h>
+ #include <linux/completion.h>
+ #include <linux/interrupt.h>
+@@ -28,7 +29,7 @@
+ #define MSM_VFE_NAME "msm_vfe"
+ 
+ /* VFE reset timeout */
+-#define VFE_RESET_TIMEOUT_MS 50
++#define VFE_RESET_TIMEOUT_MS 500
+ 
+ #define SCALER_RATIO_MAX 16
+ 
+@@ -740,6 +741,8 @@ int vfe_reserve_wm(struct vfe_device *vfe, enum vfe_line_id line_id)
+ 		}
+ 	}
+ 
++	printk("vfe_reserve_wm ret=%d\n", ret);
++
+ 	return ret;
+ }
+ 
+@@ -1069,8 +1072,10 @@ static int vfe_check_clock_rates(struct vfe_device *vfe)
+ 			camss_add_clock_margin(&min_rate);
+ 
+ 			rate = clk_get_rate(clock->clk);
+-			if (rate < min_rate)
++			if (rate < min_rate) {
++				printk(KERN_INFO "vfe_check_clock_rates name=%s rate=%lu min_rate=%llu\n", clock->name, rate, min_rate);
+ 				return -EBUSY;
++			}
+ 		}
+ 	}
+ 
+@@ -1826,7 +1831,7 @@ int msm_vfe_subdev_init(struct camss *camss, struct vfe_device *vfe,
+ 	}
+ 
+ 	/* Memory */
+-
++	printk(KERN_INFO "vfe physical memory is %s\n", res->reg[0]);
+ 	vfe->base = devm_platform_ioremap_resource_byname(pdev, res->reg[0]);
+ 	if (IS_ERR(vfe->base)) {
+ 		dev_err(dev, "could not map memory\n");
+@@ -1961,8 +1966,10 @@ static int vfe_link_setup(struct media_entity *entity,
+ 			  const struct media_pad *remote, u32 flags)
+ {
+ 	if (flags & MEDIA_LNK_FL_ENABLED)
+-		if (media_pad_remote_pad_first(local))
++		if (media_pad_remote_pad_first(local)) {
++			printk("vfe_link_set media_pad_remote_pad_first\n");
+ 			return -EBUSY;
++		}
+ 
+ 	return 0;
+ }
+diff --git a/drivers/media/platform/qcom/camss/camss-video.c b/drivers/media/platform/qcom/camss/camss-video.c
+index 0852eb6f1..a7db9e621 100644
+--- a/drivers/media/platform/qcom/camss/camss-video.c
++++ b/drivers/media/platform/qcom/camss/camss-video.c
+@@ -7,6 +7,7 @@
+  * Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
+  * Copyright (C) 2015-2018 Linaro Ltd.
+  */
++#define DEBUG
+ #include <linux/slab.h>
+ #include <media/media-entity.h>
+ #include <media/v4l2-dev.h>
+@@ -94,8 +95,10 @@ static int video_get_subdev_format(struct camss_video *video,
+ 	int ret;
+ 
+ 	subdev = video_remote_subdev(video, &pad);
+-	if (subdev == NULL)
++	if (subdev == NULL) {
++		printk(KERN_INFO "subdev is null\n");
+ 		return -EPIPE;
++	}
+ 
+ 	fmt.pad = pad;
+ 
+@@ -228,8 +231,10 @@ static int video_check_format(struct camss_video *video)
+ 	    pix->height != sd_pix->height ||
+ 	    pix->width != sd_pix->width ||
+ 	    pix->num_planes != sd_pix->num_planes ||
+-	    pix->field != format.fmt.pix_mp.field)
++	    pix->field != format.fmt.pix_mp.field) {
++		printk(KERN_INFO "format mismatch\n");
+ 		return -EPIPE;
++	}
+ 
+ 	return 0;
+ }
+@@ -240,6 +245,7 @@ static int video_prepare_streaming(struct vb2_queue *q)
+ 	struct video_device *vdev = &video->vdev;
+ 	int ret;
+ 
++	printk(KERN_INFO "video_prepare_streaming called\n");
+ 	ret = v4l2_pipeline_pm_get(&vdev->entity);
+ 	if (ret < 0) {
+ 		dev_err(video->camss->dev, "Failed to power up pipeline: %d\n",
+@@ -556,8 +562,10 @@ static int video_s_fmt(struct file *file, void *fh, struct v4l2_format *f)
+ 	struct camss_video *video = video_drvdata(file);
+ 	int ret;
+ 
+-	if (vb2_is_busy(&video->vb2_q))
++	if (vb2_is_busy(&video->vb2_q)) {
++		printk(KERN_INFO "video_s_fmt\n");
+ 		return -EBUSY;
++	}
+ 
+ 	ret = __video_try_fmt(video, f);
+ 	if (ret < 0)
+diff --git a/drivers/media/platform/qcom/camss/camss.c b/drivers/media/platform/qcom/camss/camss.c
+index e7ffc5292..a7da50959 100644
+--- a/drivers/media/platform/qcom/camss/camss.c
++++ b/drivers/media/platform/qcom/camss/camss.c
+@@ -1953,125 +1953,150 @@ static const struct resources_icc icc_res_sm6350[] = {
+ static const struct camss_subdev_resources csiphy_res_7150[] = {
+ 	/* CSIPHY0 */
+ 	{
+-		.regulators = {},
+-		.clock = { "cphy_rx_src", "csiphy0", "csiphy0_timer",
+-			   "csiphy0_timer_src" },
+-		.clock_rate = { { /*19200000,*/ 300000000, 384000000, 400000000 },	/* ftbl_cam_cc_cphy_rx_clk_src */
+-				{ /*19200000,*/ 300000000, 384000000, 400000000 },	/* shared */
+-				{ 300000000 },						/* from vendor dts */
++		.regulators = {
++			{ .supply = "vdda-phy", .init_load_uA = 0 },
++			{ .supply = "vdda-pll", .init_load_uA = 0 }
++		},
++		.clock = { "cphy_rx_src", "csiphy0", "csiphy0_timer_src", "csiphy0_timer" },
++		.clock_rate = { { 0 },
++				{ 300000000, 384000000, 400000000 },
++				{ 0 },	
+ 				{ 300000000 } },
+ 		.reg = { "csiphy0" },
+ 		.interrupt = { "csiphy0" },
+ 		.csiphy = {
++			.id = 0,
+ 			.hw_ops = &csiphy_ops_3ph_1_0,
+ 			.formats = &csiphy_formats_sdm845
+ 		}
+ 	},
+ 	/* CSIPHY1 */
+ 	{
+-		.regulators = {},
+-		.clock = { "cphy_rx_src", "csiphy1", "csiphy1_timer",
+-			   "csiphy1_timer_src" },
+-		.clock_rate = { { /*19200000,*/ 300000000, 384000000, 400000000 },	/* ftbl_cam_cc_cphy_rx_clk_src */
+-				{ /*19200000,*/ 300000000, 384000000, 400000000 },	/* shared */
+-				{ 300000000 },						/* from vendor dts */
++		.regulators = {
++			{ .supply = "vdda-phy", .init_load_uA = 0 },
++			{ .supply = "vdda-pll", .init_load_uA = 0 }
++		},
++		.clock = { "csiphy1", "csiphy1_timer" },
++		.clock_rate = { { 300000000, 384000000, 400000000 },
+ 				{ 300000000 } },
+ 		.reg = { "csiphy1" },
+ 		.interrupt = { "csiphy1" },
+ 		.csiphy = {
++			.id = 1,
+ 			.hw_ops = &csiphy_ops_3ph_1_0,
+ 			.formats = &csiphy_formats_sdm845
+ 		}
+ 	},
+ 	/* CSIPHY2 */
+ 	{
+-		.regulators = {},
+-		.clock = { "cphy_rx_src", "csiphy2", "csiphy2_timer",
+-			   "csiphy2_timer_src" },
+-		.clock_rate = { { /*19200000,*/ 300000000, 384000000, 400000000 },	/* ftbl_cam_cc_cphy_rx_clk_src */
+-				{ /*19200000,*/ 300000000, 384000000, 400000000 },	/* shared */
+-				{ 300000000 },						/* from vendor dts */
++		.regulators = {
++			{ .supply = "vdda-phy", .init_load_uA = 0 },
++			{ .supply = "vdda-pll", .init_load_uA = 0 }
++		},
++		.clock = { "csiphy2", "csiphy2_timer" },
++		.clock_rate = { { 19200000, 300000000, 384000000, 400000000 },
+ 				{ 300000000 } },
+ 		.reg = { "csiphy2" },
+ 		.interrupt = { "csiphy2" },
+ 		.csiphy = {
++			.id = 2,
+ 			.hw_ops = &csiphy_ops_3ph_1_0,
+ 			.formats = &csiphy_formats_sdm845
+ 		}
+ 	},
+ 	/* CSIPHY3 */
+ 	{
+-		.regulators = {},
+-		.clock = { "cphy_rx_src", "csiphy3", "csiphy3_timer",
+-			   "csiphy3_timer_src" },
+-		.clock_rate = { { /*19200000,*/ 300000000, 384000000, 400000000 },	/* ftbl_cam_cc_cphy_rx_clk_src */
+-				{ /*19200000,*/ 300000000, 384000000, 400000000 },	/* shared */
+-				{ 300000000 },						/* from vendor dts */
+-				{ 300000000 } },
++		.regulators = {
++			{ .supply = "vdda-phy", .init_load_uA = 0 },
++			{ .supply = "vdda-pll", .init_load_uA = 0 }
++		},
++		.clock = { "csiphy3", "csiphy3_timer_src", "csiphy3_timer", "cphy_rx_src" },
++		.clock_rate = { { 300000000, 384000000, 400000000 },
++				{ 0 },
++				{ 300000000 },
++				{ 0 } },
+ 		.reg = { "csiphy3" },
+ 		.interrupt = { "csiphy3" },
+ 		.csiphy = {
++			.id = 3,
+ 			.hw_ops = &csiphy_ops_3ph_1_0,
+ 			.formats = &csiphy_formats_sdm845
+-		}
+-	}
++		},
++	},
+ };
+ 
+ static const struct camss_subdev_resources csid_res_7150[] = {
+ 	/* CSID0 */
+ 	{
+-		.regulators = { "vdda-phy", "vdda-pll" },
+-		.clock = { "cphy_rx_src", "vfe0_axi", "vfe0", "vfe0_src",
+-			   "vfe0_cphy_rx", "vfe0_csid", "vfe0_csid_src", },
+-		.clock_rate = { { /*19200000,*/ 300000000, 384000000, 400000000, },		/* ftbl_cam_cc_cphy_rx_clk_src */
+-				{ 0 },								/* on/off only */
+-				{ /*19200000,*/ 380000000, 510000000, 637000000, 760000000 },	/* ftbl_cam_cc_ife_0_clk_src */
+-				{ /*19200000,*/ 380000000, 510000000, 637000000, 760000000 },	/* ftbl_cam_cc_ife_0_clk_src */
+-				{ /*19200000,*/ 300000000, 38400000, 400000000 },		/* ftbl_camcc_cphy_rx_clk_src */
+-				{ /*19200000,*/ 75000000, 300000000, 384000000, 400000000 },	/* ftbl_cam_cc_ife_0_csid_clk_src */
+-				{ /*19200000,*/ 75000000, 300000000, 384000000, 400000000 } },	/* ftbl_cam_cc_ife_0_csid_clk_src */
++		.regulators = {},
++		.clock = { "vfe0_csid", "vfe0_cphy_rx", "vfe0" },
++		.clock_rate = { { 300000000, 384000000, 400000000 },
++				{ 0 },
++				{ 380000000, 510000000, 637000000, 760000000 } },
+ 		.reg = { "csid0" },
+ 		.interrupt = { "csid0" },
+ 		.csid = {
++			.is_lite = false,
+ 			.hw_ops = &csid_ops_gen2,
+ 			.parent_dev_ops = &vfe_parent_dev_ops,
+ 			.formats = &csid_formats_gen2
+-		}
++		},
+ 	},
+ 	/* CSID1 */
+ 	{
+-		.regulators = { "vdda-phy", "vdda-pll" },
+-		.clock = { "cphy_rx_src", "vfe0_axi", "vfe1", "vfe1_src",
+-			   "vfe1_cphy_rx", "vfe1_csid", "vfe0_csid_src", },
+-		.clock_rate = { { /*19200000,*/ 300000000, 384000000, 400000000, },		/* ftbl_cam_cc_cphy_rx_clk_src */
+-				{ 0 },								/* on/off only */
+-				{ /*19200000,*/ 380000000, 510000000, 637000000, 760000000 },	/* ftbl_cam_cc_ife_0_clk_src */
+-				{ /*19200000,*/ 380000000, 510000000, 637000000, 760000000 },	/* ftbl_cam_cc_ife_0_clk_src */
+-				{ /*19200000,*/ 300000000, 38400000, 400000000 },		/* ftbl_camcc_cphy_rx_clk_src */
+-				{ /*19200000,*/ 75000000, 300000000, 384000000, 400000000 },	/* ftbl_cam_cc_ife_0_csid_clk_src */
+-				{ /*19200000,*/ 75000000, 300000000, 384000000, 400000000 } },	/* ftbl_cam_cc_ife_0_csid_clk_src */
++		.regulators = {},
++		.clock = { "vfe1_csid", "vfe1_cphy_rx", "vfe1" },
++		.clock_rate = { { 300000000, 384000000, 400000000 },
++				{ 0 },
++				{ 380000000, 510000000, 637000000, 760000000 } },
+ 		.reg = { "csid1" },
+ 		.interrupt = { "csid1" },
+ 		.csid = {
++			.is_lite = false,
+ 			.hw_ops = &csid_ops_gen2,
+ 			.parent_dev_ops = &vfe_parent_dev_ops,
+ 			.formats = &csid_formats_gen2
+ 		}
+-	}
++	},
++	/* CSID2 (lite) */
++	/* TODO */
+ };
+ 
+ static const struct camss_subdev_resources vfe_res_7150[] = {
+ 	/* VFE0 */
+ 	{
+ 		.regulators = {},
+-		.clock = { "vfe0", "vfe0_src", "vfe0_axi"},
+-		.clock_rate = { { 19200000, 380000000, 510000000, 637000000, 760000000 },	/* ftbl_cam_cc_ife_0_clk_src */
+-				{ /*19200000,*/ 380000000, 510000000, 637000000, 760000000 },	/* ftbl_cam_cc_ife_0_clk_src */
+-				{ 0 } },							 /* on/off only */
++		.clock = {
++			"cam_hf_axi",
++			"cam_sf_axi",
++			"slow_ahb_src",
++			"cpas_ahb",
++			"vfe0",
++			"vfe0_src",
++			"vfe0_axi",
++			"vfe0_cphy_rx",
++			"vfe0_csid_src",
++			"vfe0_csid",
++			"camnoc_axi_src",
++			"camnoc_axi",
++		},
++		.clock_rate = { { 0 },
++				{ 0 },
++				{ 19200000, 80000000 },
++				{ 0 },
++				{ /*19200000, 380000000,*/ 510000000, 637000000, 760000000 },
++				{ /*19200000, 380000000,*/ 510000000, 637000000, 760000000 },
++				{ 0 },
++				{ 19200000, 300000000, 38400000, 400000000 },
++				{ 19200000, 75000000, 300000000, 384000000, 400000000 },
++				{ 19200000, 75000000, 300000000, 384000000, 400000000 },
++				{ 19200000, 150000000, 240000000, 320000000, 400000000, 480000000 },
++				{ 19200000, 150000000, 240000000, 320000000, 400000000, 480000000 } },
+ 		.reg = { "vfe0" },
+ 		.interrupt = { "vfe0" },
+ 		.vfe = {
+-			.line_num = 4,
++			.line_num = 3,
++			.is_lite = false,
+ 			.has_pd = true,
+ 			.pd_name = "ife0",
+ 			.hw_ops = &vfe_ops_170, /* 175 */
+@@ -2084,12 +2109,13 @@ static const struct camss_subdev_resources vfe_res_7150[] = {
+ 		.regulators = {},
+ 		.clock = { "vfe1", "vfe1_src", "vfe1_axi"},
+ 		.clock_rate = { { 19200000, 380000000, 510000000, 637000000, 760000000 },	/* ftbl_cam_cc_ife_0_clk_src */
+-				{ /*19200000,*/ 380000000, 510000000, 637000000, 760000000 },	/* ftbl_cam_cc_ife_0_clk_src */
++				{ 19200000, 380000000, 510000000, 637000000, 760000000 },	/* ftbl_cam_cc_ife_0_clk_src */
+ 				{ 0 } },
+ 		.reg = { "vfe1" },
+ 		.interrupt = { "vfe1" },
+ 		.vfe = {
+-			.line_num = 4,
++			.line_num = 3,
++			.is_lite = false,
+ 			.has_pd = true,
+ 			.pd_name = "ife1",
+ 			.hw_ops = &vfe_ops_170, /* 175 */
+@@ -2102,12 +2128,12 @@ static const struct camss_subdev_resources vfe_res_7150[] = {
+ 		.regulators = {},
+ 		.clock = { "vfe_lite", "vfe_lite_src", },
+ 		.clock_rate = { { 19200000, 320000000, 400000000, 480000000, 600000000 },
+-				{ /*19200000,*/ 320000000, 400000000, 480000000, 600000000 }, },
++				{ 19200000, 320000000, 400000000, 480000000, 600000000 }, },
+ 		.reg = { "vfe_lite" },
+ 		.interrupt = { "vfe_lite" },
+ 		.vfe = {
+-			.is_lite = true,
+ 			.line_num = 4,
++			.is_lite = true,
+ 			.hw_ops = &vfe_ops_170, /* 175 */
+ 			.formats_rdi = &vfe_formats_rdi_845,
+ 			.formats_pix = &vfe_formats_pix_845
+@@ -5849,12 +5875,11 @@ static const struct camss_resources sm7150_resources = {
+ 	.csiphy_res = csiphy_res_7150,
+ 	.csid_res = csid_res_7150,
+ 	.vfe_res = vfe_res_7150,
+-	//.icc_res = icc_res_sm7150,
+-	//.icc_path_num = ARRAY_SIZE(icc_res_sm7150),
++	.icc_res = icc_res_sm7150,
++	.icc_path_num = ARRAY_SIZE(icc_res_sm7150),
+ 	.csiphy_num = ARRAY_SIZE(csiphy_res_7150),
+ 	.csid_num = ARRAY_SIZE(csid_res_7150),
+ 	.vfe_num = ARRAY_SIZE(vfe_res_7150),
+-	.link_entities = camss_link_entities
+ };
+ 
+ static const struct camss_resources sm8250_resources = {
+diff --git a/drivers/media/v4l2-core/v4l2-subdev.c b/drivers/media/v4l2-core/v4l2-subdev.c
+index e9f81b9be..cee179667 100644
+--- a/drivers/media/v4l2-core/v4l2-subdev.c
++++ b/drivers/media/v4l2-core/v4l2-subdev.c
+@@ -7,7 +7,7 @@
+  * Contact: Laurent Pinchart <laurent.pinchart@ideasonboard.com>
+  *	    Sakari Ailus <sakari.ailus@iki.fi>
+  */
+-
++#define DEBUG
+ #include <linux/export.h>
+ #include <linux/ioctl.h>
+ #include <linux/leds.h>
+-- 
+2.43.0
+

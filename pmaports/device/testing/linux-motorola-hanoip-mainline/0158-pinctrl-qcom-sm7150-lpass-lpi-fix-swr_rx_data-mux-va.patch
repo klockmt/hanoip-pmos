@@ -1,0 +1,50 @@
+From 6e127609275b4e3f2dac364c89b4e3654c7065a7 Mon Sep 17 00:00:00 2001
+From: Artem Hutsaliuk <artemgutsaliukv@gmail.com>
+Date: Mon, 10 Aug 2026 02:51:05 -0500
+Subject: [PATCH 158/194] pinctrl: qcom: sm7150-lpass-lpi: fix swr_rx_data mux
+ value on GPIO5
+
+The second SoundWire RX data line has the same off-by-one slot as GPIO1
+had for TX: the vendor device tree programs func2 for gpio23, while
+listing swr_rx_data third in LPI_PINGROUP() makes the driver select 3.
+
+This one hides better than the TX case. The RX bus enumerates either way
+and the codec attaches, so everything looks healthy until playback data
+actually flows - the controller then raises MASTER_CLASH_DET and the
+stream dies after a fraction of a second. On a device whose loudspeaker
+hangs off an external amplifier and not off the codec, that can go
+unnoticed for a long time: the earpiece is the only thing behind the RX
+bus.
+
+Tested on a Xiaomi Mi 9T (SM7150-AA, WCD9375): before, playback to the
+earpiece produced a short burst and silence, with bit 3 set in the
+controller's interrupt status; after, the clash is gone and the earpiece
+plays cleanly.
+
+Signed-off-by: Artem Hutsaliuk <artemgutsaliukv@gmail.com>
+---
+ drivers/pinctrl/qcom/pinctrl-sm7150-lpass-lpi.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/drivers/pinctrl/qcom/pinctrl-sm7150-lpass-lpi.c b/drivers/pinctrl/qcom/pinctrl-sm7150-lpass-lpi.c
+index 0b268ac08..c3cb508e6 100644
+--- a/drivers/pinctrl/qcom/pinctrl-sm7150-lpass-lpi.c
++++ b/drivers/pinctrl/qcom/pinctrl-sm7150-lpass-lpi.c
+@@ -92,6 +92,14 @@ static const struct lpi_pingroup sm7150_groups[] = {
+ 	LPI_PINGROUP(2, 4, slimbus_data, swr_tx_data, _, _),
+ 	LPI_PINGROUP(3, 8, slimbus_data, swr_rx_clk, _, _),
+ 	LPI_PINGROUP(4, 10, slimbus_data, swr_rx_data, prim_mclk_a, _),
++	/*
++	 * Same off-by-one slot as GPIO1 above, on the second SoundWire RX data
++	 * line: the vendor tree programs func2 for gpio23, while listing
++	 * swr_rx_data third here makes the driver select 3. The bus enumerates
++	 * either way, so this only shows up once playback data actually flows -
++	 * the controller then reports MASTER_CLASH_DET and the stream dies
++	 * after a fraction of a second.
++	 */
+ 	LPI_PINGROUP(5, 6, qua_mi2s_sclk, swr_rx_data, _, swr_tx_data),
+ 	LPI_PINGROUP(6, LPI_NO_SLEW, qua_mi2s_ws, cdc_pdm_rx, _, _),
+ 	LPI_PINGROUP(7, LPI_NO_SLEW, qua_mi2s_data, _, _, _),
+-- 
+2.43.0
+

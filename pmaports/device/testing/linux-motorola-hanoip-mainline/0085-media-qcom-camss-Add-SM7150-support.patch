@@ -1,0 +1,62 @@
+From 7293beeb5a1c69474c33d0c136aae76f263c0182 Mon Sep 17 00:00:00 2001
+From: Danila Tikhonov <danila@jiaxyga.com>
+Date: Wed, 10 Apr 2024 21:01:35 +0300
+Subject: [PATCH 085/194] media: qcom: camss: Add SM7150 support
+
+Add in functional logic throughout the code to support the SM7150.
+
+Signed-off-by: Danila Tikhonov <danila@jiaxyga.com>
+---
+ drivers/media/platform/qcom/camss/camss-csid.c           | 2 +-
+ drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c | 1 +
+ drivers/media/platform/qcom/camss/camss-vfe.c            | 2 ++
+ 3 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/media/platform/qcom/camss/camss-csid.c b/drivers/media/platform/qcom/camss/camss-csid.c
+index 48459b46a..d97cc21b1 100644
+--- a/drivers/media/platform/qcom/camss/camss-csid.c
++++ b/drivers/media/platform/qcom/camss/camss-csid.c
+@@ -1113,7 +1113,7 @@ int msm_csid_subdev_init(struct camss *camss, struct csid_device *csid,
+ 
+ 	/* Memory */
+ 
+-	if (camss->res->version == CAMSS_8250) {
++	if (camss->res->version == CAMSS_8250 || camss->res->version == CAMSS_7150) {
+ 		/* for titan 480, CSID registers are inside the VFE region,
+ 		 * between the VFE "top" and "bus" registers. this requires
+ 		 * VFE to be initialized before CSID
+diff --git a/drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c b/drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c
+index 555d7e266..669765df4 100644
+--- a/drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c
++++ b/drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c
+@@ -1252,6 +1252,7 @@ static bool csiphy_is_gen2(u32 version)
+ 	case CAMSS_2290:
+ 	case CAMSS_6150:
+ 	case CAMSS_6350:
++	case CAMSS_7150:
+ 	case CAMSS_7280:
+ 	case CAMSS_8250:
+ 	case CAMSS_8280XP:
+diff --git a/drivers/media/platform/qcom/camss/camss-vfe.c b/drivers/media/platform/qcom/camss/camss-vfe.c
+index 319d19158..227028674 100644
+--- a/drivers/media/platform/qcom/camss/camss-vfe.c
++++ b/drivers/media/platform/qcom/camss/camss-vfe.c
+@@ -344,6 +344,7 @@ static u32 vfe_src_pad_code(struct vfe_line *line, u32 sink_code,
+ 	case CAMSS_2290:
+ 	case CAMSS_6150:
+ 	case CAMSS_6350:
++	case CAMSS_7150:
+ 	case CAMSS_7280:
+ 	case CAMSS_8x96:
+ 	case CAMSS_8250:
+@@ -2005,6 +2006,7 @@ static int vfe_bpl_align_rdi(struct vfe_device *vfe)
+ 	switch (vfe->camss->res->version) {
+ 	case CAMSS_6150:
+ 	case CAMSS_6350:
++	case CAMSS_7150:
+ 	case CAMSS_7280:
+ 	case CAMSS_8250:
+ 	case CAMSS_8280XP:
+-- 
+2.43.0
+

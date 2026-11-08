@@ -20,5 +20,5 @@ fi
 run git -C "$PMAPORTS_DIR" update-ref refs/remotes/origin/main "$commit"
 run mkdir -p "$PMAPORTS_DIR/device"
 run cp -r "$HANOIP_ROOT/pmaports/device/." "$PMAPORTS_DIR/device/"
-echo "pmaports ready in $PMAPORTS_DIR at $commit with device-motorola-hanoip and linux-motorola-hanoip."
+echo "pmaports ready in $PMAPORTS_DIR at $commit with device-motorola-hanoip, linux-motorola-hanoip and linux-motorola-hanoip-mainline."
 echo "Next: run '$PMBOOTSTRAP -p $PMAPORTS_DIR init' once (interactive), then scripts/configure-pmbootstrap."
