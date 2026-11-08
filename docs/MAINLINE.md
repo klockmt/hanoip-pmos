@@ -220,6 +220,11 @@ counts a failed boot of slot a. It cannot flash.
   started. The Volume Down menu stops it first (not tried).
 - **Boot deadline:** stage 1 reboots a root that has not written `/run/hanoip-ml-up` (local.d's last step) 5 minutes
   after `switch_root`, and leaves the OpenRC services and the kernel log in `/var/log/hanoip-ml-deadline.log`.
+- **Slot a marks itself:** after a complete boot from slot a, `98-hanoip-ml-slot.start` runs `qbootctl -m a`, which
+  marks every partition of slot a and writes back the GPTs of LUN 4 and LUN 2 (`xbl_a`), as the 4.14 does for slot b
+  at every boot; the guard lends it only those whole disks (approved by the user on 2026-11-08). The slot comes from
+  the ABL's command line, which U-Boot leaves in the DT as `u-boot,abl-bootargs`; a boot from the PC says `_b` and
+  marks nothing.
 - **Toolchain:** a container of the base's toolchain (its Dockerfile: Ubuntu 24.04, GCC 13.3) rebuilt its validated
   `u-boot.bin` and its image byte for byte (the payload is deflate level 6). `scripts/build-mainline-uboot` uses the
   host's GCC 16.2, and that build is the one that booted below.
@@ -236,6 +241,8 @@ How it was found, with `fastboot boot` from the ABL and slot b active up to S4 (
 | S2, S3 | the same with the boot deadline (S3: the root fixed as below) | SSH over USB in 84 s, then the tailnet; chrony in sync; S3 with no log flood and its whole boot in `dmesg` |
 | S4 | the same after an unclean reboot out of mainline, no `e2fsck` | SSH over USB in 93 s; the kernel replayed the journal |
 | S5 | slot a itself: `fastboot set_active a`, `fastboot reboot`, no PC after that | USB gadget at 20 s, SSH over USB at 113 s, the tailnet, chrony in sync; back in the ABL `current-slot` was `a` and slot a's retry count had gone from 7 to 6. Then `set_active b`: the 4.14 server came back with every service, and `qbootctl -m` marked b successful again (`set_active` clears it) |
+| S6 | RAM boot with slot b active, the slot marking in the root | the ABL's slot read as `_b`, nothing marked, the dead man on; `qbootctl` with no arguments tried to write the GPT and the guard stopped it |
+| S7 | slot a with the slot marking | SSH at 113 s, no dead man. `boot_a`'s attributes went from `0x32` (retry 6) to `0x77` (active, retry 6, successful) and the ABL then said `slot-successful:_a: yes`; read back on both sides, the GPTs of LUN 4 and LUN 2 kept valid CRCs and backups with only A/B bits changed, and `boot`, `vendor_boot` and `dtbo` of both slots kept their hashes. Back on slot b, both slots are successful |
 
 Fixed on the way, each with a test (`docs/PITFALLS.md`): the pending key at autoboot, `scsi read` on LUN 0, a watchdog
 that U-Boot fed and then stopped, a root stall nothing reset, `mainline-make-root` failing on an unclean root (the 4.14
@@ -245,8 +252,6 @@ write about 30 times a second.
 Still open:
 - The mainline root is not the server yet: AdGuard Home, Samba, Syncthing, the Telegram bot and `hanoip-status` run
   only on the 4.14, so slot b is active again.
-- Nothing marks slot a successful from mainline: that writes the GPT, outside what a mainline boot may write. The ABL
-  will go back to slot b once slot a's retries (6) run out.
 - The cause of the S1 stall. It did not happen in S2 to S4; the deadline now reboots it and leaves a log.
 - LUN 0 (16 MB) answers slowly under mainline: its partitions show up 27 s into the boot, and stage 1 finds super at
   33 to 47 s.
