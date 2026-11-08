@@ -6,6 +6,7 @@
 # - super is opened only through a loop bounded to the region (bounded-loop), and only if it holds ext4 "hanoip_ml";
 # - the hardware watchdog is fed from here on (the daemon keeps its open /dev/watchdog across switch_root), so a
 #   hung kernel resets the phone back to the server;
+# - a root that has not finished its boot (local.d's last step) 5 minutes after switch_root is rebooted;
 # - if anything fails, a shell on 172.16.42.1:2323 (USB only) and a 10-minute dead man that reboots to the server.
 OFF=1174405120   # 1120 MiB into super
 SIZE=2516582400  # 2400 MiB
@@ -69,6 +70,26 @@ rescue() {
 	while :; do sleep 3600; done
 }
 
+# start_deadline DIR SECONDS: reboot after SECONDS unless the root in DIR writes run/hanoip-ml-up (its last local.d
+# step). A root that stalled before local.d (2026-11-08) never reset, since the daemon keeps feeding the watchdog.
+# The subshell keeps its working directory in the new root across switch_root, which empties the initramfs, so it
+# runs only shell builtins from then on: read -t on a FIFO waits, and proc/ and dev/ are the ones moved into the root.
+# Before rebooting it leaves var/log/hanoip-ml-deadline.log (the OpenRC services and the kernel log) for the server
+# to read; if the disk itself hangs, the inner subshell reboots 20 s later anyway.
+start_deadline() {
+	mkfifo /tmp/deadline || return
+	exec 8<>/tmp/deadline
+	( cd "$1" || exit; read -t "$2" x <&8 || true; [ -e run/hanoip-ml-up ] && exit
+	  echo "[hanoip-stage1] boot deadline: no /run/hanoip-ml-up after $2 s, rebooting" >> dev/kmsg
+	  ( read -t 20 x <&8 || true; echo b >> proc/sysrq-trigger ) &
+	  { for f in run/openrc/starting/* run/openrc/started/*; do echo "$f"; done
+	    while read -t 1 -r l; do echo "$l"; done < dev/kmsg; } > var/log/hanoip-ml-deadline.log
+	  echo s >> proc/sysrq-trigger; read -t 2 x <&8 || true
+	  echo u >> proc/sysrq-trigger; read -t 2 x <&8 || true
+	  echo b >> proc/sysrq-trigger ) &
+	exec 8>&-
+}
+
 M=/lib/modules/$(uname -r)
 for m in ufshcd-core ufshcd-pltfrm ufs-qcom; do modprobe "$m" 2>/dev/null || modprobe "$(echo "$m" | tr - _)" || rescue "modprobe $m failed"; done
 i=0
@@ -93,5 +114,6 @@ log "switching to the root in super's region"
 lock_all
 kill $guard
 umount /dev/pts /sys/kernel/config 2>/dev/null
+start_deadline /newroot 300
 for m in dev proc sys; do mount --move /$m /newroot/$m; done
 exec switch_root /newroot /sbin/init

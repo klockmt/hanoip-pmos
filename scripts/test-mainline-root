@@ -49,4 +49,46 @@ grep -qF 'case $n in loop7|"$s"|"$disk") continue ;; esac' "$g" || fail "the gua
 grep -q 'blockdev --setro' "$g" || fail "the guard does not lock the other disks"
 grep -qF 'sleep 900; [ -e /run/hanoip-ml-keep ]' "$ov/etc/local.d/20-hanoip-deadman.start" || fail "no 15-minute dead man"
 grep -qF '"$c" -lt 50' "$ov/etc/local.d/30-hanoip-battery.start" || fail "no battery floor"
+
+# The boot deadline (2026-11-08: a root that stalled before local.d sat 10 minutes with no usb0 and no Wi-Fi while
+# the daemon kept feeding the watchdog). Stage 1 starts it on the new root just before switch_root; local.d's last
+# script writes the marker.
+up=$ov/etc/local.d/99-hanoip-ml-up.start
+[ -x "$up" ] && grep -qx 'touch /run/hanoip-ml-up' "$up" || fail "nothing tells stage 1's deadline that the root came up"
+a=$(grep -n '^start_deadline /newroot 300$' "$init" | cut -d: -f1)
+b=$(grep -n '^exec switch_root ' "$init" | cut -d: -f1)
+[ -n "$a" ] && [ -n "$b" ] && [ "$a" -lt "$b" ] || fail "stage 1 does not start a 5-minute boot deadline on the new root before switch_root"
+# Run the function itself the way switch_root leaves it: the FIFO deleted, the new root moved, /run a new tmpfs.
+if unshare -rm true 2>/dev/null; then
+	dl=$(sed -n '/^start_deadline() {/,/^}/p' "$init")
+	[ -n "$dl" ] || fail "no start_deadline() in $init"
+	for mark in 1 0; do
+		res=$(unshare -rm sh -c '
+			set -eu
+			mount -t tmpfs none /tmp
+			b=/tmp/b; mkdir -p $b/new $b/moved
+			mount -t tmpfs none $b/new
+			mkdir -p $b/new/run $b/new/proc $b/new/dev $b/new/var/log
+			echo "6,1,1,-;test-kmsg-line" > $b/new/dev/kmsg
+			eval "$1"
+			start_deadline $b/new 1
+			rm -f /tmp/deadline
+			mount --move $b/new $b/moved
+			mount -t tmpfs none $b/moved/run
+			mkdir -p $b/moved/run/openrc/starting && touch $b/moved/run/openrc/starting/fakesvc
+			[ "$2" = 1 ] && touch $b/moved/run/hanoip-ml-up
+			wait
+			l=$b/moved/var/log/hanoip-ml-deadline.log
+			s=$(cat $b/moved/proc/sysrq-trigger 2>/dev/null | tr -d "\n")
+			grep -q "starting/fakesvc" $l 2>/dev/null && grep -q "test-kmsg-line" $l && s="$s+log"
+			echo "$s"' sh "$dl" "$mark")
+		case $mark:$res in
+			1:) ;;
+			0:sub+log) ;;
+			*) fail "boot deadline with marker=$mark: sysrq and log '$res' (want nothing with the marker, sub+log without)" ;;
+		esac
+	done
+else
+	echo "skip  the boot-deadline run (no user namespaces here)"
+fi
 echo "ok    test-mainline-root"
