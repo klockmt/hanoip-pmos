@@ -50,6 +50,9 @@ grep -qF 'rc-update del hwclock boot' "$mk" && grep -q 'swclock; do chroot $MNT 
 # The PMIC arbiter does not let Linux write the RTC: with chrony's rtcsync the kernel retried it about 30 times a
 # second, a "disallowed SPMI write" each, which pushed the whole boot out of the kernel log (2026-11-08).
 grep -qF "sed -i '/^rtcsync/d' \$MNT/etc/chrony/chrony.conf" "$mk" || fail "chrony's rtcsync would make the kernel retry the RTC write"
+# scripts/reboot-bootloader runs hanoip-reboot-bootloader: without it a mainline boot had no way back to the ABL.
+grep -qx 'install -m755 /usr/bin/hanoip-reboot-bootloader $MNT/usr/bin/hanoip-reboot-bootloader' "$mk" ||
+	fail "the root has no hanoip-reboot-bootloader"
 
 # The guards of the root: other disks read-only, the dead man, the battery floor.
 g=$ov/etc/local.d/05-hanoip-ml-guard.start

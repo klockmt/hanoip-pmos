@@ -92,6 +92,8 @@ mkdir -p $MNT/etc/ssh/sshd_config.d $MNT/etc/sudoers.d
 cp /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub $MNT/etc/ssh/
 cp /etc/ssh/sshd_config.d/60-hanoip-keys-only.conf $MNT/etc/ssh/sshd_config.d/
 echo '%wheel ALL=(ALL:ALL) ALL' > $MNT/etc/sudoers.d/wheel; chmod 440 $MNT/etc/sudoers.d/wheel
+# The way back to the ABL's fastboot from mainline (scripts/reboot-bootloader): the device package's helper.
+install -m755 /usr/bin/hanoip-reboot-bootloader $MNT/usr/bin/hanoip-reboot-bootloader
 
 # Vendor firmware, where the mainline DT asks for it (firmware-name), plus the hanoip WLAN board file for ath10k.
 fw=$MNT/lib/firmware/qcom/sm7150/motorola/hanoip
