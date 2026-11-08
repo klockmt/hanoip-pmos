@@ -206,6 +206,50 @@ Wi-Fi had no source, which left the clock in 1974 and Tailscale logged out.
 Not there yet: the server's own services (AdGuard Home, Samba, Syncthing, the Telegram bot, `hanoip-status`), the USB
 host for the NAS disk, and a boot that does not need the PC.
 
+## 7d. 2026-11-08: U-Boot in `boot_a` boots the mainline root
+
+`boot_a` now holds the base's U-Boot at its start, built by `scripts/build-mainline-uboot`, and 16 MiB in the kernel
+image of `INIT=super-root scripts/mainline-ram-image`; `scripts/mainline-boot-a-image` packs the two. The ABL starts that
+U-Boot as it starts any kernel. U-Boot scans the UFS, finds `boot_a` by name (LUN 4, partition 22), reads 32 MiB from
+16 MiB in and boots it with the DTB built into U-Boot, as `fastboot boot` does. If that fails it resets, and the ABL
+counts a failed boot of slot a. It cannot flash.
+
+- **Watchdog:** it starts with U-Boot, nothing in U-Boot feeds it, and the handoff no longer stops it
+  (`kernel/mainline/uboot/0001-leave-the-watchdog-running-for-the-kernel.patch`): the kernel's `qcom_wdt` finds it
+  running and pings it until stage 1 opens `/dev/watchdog`. U-Boot programs 30 s; it bit about 50 s after U-Boot
+  started. The Volume Down menu stops it first (not tried).
+- **Boot deadline:** stage 1 reboots a root that has not written `/run/hanoip-ml-up` (local.d's last step) 5 minutes
+  after `switch_root`, and leaves the OpenRC services and the kernel log in `/var/log/hanoip-ml-deadline.log`.
+- **Toolchain:** a container of the base's toolchain (its Dockerfile: Ubuntu 24.04, GCC 13.3) rebuilt its validated
+  `u-boot.bin` and its image byte for byte (the payload is deflate level 6). `scripts/build-mainline-uboot` uses the
+  host's GCC 16.2, and that build is the one that booted below.
+
+How it was found, all with `fastboot boot` from the ABL and slot b active (nothing flashed except `boot_a`):
+
+| Run | What booted | What happened |
+|---|---|---|
+| first try | the persistent U-Boot | sat at its `=>` prompt for good (the user saw it); power key held |
+| D1, D3, D2 | debug builds with fastboot or the serial gadget, watchdog unfed | no gadget; reset by the watchdog |
+| T3 | the base's exact config, only the watchdog unfed | fastboot at 3.2 s. U-Boot's console (`fastboot oem console`): `stop autoboot:  0 ^H^H^H 0`, a key already pending, then `Timeout waiting for command`, which his `bootretry=1` recovers from and our `-1` did not |
+| D2 again | `bootdelay=-2`, `scsi dev` before `scsi read` | UFS at gear 3 with 6 LUNs, `boot_a` = LUN 4 partition 22, 8192 blocks read, CRC `acab4da4` equal to the image, then the root up to SSH |
+| S1 | the server build, U-Boot never touching USB | kernel and USB gadget up in 4 s, then the root stalled before `local.d` (no `usb0`, no Wi-Fi) for 10 minutes; power key held |
+| S2, S3 | the same with the boot deadline (S3: the root fixed as below) | SSH over USB in 84 s, then the tailnet; chrony in sync; S3 with no log flood and its whole boot in `dmesg` |
+| S4 | the same after an unclean reboot out of mainline, no `e2fsck` | SSH over USB in 93 s; the kernel replayed the journal |
+
+Fixed on the way, each with a test (`docs/PITFALLS.md`): the pending key at autoboot, `scsi read` on LUN 0, a watchdog
+that U-Boot fed and then stopped, a root stall nothing reset, `mainline-make-root` failing on an unclean root (the 4.14
+kernel cannot mount an ext4 whose orphan file holds inodes), and chrony's `rtcsync`, which made the kernel retry the RTC
+write about 30 times a second.
+
+Still open:
+- Booting slot a itself (`fastboot set_active a`). Above, the ABL RAM-booted this same U-Boot, which read `boot_a`.
+- Nothing marks slot a successful from mainline: that writes the GPT, outside what a mainline boot may write. The ABL
+  will go back to slot b once slot a's retries (6) run out.
+- The cause of the S1 stall. It did not happen in S2 to S4; the deadline now reboots it and leaves a log.
+- LUN 0 (16 MB) answers slowly under mainline: its partitions show up 27 s into the boot, and stage 1 finds super at
+  33 to 47 s.
+- `tailscale ping` gets no reply from this node; SSH over the tailnet works.
+
 ## 8. Commands used to reproduce (first attempt)
 ```
 # Running DTB
