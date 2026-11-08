@@ -4,7 +4,7 @@
 pkgname=device-motorola-hanoip
 pkgdesc="Motorola Moto G (60)"
 pkgver=0
-pkgrel=40
+pkgrel=41
 _qrtr_rev=29e36ae164389580a0f8ea7a7fdb728140ae978d
 _pdmapper_rev=5ecd2fe926aca7abfe40724177f63b942cff3947
 url="https://postmarketos.org"
@@ -58,6 +58,7 @@ source="
 	hanoip-tqftpserv.initd
 	hanoip-watchdog
 	hanoip-watchdog.initd
+	org.freedesktop.login1.service
 	pd-mapper-subsys-fallback.patch
 	tqftpserv-subsys-fallback.patch
 	qrtr-1.0.tar.gz::https://github.com/linux-msm/qrtr/archive/refs/tags/v1.0.tar.gz
@@ -116,6 +117,7 @@ package() {
 	install -Dm755 "$srcdir/hanoip-thermal.initd" "$pkgdir/etc/init.d/hanoip-thermal"
 	install -Dm755 "$srcdir/hanoip-watchdog" "$pkgdir/usr/bin/hanoip-watchdog"
 	install -Dm755 "$srcdir/hanoip-watchdog.initd" "$pkgdir/etc/init.d/hanoip-watchdog"
+	install -Dm644 "$srcdir/org.freedesktop.login1.service" "$pkgdir/usr/share/device-motorola-hanoip/org.freedesktop.login1.service"
 
 	# Modem and Wi-Fi userspace; modem() below moves it into its own subpackage.
 	install -Dm755 "$srcdir/hanoip-qrtr-ns" "$pkgdir/usr/bin/hanoip-qrtr-ns"
@@ -180,6 +182,7 @@ e2718a5060419afccb775e70f07e91cd28df068b59e7712c9d1caa490869726f24655d9e22dc1b8c
 9aa163137d78b802f924cb38341102abd7c36129689220587a1b4a26bc528c23ac27de7cff6c85f266d059a30d41df3a25c45b2f03cbdaaffacb083fee619619  hanoip-tqftpserv.initd
 d73f8a395f5f4a886322cc6dc042b1bbe5cdd0f0a7f92123350874b312f7884b52d7031bcd08299a1adece5f22abc2705be9b04f2b987f746c8af466c2502e61  hanoip-watchdog
 833a8bef7313c05857e423034ade9dc22724e850e2d5eff5f583cb779d370586b732acaa8e452c9acfca213b798fc1310e78ff1c2a5b3e2ddca9e0ac6b6cab3d  hanoip-watchdog.initd
+123071b96bb753cb017c28959fdc8f9a7bb479fd837ba46709a97409b40b86a66861de5ff4cf4a3520bb5fc64d570828e30f358268fb787995034d86e0d6acfd  org.freedesktop.login1.service
 777d1dfc321840b6569981fc552742bac0b6c64e48f68c458775121fc1056017c371903862657de2c16eb98ff8942e9d3fbb52261735341ab172ed60752eba20  pd-mapper-subsys-fallback.patch
 0669d496aaa63bc654f8ea63b6f51426035e72b587d11ed17cd960b07a341ecbf705fdbd93fb04f0e07b6ed11f7c93a25148446b7c4bc266778ae9ad2f54f6b0  tqftpserv-subsys-fallback.patch
 67d1da9821dc6589504d9d04ad8efbb589f81db70e1fbcdbf5f8ae809428967f09c070c62233a296f39909f4313db8d2215507d3612ff3d8f2d87c4513abe324  qrtr-1.0.tar.gz
