@@ -83,11 +83,11 @@ Nura's `device/community/linux-postmarketos-qcom-sm7150/APKBUILD`:
 
 ### 2. The device package for mainline
 
-**State (2026-11-08, `beta`):** done in commit f5281e7. The subpackage `kernel_mainline` now comes first and depends
+**State (2026-11-08, `beta`):** done in commits f5281e7 and 284fe19. The subpackage `kernel_mainline` now comes first and depends
 on `linux-motorola-hanoip-mainline`; `deviceinfo` has the mainline overrides (`deviceinfo_dtb_mainline`,
 `deviceinfo_kernel_cmdline_mainline`, `deviceinfo_generate_bootimg_mainline="false"`,
 `deviceinfo_flash_kernel_on_update_mainline="false"`). Firmware stays local (gitignored, from `$HANOIP_COLLECTION_DIR`).
-- Test: extend `scripts/test-deviceinfo` for the mainline overrides.
+- Test: `scripts/test-deviceinfo` extended for the mainline overrides (commit 284fe19).
 
 ### 3. systemd units for the phone's own pieces
 
