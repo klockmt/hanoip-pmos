@@ -60,6 +60,19 @@ printf 'sha512sums="\n%s  linux-x.tar.xz\n%s  y.tar.gz\n%s  gone.patch\n"\n' "$z
 out=$(cd "$dir/a" && sh scripts/check-repo 2>&1 || true)
 echo "$out" | grep -qF 'missing source: pmaports/device/testing/x/gone.patch' || { echo "FAIL: a missing local source is not reported" >&2; bad=1; }
 if echo "$out" | grep -qE 'missing source: .*\.tar\.(gz|xz)'; then echo "FAIL: a downloaded tarball is reported as a missing source" >&2; bad=1; fi
+# A source that sits next to the APKBUILD but was never committed builds on this PC and fails on a clean clone.
+rm -rf "$dir/t"; mkdir -p "$dir/t/scripts" "$dir/t/pmaports/device/testing/y"
+cp "$src" "$dir/t/scripts/check-repo"
+printf 'a line\n' > "$dir/t/pmaports/device/testing/y/tracked.patch"
+printf 'a line\n' > "$dir/t/pmaports/device/testing/y/untracked.patch"
+sum=$(sha512sum "$dir/t/pmaports/device/testing/y/tracked.patch" | cut -d' ' -f1)
+printf 'sha512sums="\n%s  tracked.patch\n%s  untracked.patch\n"\n' "$sum" "$sum" > "$dir/t/pmaports/device/testing/y/APKBUILD"
+(cd "$dir/t" && git init -q && printf '.env\n' > .gitignore &&
+	git add .gitignore pmaports/device/testing/y/APKBUILD pmaports/device/testing/y/tracked.patch)
+out=$(cd "$dir/t" && sh scripts/check-repo 2>&1 || true)
+echo "$out" | grep -qF 'untracked source: pmaports/device/testing/y/untracked.patch' ||
+	{ echo "FAIL: a source git does not track is not reported" >&2; bad=1; }
+if echo "$out" | grep -qE '(^|[^a-z])tracked\.patch'; then echo "FAIL: a tracked source is reported" >&2; bad=1; fi
 # The real .gitignore: what must stay out, and what must stay in (.env.example is the template for .env). Git runs
 # without the user's global ignore file, which would hide a missing pattern.
 rm -rf "$dir/g"; mkdir -p "$dir/g"; cp .gitignore "$dir/g/"; (cd "$dir/g" && git init -q)
