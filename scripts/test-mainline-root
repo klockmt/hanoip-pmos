@@ -43,8 +43,18 @@ grep -qF '[ "$(cat "$r/name")" = modem ] && [ "$(cat "$r/state")" = offline ] &&
 	fail "nothing starts the modem"
 # The clock: no RTC (it read 1974), chrony up before the Wi-Fi had no source, and Tailscale's TLS failed (2026-11-07).
 d=$ov/etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony
-[ -x "$d" ] && grep -qF '[ "$2" = up ] || exit 0' "$d" && (grep -qF 'rc-service chronyd restart' "$d" || grep -qF 'systemctl restart chronyd' "$d") ||
-	fail "nothing restarts chronyd when the network comes up"
+[ -x "$d" ] || fail "$d is not executable (NetworkManager runs only a dispatcher it may execute)"
+# This root runs OpenRC: run the dispatcher with stand-ins and nothing else on PATH (never the PC's own systemctl).
+t=$(mktemp -d)
+trap 'rm -rf "$t"' EXIT
+for c in rc-service chronyc sleep; do printf '#!/bin/sh\necho "%s $*" >> "%s/calls"\n' "$c" "$t" > "$t/$c"; chmod +x "$t/$c"; done
+PATH=$t /bin/sh "$d" wlan0 down
+[ ! -e "$t/calls" ] || fail "the chrony dispatcher acts on a connection going down"
+PATH=$t /bin/sh "$d" wlan0 up
+i=0; while ! grep -qx 'chronyc makestep' "$t/calls" 2>/dev/null && [ $i -lt 50 ]; do i=$((i + 1)); /bin/sleep 0.1; done
+grep -qx 'rc-service chronyd restart' "$t/calls" 2>/dev/null ||
+	fail "nothing restarts chronyd under OpenRC when the network comes up"
+grep -qx 'chronyc makestep' "$t/calls" || fail "the chrony dispatcher does not step the clock once chronyd has a source"
 grep -qF 'rc-update del hwclock boot' "$mk" && grep -q 'swclock; do chroot $MNT rc-update add $s boot' "$mk" ||
 	fail "the root still sets the clock from the RTC instead of swclock"
 # The PMIC arbiter does not let Linux write the RTC: with chrony's rtcsync the kernel retried it about 30 times a
