@@ -83,15 +83,10 @@ Nura's `device/community/linux-postmarketos-qcom-sm7150/APKBUILD`:
 
 ### 2. The device package for mainline
 
-- `device-motorola-hanoip-kernel-mainline` depends on the new kernel instead of `linux-postmarketos-qcom-sm7150`.
-  `pmaports.py` takes the **first** kernel subpackage, so mainline goes first (the 4.14 keeps working through
-  `pmbootstrap config kernel downstream`).
-- Per-kernel `deviceinfo` overrides (`deviceinfo_<variable>_mainline`): `deviceinfo_dtb_mainline=
-  "qcom/sm7150-motorola-hanoip"`, a mainline command line (no downstream arguments; keep `panic=5`, add the boot
-  console), no Android boot image for the EFI path, and `deviceinfo_rootfs_image_sector_size="4096"` (UFS).
-- Firmware: the vendor blobs (`adsp`, `modem`, `ipa_fws`, `wlanmdsp.mbn`, `bdwlan_hanoip_ipa.bin` as ath10k's
-  `board.bin`, under `qcom/sm7150/motorola/hanoip/`) cannot be published. Build a firmware package only locally,
-  from files taken off the phone into `$HANOIP_COLLECTION_DIR`, gitignored, never pushed.
+**State (2026-11-08, `beta`):** done in commit f5281e7. The subpackage `kernel_mainline` now comes first and depends
+on `linux-motorola-hanoip-mainline`; `deviceinfo` has the mainline overrides (`deviceinfo_dtb_mainline`,
+`deviceinfo_kernel_cmdline_mainline`, `deviceinfo_generate_bootimg_mainline="false"`,
+`deviceinfo_flash_kernel_on_update_mainline="false"`). Firmware stays local (gitignored, from `$HANOIP_COLLECTION_DIR`).
 - Test: extend `scripts/test-deviceinfo` for the mainline overrides.
 
 ### 3. systemd units for the phone's own pieces
