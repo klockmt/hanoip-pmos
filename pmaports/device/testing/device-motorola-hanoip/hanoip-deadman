@@ -1,0 +1,8 @@
+#!/bin/sh
+# Back to the server 15 minutes after a test boot unless someone ran: sudo touch /run/hanoip-ml-keep
+# A boot from slot a is not a test: it stays up (the boot deadline and the watchdog cover a hang),
+# since rebooting it would only boot slot a again.
+{ tr '\0 ' '\n\n' < "${HANOIP_ML_ABL_ARGS:-/proc/device-tree/chosen/u-boot,abl-bootargs}"; } 2>/dev/null |
+    sed -n 's/^androidboot\.slot_suffix=//p' | head -1 | grep -qx _a && exit 0
+
+( sleep 900; [ -e /run/hanoip-ml-keep ] || { logger -t hanoip-ml "dead man: rebooting to the server"; reboot; } ) &
