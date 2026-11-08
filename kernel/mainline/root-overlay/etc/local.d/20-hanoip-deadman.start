@@ -1,0 +1,3 @@
+#!/bin/sh
+# Back to the server 15 minutes after boot unless someone ran: sudo touch /run/hanoip-ml-keep
+( sleep 900; [ -e /run/hanoip-ml-keep ] || { logger -t hanoip-ml "dead man: rebooting to the server"; reboot; } ) &

@@ -1,0 +1,12 @@
+#!/bin/sh
+# Mainline does not charge: under 50 % (or 3.6 V) go back to the 4.14 server, which does.
+for m in qcom-spmi-adc5 nvmem_qcom-spmi-sdam qcom_smbx qcom_qg; do modprobe $m 2>/dev/null; done
+(
+	q=/sys/class/power_supply/qcom_qg
+	while :; do
+		sleep 60
+		c=$(cat $q/capacity 2>/dev/null) || continue
+		v=$(cat $q/voltage_now 2>/dev/null || echo 4000000)
+		if [ "$c" -lt 50 ] || [ "$v" -lt 3600000 ]; then logger -t hanoip-ml "battery $c % $v uV: rebooting to the server"; reboot; fi
+	done
+) &

@@ -1,30 +1,36 @@
 #!/bin/sh
 # Writes the mainline development root into the approved region of super (AGENTS.md: offset 1120 MiB, 2400 MiB),
-# from the running 4.14 server, which does the work as root with its own apk. Alpine edge plus the pmOS repository,
-# OpenRC, SSH with the server's user, key and host keys (so the PC sees the same host), the modules of
-# scripts/build-mainline-kernel, and three guards: every other disk read-only, a reboot back to the server 15 minutes
-# after boot unless /run/hanoip-ml-keep exists, and a reboot back to the server when the battery falls under 50 %
-# (mainline does not charge). super is hashed outside the region before and after, and the run fails if that changed.
-# Boot it with INIT=super-root scripts/mainline-ram-image. DRY_RUN=1 only prints the plan.
+# from the running 4.14 server, which does the work as root with its own apk: Alpine edge plus the pmOS repository,
+# OpenRC, the modules of scripts/build-mainline-kernel and kernel/mainline/root-overlay (guards, the modem and Wi-Fi
+# service, the module blacklist). From the server itself, without passing through the PC: the user, key and SSH host
+# keys (so the PC sees the same host), the vendor firmware for the modem, ADSP, IPA and WLAN, the Wi-Fi profile and
+# MAC, the Tailscale state and the nftables rules, and the generic SMEM 134 values of its command line.
+# super is hashed outside the region before and after, and the run fails if that changed.
+# Boot it with INIT=super-root scripts/mainline-ram-image. Re-running updates the root. DRY_RUN=1 only prints the plan.
 set -eu
 . "$(dirname "$0")/env.sh"
 dir=$(dirname "$0")
 OFF=1174405120
 SIZE=2516582400
-PKGS="alpine-base openssh-server sudo kmod e2fsprogs chrony unudhcpd"
+PKGS="alpine-base openssh-server sudo kmod e2fsprogs chrony unudhcpd dbus networkmanager networkmanager-wifi
+networkmanager-cli wpa_supplicant rmtfs tqftpserv linux-firmware-ath10k wireless-regdb tailscale nftables iw"
+PKGS=$(echo $PKGS)
 if [ -n "${DRY_RUN:-}" ]; then
 	echo "+ check that the phone runs the 4.14 server and that super is not in use"
-	echo "+ pv -L 1m modules-*.tar.gz | hanoip-ssh 'cat > /var/tmp/hanoip-ml-modules.tar.gz'"
+	echo "+ pv -L 1m modules-*.tar.gz and kernel/mainline/root-overlay | hanoip-ssh 'cat > /var/tmp/...'"
 	echo "+ hanoip-sudo: hash super outside [$OFF, +$SIZE); losetup -o $OFF --sizelimit $SIZE; mkfs.ext4 -L hanoip_ml if new"
-	echo "+ hanoip-sudo: apk --root add $PKGS; configure users, SSH, guards; umount; hash super again and compare"
+	echo "+ hanoip-sudo: apk --root add $PKGS; overlay; firmware, Wi-Fi, Tailscale, nftables and SSH from the server"
+	echo "+ hanoip-sudo: umount; hash super again and compare"
 	exit 0
 fi
 k=${HANOIP_MAINLINE_DIR:-$HANOIP_SRC_DIR/hanoip-mainline-7.3}
 mods=$(ls "$k"/out/modules-*.tar.gz 2>/dev/null | head -1)
 [ -n "$mods" ] || { echo "missing $k/out/modules-*.tar.gz (run scripts/build-mainline-kernel)" >&2; exit 1; }
 case $("$dir/hanoip-ssh" 'uname -r') in 4.14.*) ;; *) echo "the phone is not running the 4.14 server" >&2; exit 1 ;; esac
-echo "uploading $(basename "$mods") (1 MB/s)"
+echo "uploading $(basename "$mods") and the overlay (1 MB/s)"
 pv -L 1m -q "$mods" | "$dir/hanoip-ssh" 'cat > /var/tmp/hanoip-ml-modules.tar.gz'
+tar -C "$HANOIP_ROOT/kernel/mainline/root-overlay" --owner=0 --group=0 -czf - . | pv -L 1m -q |
+	"$dir/hanoip-ssh" 'cat > /var/tmp/hanoip-ml-overlay.tar.gz'
 echo "running on the phone as root"
 
 phone=$(cat <<'EOF'
@@ -61,11 +67,13 @@ apk --root $MNT --initdb --arch aarch64 add $PKGS
 mkdir -p $MNT/lib/modules
 rm -rf $MNT/lib/modules/*
 tar -C $MNT/lib/modules -xzf /var/tmp/hanoip-ml-modules.tar.gz
+tar -C $MNT --no-same-owner -xzf /var/tmp/hanoip-ml-overlay.tar.gz
 echo hanoip-ml > $MNT/etc/hostname
 printf '127.0.0.1\tlocalhost hanoip-ml\n::1\tlocalhost hanoip-ml\n' > $MNT/etc/hosts
 printf '/dev/loop7\t/\text4\trw,noatime\t0 0\n' > $MNT/etc/fstab
 printf 'auto lo\niface lo inet loopback\n' > $MNT/etc/network/interfaces
 grep -q ttyGS0 $MNT/etc/inittab || echo 'ttyGS0::respawn:/sbin/getty -L 115200 ttyGS0 vt100' >> $MNT/etc/inittab
+
 # The same user, key and host keys as the server: hanoip-ssh and the PC's known_hosts work unchanged.
 for f in passwd group shadow; do
 	l=$(grep "^$U:" /etc/$f) || fail "$U is not in /etc/$f"
@@ -81,55 +89,44 @@ mkdir -p $MNT/etc/ssh/sshd_config.d $MNT/etc/sudoers.d
 cp /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub $MNT/etc/ssh/
 cp /etc/ssh/sshd_config.d/60-hanoip-keys-only.conf $MNT/etc/ssh/sshd_config.d/
 echo '%wheel ALL=(ALL:ALL) ALL' > $MNT/etc/sudoers.d/wheel; chmod 440 $MNT/etc/sudoers.d/wheel
-cat > $MNT/etc/local.d/05-hanoip-ml-guard.start <<'GUARD'
-#!/bin/sh
-# Every block device read-only except super, the disk that holds it and loop7 (the root): userdata is the server.
-super_dev() { for d in /sys/class/block/sd*; do grep -qx 'PARTNAME=super' "$d/uevent" 2>/dev/null && { echo "${d##*/}"; return; }; done; }
-lock() {
-	s=$(super_dev); disk=$(basename "$(dirname "$(readlink -f "/sys/class/block/$s")")")
-	for d in /sys/class/block/*; do
-		n=${d##*/}
-		case $n in loop7|"$s"|"$disk") continue ;; esac
-		[ "$(cat "$d/ro" 2>/dev/null)" = 1 ] || blockdev --setro "/dev/$n" 2>/dev/null
-	done
-}
-( while :; do lock; sleep 2; done ) >/dev/null 2>&1 &
-GUARD
-cat > $MNT/etc/local.d/10-hanoip-usb.start <<'USB'
-#!/bin/sh
-# The USB gadget (NCM) is set up by stage 1; give it the server's address and hand the PC 172.16.42.2.
-ip addr add 172.16.42.1/24 dev usb0 2>/dev/null; ip link set usb0 up
-( unudhcpd -i usb0 -s 172.16.42.1 -c 172.16.42.2 >/dev/null 2>&1 & )
-USB
-cat > $MNT/etc/local.d/20-hanoip-deadman.start <<'DEAD'
-#!/bin/sh
-# Back to the server 15 minutes after boot unless someone ran: sudo touch /run/hanoip-ml-keep
-( sleep 900; [ -e /run/hanoip-ml-keep ] || { logger -t hanoip-ml "dead man: rebooting to the server"; reboot; } ) &
-DEAD
-cat > $MNT/etc/local.d/30-hanoip-battery.start <<'BAT'
-#!/bin/sh
-# Mainline does not charge: under 50 % (or 3.6 V) go back to the 4.14 server, which does.
-for m in qcom-spmi-adc5 nvmem_qcom-spmi-sdam qcom_smbx qcom_qg; do modprobe $m 2>/dev/null; done
-(
-	q=/sys/class/power_supply/qcom_qg
-	while :; do
-		sleep 60
-		c=$(cat $q/capacity 2>/dev/null) || continue
-		v=$(cat $q/voltage_now 2>/dev/null || echo 4000000)
-		if [ "$c" -lt 50 ] || [ "$v" -lt 3600000 ]; then logger -t hanoip-ml "battery $c % $v uV: rebooting to the server"; reboot; fi
-	done
-) &
-BAT
-chmod 755 $MNT/etc/local.d/*.start
+
+# Vendor firmware, where the mainline DT asks for it (firmware-name), plus the hanoip WLAN board file for ath10k.
+fw=$MNT/lib/firmware/qcom/sm7150/motorola/hanoip
+mkdir -p $fw $MNT/lib/firmware/ath10k/WCN3990/hw1.0
+cp /lib/firmware/adsp.* /lib/firmware/modem.* /lib/firmware/ipa_fws.* /lib/firmware/wlanmdsp.mbn $fw/
+cp /lib/firmware/bdwlan_hanoip_ipa.bin $MNT/lib/firmware/ath10k/WCN3990/hw1.0/board.bin
+# SMEM item 134 for the modem: the generic values of this model and region, from the 4.14 command line (no serial).
+get() { tr ' ' '\n' < /proc/cmdline | sed -n "s/^androidboot\.$1=//p" | head -1; }
+printf 'options hanoip_mmi_unit_info device=%s carrier=%s baseband=%s radio_str=%s system_rev=%s powerup_reason=%s\n' \
+	"$(get device)" "$(get carrier)" "$(get baseband)" "$(get radio)" "$(get hwrev)" "$(get powerup_reason)" \
+	> $MNT/etc/modprobe.d/hanoip-mmi.conf
+# Wi-Fi: the server's profiles and its real MAC (ath10k on mainline picks a random one); Tailscale: the same node.
+mkdir -p $MNT/etc/NetworkManager/system-connections $MNT/var/lib/tailscale
+cp -a /etc/NetworkManager/system-connections/. $MNT/etc/NetworkManager/system-connections/
+chmod 600 $MNT/etc/NetworkManager/system-connections/* 2>/dev/null || true
+mac=$(cat /sys/class/net/wlan0/address 2>/dev/null || true)
+[ -n "$mac" ] && printf '[connection]\nwifi.cloned-mac-address=%s\n' "$mac" > $MNT/etc/NetworkManager/conf.d/hanoip-ml-mac.conf
+cp -a /var/lib/tailscale/. $MNT/var/lib/tailscale/
+[ -f /etc/conf.d/tailscale ] && cp /etc/conf.d/tailscale $MNT/etc/conf.d/tailscale
+cp /etc/nftables.nft $MNT/etc/nftables.nft
+mkdir -p $MNT/etc/nftables.d
+cp -a /etc/nftables.d/. $MNT/etc/nftables.d/
+
+chmod 755 $MNT/etc/local.d/*.start $MNT/etc/init.d/hanoip-ml-modem
 # The pmOS repository brings eudev, which adds udev to sysinit itself: mdev would fight it over /dev.
 for s in mdev hwdrivers; do chroot $MNT rc-update del $s sysinit >/dev/null 2>&1 || true; done
 for s in devfs dmesg; do chroot $MNT rc-update add $s sysinit >/dev/null; done
 # Also from the pmOS repository: swapfile would make a 1 GiB swap file in this 2.4 GB root, and unudhcpd.usb0
-# duplicates 10-hanoip-usb.start.
+# duplicates 10-hanoip-usb.start. rmtfs, tqftpserv and pd-mapper run from hanoip-ml-modem instead.
 chroot $MNT rc-update del swapfile default >/dev/null 2>&1 || true
 chroot $MNT rc-update del unudhcpd.usb0 boot >/dev/null 2>&1 || true
-for s in modules sysctl hostname bootmisc syslog; do chroot $MNT rc-update add $s boot >/dev/null; done
-for s in sshd chronyd local; do chroot $MNT rc-update add $s default >/dev/null; done
+for s in rmtfs tqftpserv pd-mapper qrtr-ns; do
+	for l in boot default; do chroot $MNT rc-update del $s $l >/dev/null 2>&1 || true; done
+done
+for s in modules sysctl hostname bootmisc syslog nftables; do chroot $MNT rc-update add $s boot >/dev/null; done
+for s in sshd chronyd local dbus hanoip-ml-modem networkmanager tailscale; do
+	chroot $MNT rc-update add $s default >/dev/null
+done
 for s in killprocs savecache mount-ro; do chroot $MNT rc-update add $s shutdown >/dev/null; done
 sync
 umount $MNT
@@ -138,7 +135,7 @@ trap - EXIT
 after=$(outside)
 echo "super outside the region after:  $after"
 [ "$before" = "$after" ] || fail "super changed outside the region"
-rm -f /var/tmp/hanoip-ml-modules.tar.gz
+rm -f /var/tmp/hanoip-ml-modules.tar.gz /var/tmp/hanoip-ml-overlay.tar.gz
 echo "root written: ext4 $LABEL at $OFF + $SIZE of $DEV"
 EOF
 )
