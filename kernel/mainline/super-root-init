@@ -1,0 +1,97 @@
+#!/bin/busybox sh
+# Stage 1 of the mainline development system on the hanoip (docs/MAINLINE.md). Boots the root that
+# scripts/mainline-make-root writes into the approved region of super (AGENTS.md), and nothing else:
+# - every block device is forced read-only, the whole time, except super and the disk that holds it; userdata
+#   (the server) and every other partition stay read-only by their own flag;
+# - super is opened only through a loop bounded to the region (bounded-loop), and only if it holds ext4 "hanoip_ml";
+# - the hardware watchdog is fed from here on (the daemon keeps its open /dev/watchdog across switch_root), so a
+#   hung kernel resets the phone back to the server;
+# - if anything fails, a shell on 172.16.42.1:2323 (USB only) and a 10-minute dead man that reboots to the server.
+OFF=1174405120   # 1120 MiB into super
+SIZE=2516582400  # 2400 MiB
+LABEL=hanoip_ml
+/bin/busybox --install -s /bin
+mkdir -p /proc /sys /dev /tmp /run /newroot
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev 2>/dev/null
+mkdir -p /dev/pts
+mount -t devpts devpts /dev/pts
+mount -t configfs none /sys/kernel/config
+log() { echo "[hanoip-stage1] $*" > /dev/kmsg; }
+log "init started, kernel $(uname -r)"
+
+# The partition named super, and the disk it is on: the only two block devices left writable.
+super_dev() { for d in /sys/class/block/sd*; do grep -qx 'PARTNAME=super' "$d/uevent" 2>/dev/null && { echo "${d##*/}"; return; }; done; }
+lock_all() {
+	s=$(super_dev)
+	disk=
+	[ -n "$s" ] && disk=$(basename "$(dirname "$(readlink -f "/sys/class/block/$s")")")
+	for d in /sys/class/block/*; do
+		n=${d##*/}
+		[ -e "$d/ro" ] || continue
+		case $n in loop7) continue ;; esac   # the bounded loop on super's region
+		[ -n "$s" ] && { [ "$n" = "$s" ] || [ "$n" = "$disk" ]; } && continue
+		[ "$(cat "$d/ro")" = 1 ] || blockdev --setro "/dev/$n" 2>/dev/null
+	done
+}
+lock_all
+# The loop that keeps locking starts only once super is known (start_guard): run while the UFS LUNs probe, it
+# locked super and its disk before their names showed up, and lock_all never unlocks (2026-11-07). Stage 2 runs its
+# own guard (05-hanoip-ml-guard), since this loop cannot see /sys once the root is switched.
+guard=
+start_guard() { [ -n "$guard" ] && return; ( while :; do lock_all; sleep 1; done ) & guard=$!; }
+
+[ -e /dev/watchdog ] && watchdog -T 30 -t 5 /dev/watchdog && log "feeding /dev/watchdog"
+
+G=/sys/kernel/config/usb_gadget/hanoip
+mkdir -p $G/strings/0x409 $G/configs/c.1/strings/0x409
+echo 0x18d1 > $G/idVendor
+echo 0xd001 > $G/idProduct
+echo "hanoip-mainline" > $G/strings/0x409/serialnumber
+echo "hanoip mainline" > $G/strings/0x409/product
+echo "ncm+acm" > $G/configs/c.1/strings/0x409/configuration
+mkdir -p $G/functions/ncm.usb0 $G/functions/acm.usb0
+ln -s $G/functions/ncm.usb0 $G/configs/c.1/
+ln -s $G/functions/acm.usb0 $G/configs/c.1/
+i=0
+while [ -z "$(ls /sys/class/udc 2>/dev/null)" ] && [ $i -lt 60 ]; do sleep 1; i=$((i+1)); done
+echo "$(ls /sys/class/udc | head -1)" > $G/UDC && log "gadget bound"
+
+rescue() {
+	log "rescue: $*"
+	start_guard
+	i=0
+	while [ ! -d /sys/class/net/usb0 ] && [ $i -lt 30 ]; do sleep 1; i=$((i+1)); done
+	ifconfig usb0 172.16.42.1 netmask 255.255.255.0 up
+	( while :; do nc -lk -s 172.16.42.1 -p 2323 -e /bin/sh; sleep 1; done ) &
+	( sleep 600; [ -e /tmp/keep ] || { log "dead man: nobody logged in, rebooting"; sync; reboot -f; } ) &
+	while :; do sleep 3600; done
+}
+
+M=/lib/modules/$(uname -r)
+for m in ufshcd-core ufshcd-pltfrm ufs-qcom; do modprobe "$m" 2>/dev/null || modprobe "$(echo "$m" | tr - _)" || rescue "modprobe $m failed"; done
+i=0
+while [ -z "$(super_dev)" ] && [ $i -lt 60 ]; do sleep 1; i=$((i+1)); done
+s=$(super_dev)
+[ -n "$s" ] || rescue "no partition named super"
+# Let the other LUNs settle, then make sure super and its disk are the writable ones and lock everything else.
+n0=; for i in 1 2 3 4 5 6; do n1=$(ls /sys/class/block | wc -l); [ "$n1" = "$n0" ] && break; n0=$n1; sleep 1; done
+disk=$(basename "$(dirname "$(readlink -f "/sys/class/block/$s")")")
+blockdev --setrw "/dev/$disk" && blockdev --setrw "/dev/$s" || rescue "cannot make /dev/$s writable"
+lock_all
+start_guard
+log "super is /dev/$s on $disk"
+
+bounded-loop /dev/loop7 "/dev/$s" $OFF $SIZE || rescue "bounded-loop failed"
+[ "$(cat /sys/block/loop7/loop/offset)" = $OFF ] && [ "$(cat /sys/block/loop7/loop/sizelimit)" = $SIZE ] ||
+	rescue "loop7 is not bounded to the region"
+blkid /dev/loop7 | grep -q "LABEL=\"$LABEL\".*TYPE=\"ext4\"" || rescue "no ext4 $LABEL in the region"
+mount -t ext4 -o rw,noatime /dev/loop7 /newroot || rescue "mount failed"
+[ -x /newroot/sbin/init ] || { umount /newroot; rescue "no /sbin/init in the region"; }
+log "switching to the root in super's region"
+lock_all
+kill $guard
+umount /dev/pts /sys/kernel/config 2>/dev/null
+for m in dev proc sys; do mount --move /$m /newroot/$m; done
+exec switch_root /newroot /sbin/init

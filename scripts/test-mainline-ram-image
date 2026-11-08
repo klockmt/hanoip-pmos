@@ -1,6 +1,7 @@
 #!/bin/sh
-# Checks the RAM-only mainline test image (no phone needed): the safety rules of kernel/mainline/ram-test-init, and
-# that scripts/mainline-ram-image packs fake inputs into a header-v2 image whose DTB sits where U-Boot looks for it.
+# Checks the mainline boot images (no phone needed): the safety rules of kernel/mainline/ram-test-init and
+# super-root-init, and that scripts/mainline-ram-image packs fake inputs into a header-v2 image whose DTB sits where
+# U-Boot looks for it.
 set -eu
 cd "$(dirname "$0")/.."
 init=kernel/mainline/ram-test-init
@@ -22,8 +23,42 @@ echo "$code" | grep -q 'sleep 600; \[ -e /tmp/keep \] || {.*reboot -f' || fail "
 echo "$code" | grep -q 'nc -lk -s 172.16.42.1 -p 2323 -e /bin/sh' || fail "the nc shell is not bound to 172.16.42.1"
 grep -q 'panic=5 oops=panic' scripts/mainline-ram-image || fail "the image command line lacks panic=5 oops=panic"
 
-if ! command -v mkbootimg >/dev/null 2>&1 || ! command -v cpio >/dev/null 2>&1; then
-	echo "ok    test-mainline-ram-image (packing skipped: no mkbootimg or cpio)"
+# super-root-init: only the approved region of super is ever opened, through the bounded loop, and only if it holds
+# ext4 "hanoip_ml"; everything but super and its disk stays read-only (AGENTS.md).
+s1=kernel/mainline/super-root-init
+code1=$(grep -v '^[[:space:]]*#' "$s1")
+echo "$code1" | grep -q '^OFF=1174405120\b' || fail "the region offset is not 1120 MiB"
+echo "$code1" | grep -q '^SIZE=2516582400\b' || fail "the region size is not 2400 MiB"
+echo "$code1" | grep -q 'bounded-loop /dev/loop7 "/dev/$s" $OFF $SIZE' || fail "super is not opened through the bounded loop"
+echo "$code1" | grep -q 'loop/sizelimit)" = $SIZE' || fail "the loop size limit is not checked"
+if echo "$code1" | grep -q 'losetup'; then fail "super-root-init uses losetup (no size limit)"; fi
+# One command per line, so a second mount after a ";" is looked at on its own.
+other=$(echo "$code1" | tr ';&|' '\n\n\n' | grep -E '(^|[[:space:]])mount ' | grep -v -e 'mount -t proc proc /proc' \
+	-e 'mount -t sysfs sysfs /sys' -e 'mount -t devtmpfs devtmpfs /dev' -e 'mount -t devpts devpts /dev/pts' \
+	-e 'mount -t configfs none /sys/kernel/config' -e 'mount --move /$m /newroot/$m' \
+	-e 'mount -t ext4 -o rw,noatime /dev/loop7 /newroot' || true)
+[ -z "$other" ] || fail "super-root-init mounts something other than the bounded loop: $other"
+lbl=$(echo "$code1" | grep -n 'blkid /dev/loop7' | cut -d: -f1)
+mnt=$(echo "$code1" | grep -n 'mount -t ext4' | cut -d: -f1)
+[ -n "$lbl" ] && [ -n "$mnt" ] && [ "$lbl" -lt "$mnt" ] || fail "the label is not checked before the mount"
+echo "$code1" | grep -q 'blockdev --setro' || fail "super-root-init does not lock the other disks"
+# The loop that keeps locking may start only once super is known: started while the UFS LUNs probed, it locked super
+# and its disk before their names showed up, and the root failed to mount with I/O errors (2026-11-07).
+[ "$(echo "$code1" | grep -c 'while :; do lock_all; sleep 1; done')" = 1 ] &&
+	echo "$code1" | grep 'while :; do lock_all; sleep 1; done' | grep -q '^start_guard()' ||
+	fail "the locking loop is started outside start_guard"
+main=$(echo "$code1" | awk '/^rescue\(\) \{/ { skip = 1 } !skip { print } skip && /^}/ { skip = 0 }')
+sd=$(echo "$main" | grep -n '^s=$(super_dev)$' | head -1 | cut -d: -f1)
+g=$(echo "$main" | grep -n '^start_guard$' | head -1 | cut -d: -f1)
+rw=$(echo "$main" | grep -n 'blockdev --setrw "/dev/$s"' | head -1 | cut -d: -f1)
+bl=$(echo "$main" | grep -n '^bounded-loop ' | head -1 | cut -d: -f1)
+[ -n "$sd" ] && [ -n "$g" ] && [ "$g" -gt "$sd" ] || fail "the locking loop starts before super is known"
+[ -n "$rw" ] && [ -n "$bl" ] && [ "$rw" -lt "$bl" ] || fail "super is not made writable before the bounded loop"
+echo "$code1" | grep -q 'watchdog -T 30 -t 5 /dev/watchdog' || fail "super-root-init does not feed the hardware watchdog"
+echo "$code1" | grep -q 'sleep 600; \[ -e /tmp/keep \] || {.*reboot -f' || fail "the rescue path has no dead man"
+
+if ! command -v mkbootimg >/dev/null 2>&1 || ! command -v cpio >/dev/null 2>&1 || ! command -v "${CROSS_COMPILE:-aarch64-linux-gnu-}gcc" >/dev/null 2>&1; then
+	echo "ok    test-mainline-ram-image (packing skipped: no mkbootimg, cpio or aarch64 gcc)"
 	exit 0
 fi
 dir=$(mktemp -d)
