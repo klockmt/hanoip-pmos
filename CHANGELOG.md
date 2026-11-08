@@ -11,6 +11,7 @@ Up to v0.1.14 the notes lived only in the message of each annotated tag; this fi
 ## [Unreleased]
 
 ### Added
+- `docs/MAINLINE.md`, section 7b: the mainline root in super's free region boots to OpenRC and SSH over USB (73 s), with only `super`, its disk and the root loop writable. No firmware in it yet, so no Wi-Fi or modem (#6).
 - `scripts/mainline-make-root`: writes the mainline development root into super's approved region from the running 4.14 server (Alpine edge plus the pmOS repository, OpenRC, SSH with the server's user and host keys, our 7.3 modules, and guards that lock the other disks, reboot to the server after 15 minutes unless someone logs in and when the battery falls under 50 %). It hashes super outside the region before and after and fails if anything there changed; `DRY_RUN=1` prints the plan (#6).
 - `kernel/mainline/super-root-init` (`INIT=super-root scripts/mainline-ram-image`) and `kernel/mainline/bounded-loop.c`: stage 1 of the mainline root in super's approved region. It locks every other disk read-only, feeds the hardware watchdog, opens the region only through a loop bounded in offset and size, checks the label and switches to OpenRC; on failure it falls back to a USB shell with a dead man (#6).
 - `docs/MAINLINE.md`, section 7: our own 7.3 build boots the same way, its modules load (UFS read-only, battery), and an unfed hardware watchdog (`qcom_wdt`, 30 s) resets the phone back to the server by itself, which answered SSH 42 s after the reset. U-Boot takes images up to 112 MiB (#6).

@@ -142,6 +142,35 @@ printf 'touch /tmp/keep\n' | socat -t 5 - TCP:172.16.42.1:2323   # stops the 10-
 # ... back to the server: printf 'reboot -f\n' | socat -t 3 - TCP:172.16.42.1:2323; nmcli device set <usb interface> managed yes
 ```
 
+## 7b. 2026-11-07: a persistent mainline root in super's free region
+
+The user approved one place for a mainline root that survives reboots: the unallocated region of `super` (`sdb23`)
+after `product_a`, where no `system_a` exists (read with `lpdump` from the backup). It is used at offset 1120 MiB,
+2400 MiB (AGENTS.md), ext4 labelled `hanoip_ml`. The LP metadata, the Android volumes and every other partition are
+never written, and the server on `userdata` is untouched.
+
+- `scripts/mainline-make-root` writes it from the running 4.14 server: a loop device with `--sizelimit`, `mkfs.ext4`
+  only if the region holds nothing, then `apk --root` with Alpine edge plus the pmOS repository (144 packages,
+  125 MB: OpenRC, eudev, OpenSSH, chrony, unudhcpd, sudo), our 7.3 modules, the server's user, key and SSH host keys,
+  and three `local.d` guards: every other disk read-only, a reboot back to the server 15 minutes after boot unless
+  `/run/hanoip-ml-keep` exists, and a reboot back to the server under 50 % battery or 3.6 V. It hashes `super` outside
+  the region before and after; two runs left those hashes equal to the backup's.
+- `INIT=super-root scripts/mainline-ram-image` packs `kernel/mainline/super-root-init` (stage 1): it locks every block
+  device read-only except `super` and its disk, feeds the hardware watchdog, opens the region only through
+  `bounded-loop` (busybox `losetup` has no size limit), checks the offset, the size limit and the label, mounts it and
+  switches to OpenRC. If anything fails it falls back to the RAM test's shell and dead man.
+
+First boot (U-Boot and kernel still through `fastboot boot`): SSH answered 73 s after the `fastboot boot`, with the PC
+getting `172.16.42.2` by DHCP and `scripts/hanoip-ssh` working unchanged. `/` is `/dev/loop7`; the only writable
+block devices are `loop7`, `sdb` and `sdb23`; `sshd`, `chronyd` and `udev` run; `/dev/watchdog0` is active; the
+battery reads "Not charging". Stage 1 waits about 50 s for the UFS LUNs. The first try failed to mount with I/O
+errors: the locking loop had run while the LUNs probed and locked `super` and its disk before their names showed up,
+so nothing was written; it now starts only once `super` is known (`scripts/test-mainline-ram-image`).
+
+Not there yet: the firmware (ADSP, CDSP, modem, IPA, Wi-Fi, Bluetooth, GPU, video) is not in the root, so no Wi-Fi or
+modem; udev loads display, touch, audio and Bluetooth drivers a headless server does not need; the clock is not set
+without a network; and the boot is still two `fastboot boot`s from the PC.
+
 ## 8. Commands used to reproduce (first attempt)
 ```
 # Running DTB
