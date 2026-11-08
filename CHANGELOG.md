@@ -31,6 +31,7 @@ Up to v0.1.14 the notes lived only in the message of each annotated tag; this fi
 - Kernel direction: mainline is the goal again, starting from the mainline base (U-Boot plus Linux 7.3, RAM-only); the downstream 4.14 server stays on slot `b` meanwhile (`docs/STATUS.md`, section 5). The 2026-11-02 plan of a hardened 4.14 fork is on hold (#6).
 
 ### Fixed
+- The mainline root no longer floods the kernel log with "disallowed SPMI write" (about 30 a second, which pushed the whole boot out of `dmesg`): chrony's `rtcsync` made the kernel retry writing the PMIC RTC, which Linux may not write. `scripts/mainline-make-root` drops it; the next boot had none and kept its whole boot log.
 - `scripts/mainline-make-root` runs `e2fsck -p` on the region before mounting it: after an unclean mainline shutdown the orphan file holds inodes, and the 4.14 kernel refused to mount the root read-write ("unsupported optional features (10000)"). Run on the phone: it replayed the journal and the root was written, super unchanged outside the region.
 - The mainline root sets its clock: the PMIC RTC reads 1974, and chronyd, started before the Wi-Fi, had no source, which also kept Tailscale logged out (TLS). `swclock` replaces `hwclock` and a NetworkManager dispatcher script restarts chronyd when a connection comes up; `scripts/test-mainline-root` covers both (#6).
 - `scripts/env.sh` no longer prints the values of `.env` when a script runs under `sh -x`: the trace of its `eval` showed every value, passwords included. `scripts/test-env-xtrace` covers it.

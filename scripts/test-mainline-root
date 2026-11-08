@@ -47,6 +47,9 @@ d=$ov/etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony
 	fail "nothing restarts chronyd when the network comes up"
 grep -qF 'rc-update del hwclock boot' "$mk" && grep -q 'swclock; do chroot $MNT rc-update add $s boot' "$mk" ||
 	fail "the root still sets the clock from the RTC instead of swclock"
+# The PMIC arbiter does not let Linux write the RTC: with chrony's rtcsync the kernel retried it about 30 times a
+# second, a "disallowed SPMI write" each, which pushed the whole boot out of the kernel log (2026-11-08).
+grep -qF "sed -i '/^rtcsync/d' \$MNT/etc/chrony/chrony.conf" "$mk" || fail "chrony's rtcsync would make the kernel retry the RTC write"
 
 # The guards of the root: other disks read-only, the dead man, the battery floor.
 g=$ov/etc/local.d/05-hanoip-ml-guard.start

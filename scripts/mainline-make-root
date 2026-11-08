@@ -129,6 +129,8 @@ for s in rmtfs tqftpserv pd-mapper qrtr-ns; do
 done
 # The PMIC RTC does not keep the time (it reads 1974): swclock restores the time saved at the last shutdown instead.
 chroot $MNT rc-update del hwclock boot >/dev/null 2>&1 || true
+# Nor may Linux write it (the PMIC arbiter refuses): with rtcsync the kernel retried about 30 times a second.
+sed -i '/^rtcsync/d' $MNT/etc/chrony/chrony.conf
 for s in modules sysctl hostname bootmisc syslog nftables swclock; do chroot $MNT rc-update add $s boot >/dev/null; done
 for s in sshd chronyd local dbus hanoip-ml-modem hanoip-ml-charge networkmanager tailscale; do
 	chroot $MNT rc-update add $s default >/dev/null
