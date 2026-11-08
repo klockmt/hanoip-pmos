@@ -16,7 +16,7 @@ The phone is reachable over Wi-Fi, the USB cable (network gadget) or a USB Ether
 
 ## Tutorial: reproduce the working image
 
-Everything is scripted. Steps marked **[manual]** need your hands on the phone or an interactive prompt. The scripts that change something (`setup-pmaports`, `configure-pmbootstrap`, `build-image`, `setup-usb-net`, `flash-rootfs`, `flash-boot`, `flash-boot-ssh`, `setup-console`, `push-firmware`, `reboot-bootloader`, `mount-vendor`, `update-apkbuild-sums`, `restore-cycle-counts`) accept `DRY_RUN=1` (print the commands, change nothing), and `ASSUME_YES=1` skips their questions.
+Everything is scripted. Steps marked **[manual]** need your hands on the phone or an interactive prompt. The scripts that change something (`setup-pmaports`, `configure-pmbootstrap`, `build-image`, `setup-usb-net`, `flash-rootfs`, `flash-boot`, `flash-boot-ssh`, `setup-console`, `push-firmware`, `reboot-bootloader`, `mount-vendor`, `update-apkbuild-sums`, `restore-cycle-counts`, `backup-server`) accept `DRY_RUN=1` (print the commands, change nothing), and `ASSUME_YES=1` skips their questions.
 
 ### What you need
 
@@ -138,6 +138,7 @@ I want to be clear about what has and has not been run end to end.
 | `backup-partitions`, `flash-rootfs`, `flash-boot` | Tested against a simulated phone, including the refusals (wrong device, not in recovery, corrupted write, no SSH). The underlying `dd`, `adb` and `fastboot` commands are the ones used on the real phone |
 | `setup-usb-net` | Interface detection and the `nmcli` command checked; same command the author used |
 | `build-mainline-kernel`, `mainline-ram-image`, `mainline-make-root`, `build-mainline-uboot`, `mainline-boot-a-image` | Run on the author's machine and phone (2026-11-07 and 08): what they build booted on the phone, and `mainline-make-root` left super unchanged outside its region (`docs/MAINLINE.md`, sections 7 to 7d). Not run on a clean machine |
+| `backup-server` | Run on the author's phone on 2026-11-08 (1.7 GB over the tailnet at 1 MB/s): hashes equal on both sides, one file restored and compared, the phone's copy removed. Resuming a dropped copy and refusing a damaged one were tested only against a simulated phone (`scripts/test-backup-server`) |
 | A completely fresh machine, start to finish | **Run to the image (2026-11-02), in a clean KVM virtual machine** (Ubuntu 24.04 cloud image, only apt packages and the README steps, from the `beta` branch): `check-host`, `setup-pmaports`, `build-kernel`, `pmb init`, `configure-pmbootstrap` and `build-image` all ran and produced `boot.img` (header v3), `vendor_boot.img` (command line starting with `console=ttyMSM0,115200n8`) and the 2 GB rootfs. It needed five changes to the README and scripts, all fixed above. **Not run:** the flashing and booting that image on a phone, which erases `userdata`, and a second person following the README. The first attempt in a rootless container stopped at `pmbootstrap init` (no `origin/main`), the second in a privileged one at the partitions (no udev), which is why a VM was used |
 
 ## Layout

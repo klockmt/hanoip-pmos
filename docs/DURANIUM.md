@@ -139,6 +139,13 @@ environment reads `boot_a` by name now; a slot-b copy must read `boot_b`. Back u
 
 ### 7. Back up the 4.14 server
 
+**State (2026-11-08, `beta`):** done once with `scripts/backup-server`. In `$HANOIP_BACKUP_DIR/server-4.14-20261108`
+(folder 700, files 600): `root.tar.gz` (1.7 GB, 24,228 entries, no swap file), `boot.tar.gz` (57 MB), `packages.txt`
+(534 packages) and `runlevels.txt`. The hashes matched on both sides, `/etc/apk/world` restored from the archive equals
+the phone's, and the phone's copy was removed. The services kept running, so a database written during the tar
+(AdGuard's statistics, Syncthing's index) may be caught mid-write; tar skipped 3 Samba sockets. Run it again right
+before step 8, so the backup holds the server's last state.
+
 - What: the root inside `userdata` (4.2 GB used): service configs and data (AdGuard Home, Samba, Syncthing, the bot,
   `hanoip-status`), `/etc`, `/home`, `/var/lib`, plus the list of installed packages.
 - How: a file-level archive, transferred throttled (`pv -L 1m` over USB, or over the tailnet), stored in
