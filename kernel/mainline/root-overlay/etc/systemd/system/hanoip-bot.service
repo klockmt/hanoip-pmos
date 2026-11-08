@@ -1,0 +1,18 @@
+[Unit]
+Description=Telegram bot for the phone (/up and /status)
+Documentation=man:systemd.service(5)
+DefaultDependencies=no
+After=network-online.target tailscale.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/hanoip-bot
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+Environment=HANOIP_BOT_ENV=/etc/hanoip/telegram.env
+
+[Install]
+WantedBy=multi-user.target

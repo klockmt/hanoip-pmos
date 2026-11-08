@@ -1,0 +1,16 @@
+[Unit]
+Description=Battery monitor: reboot to server under 50% or 3.6V
+Documentation=man:systemd.service(5)
+DefaultDependencies=no
+After=local-fs.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/hanoip-battery
+Restart=always
+RestartSec=60
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=basic.target

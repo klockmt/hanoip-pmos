@@ -1,0 +1,18 @@
+[Unit]
+Description=Qualcomm remote file system service
+Documentation=man:systemd.service(5)
+DefaultDependencies=no
+Before=network-online.target
+After=hanoip-efs.service
+Wants=hanoip-efs.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/rmtfs -o /run/efs -r
+Restart=always
+RestartSec=1
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=basic.target

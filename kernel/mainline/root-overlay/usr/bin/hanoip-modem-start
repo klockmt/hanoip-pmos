@@ -1,0 +1,8 @@
+#!/bin/sh
+# Start the modem remoteproc and Wi-Fi.
+# The modem does not start by itself on mainline (the ADSP does): start it once its recovery is off.
+for r in /sys/class/remoteproc/remoteproc*; do
+    echo disabled > "$r/recovery" 2>/dev/null
+    [ "$(cat "$r/name" 2>/dev/null)" = modem ] && [ "$(cat "$r/state" 2>/dev/null)" = offline ] && echo start > "$r/state"
+done
+logger -t hanoip-modem "modem and Wi-Fi started"

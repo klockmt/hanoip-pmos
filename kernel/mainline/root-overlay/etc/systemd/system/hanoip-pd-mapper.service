@@ -1,0 +1,18 @@
+[Unit]
+Description=Qualcomm pd-mapper for service registration
+Documentation=man:systemd.service(5)
+DefaultDependencies=no
+Before=tqftpserv.service hanoip-modem.service
+After=hanoip-qrtr-ns.service
+Wants=hanoip-qrtr-ns.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/hanoip-pd-mapper
+Restart=always
+RestartSec=1
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=basic.target
