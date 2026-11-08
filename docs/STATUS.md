@@ -80,7 +80,13 @@ server keeps running on slot `b`, frozen as release v0.2.2.
   `userdata`, which holds the server. Nothing is flashed until the user approves it.
 - **Then the server pieces**, each with its test: the charge limit (the PM6150 charger is not upstream yet), a hardware
   watchdog, Wi-Fi and the modem, the USB network, Tailscale and the firewall. Packaging can move to systemd.
-- **Long term:** Nura's Duranium (immutable, A/B updates with rollback). Our U-Boot already has what it needs (EFI,
-  `blkmap`), and its LUKS2 unlocks by itself with a blank passphrase; it needs a pmaports device package with the
-  mainline kernel, systemd units for the phone's pieces, and 16 GB of disk (`MAINLINE.md`, section 7e).
+- **Next: Nura's Duranium as the server** (immutable, A/B updates with rollback; decided by the user on 2026-11-08,
+  in all of `userdata`, in place of the 4.14). Our U-Boot already has what it needs (EFI, `blkmap`), and its LUKS2
+  unlocks by itself with a blank passphrase (`MAINLINE.md`, section 7e). In order, each with its test: a pmaports
+  package of our 7.3 kernel; a mainline device package that boots through EFI; a firmware package built only
+  locally (the vendor blobs are not ours to publish); systemd units for the modem start, the charge limit and the
+  guard; a `duranium-build` image (console) set up without the on-screen first-boot wizard; U-Boot's EFI boot of
+  `userdata` through `blkmap`. Slot b then holds our U-Boot and the Alpine root in super as the rescue system.
+  Last, after a verified backup of the 4.14 root and a new confirmation from the user: `userdata` is written.
+  The server's services move with it.
 - The 2026-11-02 plan (our own hardened 4.14 kernel) is on hold; the 4.14 still gets fixes while it is the server.
