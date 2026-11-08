@@ -20,8 +20,22 @@ trap 'rm -f "$sums"' EXIT
 # 2. every APKBUILD source exists, is in git and its checksum matches (tarballs are skipped: they are downloaded).
 # A source that is only in the working tree builds here and fails on a clean clone, which happened to the mainline
 # subpackage's thirteen copies.
+# Also guard: every local source= entry (not a URL, not name::url) must be tracked by git.
 for d in pmaports/device/*/*/; do
 	[ -f "$d/APKBUILD" ] || continue
+	# Check git-tracked for all local source= entries
+	srcdir= . "$d/APKBUILD"
+	for s in $source; do
+		case $s in
+			*://*) ;;                          # skip URLs
+			*::*) ;;                           # skip name::url
+			*)
+				f="${s##*/}"
+				git ls-files --error-unmatch "$d$f" >/dev/null 2>&1 || echo "untracked source: $d$f"
+				;;
+		esac
+	done
+	# Check checksums
 	grep -E '^[0-9a-f]{128}  ' "$d/APKBUILD" | while read -r sum name; do
 		case $name in *.tar.gz|*.tar.xz) continue;; esac
 		[ -f "$d/$name" ] || { echo "missing source: $d$name"; continue; }
