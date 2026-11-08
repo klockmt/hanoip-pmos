@@ -9,14 +9,14 @@ bad=0
 fail() { echo "FAIL: $*" >&2; bad=1; }
 
 mkdir -p "$dir/scripts" "$dir/bin" "$dir/pmaports/device/testing/x"
-cp scripts/env.sh scripts/push-firmware scripts/push-modules scripts/reboot-bootloader scripts/mount-vendor scripts/update-apkbuild-sums "$dir/scripts/"
+cp scripts/env.sh scripts/push-firmware scripts/push-modules scripts/reboot-bootloader scripts/mount-vendor scripts/update-apkbuild-sums scripts/mainline-make-root "$dir/scripts/"
 printf 'KERNEL_DOWNSTREAM_DIR=%s/kernel\nHANOIP_COLLECTION_DIR=%s/none\nHANOIP_HOST=h\nHANOIP_USER=u\nHANOIP_SSH_KEY=k\n' "$dir" "$dir" > "$dir/.env"
 log=$dir/calls
 printf '#!/bin/sh\necho "hanoip-ssh $*" >> "%s"\n' "$log" > "$dir/scripts/hanoip-ssh"
 for c in fastboot pv tar; do printf '#!/bin/sh\necho "%s $*" >> "%s"\n' "$c" "$log" > "$dir/bin/$c"; done
 chmod +x "$dir/scripts/hanoip-ssh" "$dir/bin/"*
 
-for s in push-firmware push-modules reboot-bootloader mount-vendor "mount-vendor -u"; do
+for s in push-firmware push-modules reboot-bootloader mount-vendor "mount-vendor -u" mainline-make-root; do
 	: > "$log"
 	# shellcheck disable=SC2086
 	if ! out=$(cd "$dir" && DRY_RUN=1 PATH="$dir/bin:$PATH" sh scripts/$s 2>&1); then fail "$s exits non-zero with DRY_RUN=1"; fi
