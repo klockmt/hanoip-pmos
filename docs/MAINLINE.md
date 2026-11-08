@@ -224,7 +224,7 @@ counts a failed boot of slot a. It cannot flash.
   `u-boot.bin` and its image byte for byte (the payload is deflate level 6). `scripts/build-mainline-uboot` uses the
   host's GCC 16.2, and that build is the one that booted below.
 
-How it was found, all with `fastboot boot` from the ABL and slot b active (nothing flashed except `boot_a`):
+How it was found, with `fastboot boot` from the ABL and slot b active up to S4 (nothing flashed except `boot_a`):
 
 | Run | What booted | What happened |
 |---|---|---|
@@ -235,6 +235,7 @@ How it was found, all with `fastboot boot` from the ABL and slot b active (nothi
 | S1 | the server build, U-Boot never touching USB | kernel and USB gadget up in 4 s, then the root stalled before `local.d` (no `usb0`, no Wi-Fi) for 10 minutes; power key held |
 | S2, S3 | the same with the boot deadline (S3: the root fixed as below) | SSH over USB in 84 s, then the tailnet; chrony in sync; S3 with no log flood and its whole boot in `dmesg` |
 | S4 | the same after an unclean reboot out of mainline, no `e2fsck` | SSH over USB in 93 s; the kernel replayed the journal |
+| S5 | slot a itself: `fastboot set_active a`, `fastboot reboot`, no PC after that | USB gadget at 20 s, SSH over USB at 113 s, the tailnet, chrony in sync; back in the ABL `current-slot` was `a` and slot a's retry count had gone from 7 to 6. Then `set_active b`: the 4.14 server came back with every service, and `qbootctl -m` marked b successful again (`set_active` clears it) |
 
 Fixed on the way, each with a test (`docs/PITFALLS.md`): the pending key at autoboot, `scsi read` on LUN 0, a watchdog
 that U-Boot fed and then stopped, a root stall nothing reset, `mainline-make-root` failing on an unclean root (the 4.14
@@ -242,7 +243,8 @@ kernel cannot mount an ext4 whose orphan file holds inodes), and chrony's `rtcsy
 write about 30 times a second.
 
 Still open:
-- Booting slot a itself (`fastboot set_active a`). Above, the ABL RAM-booted this same U-Boot, which read `boot_a`.
+- The mainline root is not the server yet: AdGuard Home, Samba, Syncthing, the Telegram bot and `hanoip-status` run
+  only on the 4.14, so slot b is active again.
 - Nothing marks slot a successful from mainline: that writes the GPT, outside what a mainline boot may write. The ABL
   will go back to slot b once slot a's retries (6) run out.
 - The cause of the S1 stall. It did not happen in S2 to S4; the deadline now reboots it and leaves a log.
