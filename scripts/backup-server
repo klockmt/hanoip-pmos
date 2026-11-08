@@ -1,0 +1,59 @@
+#!/bin/sh
+# Step 7 of docs/DURANIUM.md: a file-level backup of the 4.14 server before userdata is written. On the phone, as
+# root: GNU tar of / (one file system, without the swap file) and of /boot, gzipped, into a root-only folder in
+# /var/tmp, plus the installed packages and the OpenRC runlevels, hashed there. Each file is pulled to the PC at
+# 1 MB/s (a burst takes the USB network down), resuming a copy that dropped, and checked against the phone's hash;
+# one file is restored from the archive and compared with the phone's own, and only then the phone's copy goes.
+# The archives hold the server's secrets (shadow, SSH host keys, the bot's token, Tailscale's state, Wi-Fi keys): they
+# stay in $HANOIP_BACKUP_DIR, mode 600, and their contents are never listed. Services keep running, so a database
+# written during the tar (AdGuard's statistics, Syncthing's index) may be caught mid-write. DRY_RUN=1 only prints.
+# HANOIP_BACKUP_TMP and HANOIP_BACKUP_ROOT exist for scripts/test-backup-server.
+set -eu
+. "$(dirname "$0")/env.sh"
+dir=$(cd "$(dirname "$0")" && pwd)
+root_() { "$dir/hanoip-sudo" "$1"; }
+tmp=${HANOIP_BACKUP_TMP:-/var/tmp/hanoip-server-backup}
+src=${HANOIP_BACKUP_ROOT:-}
+out=${HANOIP_SERVER_BACKUP:-$HANOIP_BACKUP_DIR/server-4.14-$(date +%Y%m%d)}
+files="root.tar.gz boot.tar.gz packages.txt runlevels.txt"
+check=etc/apk/world   # restored as the test: it holds no secret
+
+if [ -n "${DRY_RUN:-}" ]; then
+	echo "+ on the phone: tar of $src/ and $src/boot into $tmp, the packages and runlevels, sha256sum"
+	for f in $files SHA256SUMS; do echo "+ pull $tmp/$f to $out/$f at 1 MB/s"; done
+	echo "+ check the hashes, restore $check and compare it, remove $tmp"
+	exit 0
+fi
+command -v pv >/dev/null || { echo "pv is needed to throttle the transfers." >&2; exit 1; }
+[ ! -e "$out/SHA256SUMS" ] || { echo "$out already holds a backup." >&2; exit 1; }
+mkdir -p "$out"
+chmod 700 "$out"
+
+# GNU tar exits 1 when a file changed while it was read (a log): that is not a failure here.
+root_ "set -e; umask 077; rm -rf $tmp; mkdir -p $tmp; cd $tmp
+tar --one-file-system --numeric-owner --acls --xattrs --warning=no-file-changed -czpf root.tar.gz \
+	--exclude=./swapfile --exclude=.$tmp -C $src/ . || [ \$? -eq 1 ]
+tar --numeric-owner -czpf boot.tar.gz -C $src/boot .
+apk info -v | sort > packages.txt
+rc-update show -v > runlevels.txt
+sha256sum $files > SHA256SUMS"
+
+for f in $files SHA256SUMS; do
+	size=$(root_ "stat -c %s $tmp/$f")
+	n=0
+	while have=$(stat -c %s "$out/$f.part" 2>/dev/null || echo 0); [ "$have" -lt "$size" ]; do
+		n=$((n + 1))
+		[ $n -le 5 ] || { echo "$f: the copy kept dropping ($have of $size bytes); run again to resume." >&2; exit 1; }
+		[ $n -eq 1 ] || { echo "$f: resuming at $have of $size bytes" >&2; sleep 10; }
+		root_ "tail -c +$((have + 1)) $tmp/$f" | pv -L 1m >> "$out/$f.part" || true
+	done
+	mv "$out/$f.part" "$out/$f"
+	chmod 600 "$out/$f"
+done
+
+(cd "$out" && sha256sum -c --quiet SHA256SUMS) || { echo "Hash mismatch; the phone's copy stays in $tmp." >&2; exit 1; }
+want=$(root_ "sha256sum $src/$check" | cut -d' ' -f1)
+got=$(tar -xzOf "$out/root.tar.gz" "./$check" | sha256sum | cut -d' ' -f1)
+[ "$got" = "$want" ] || { echo "$check restored from the archive differs from the phone's; $tmp kept." >&2; exit 1; }
+root_ "rm -rf $tmp"
+echo "Backup of the 4.14 server in $out ($(du -sh "$out" | cut -f1)): hashes equal on both sides, $check restored equal."
