@@ -1,0 +1,64 @@
+#!/bin/sh
+# Checks the mainline subpackage of the device package without a phone: every file of kernel/mainline/root-overlay is a
+# copy in the package (so the two cannot drift), git tracks that copy (a source that is not committed builds on this PC
+# and fails in a clean clone), package() installs it where the overlay has it and with the mode its destination needs,
+# and mainline() moves it into device-motorola-hanoip-mainline only: the 4.14 server on slot b must not receive the
+# mainline root's services.
+set -eu
+cd "$(dirname "$0")/.."
+d=pmaports/device/testing/device-motorola-hanoip
+apk=$d/APKBUILD
+ov=kernel/mainline/root-overlay
+bad=0
+fail() { echo "FAIL: $*" >&2; bad=1; }
+[ -f "$apk" ] || { echo "FAIL: no $apk" >&2; exit 1; }
+sed -n '/^subpackages="/,/"/p' "$apk" | grep -qF '$pkgname-mainline:mainline' || fail "the APKBUILD has no mainline subpackage"
+sed -n '/^mainline()/,/^}/p' "$apk" | grep -qF 'depends="$pkgname"' || fail "the mainline subpackage does not depend on $pkgname"
+code=$(grep -v '^[[:space:]]*#' "$apk")
+
+# Overlay path and the name the package carries it under (two files of the overlay share a base name, and an APKBUILD
+# cannot hold two files with the same name).
+map=$(mktemp)
+trap 'rm -f "$map" "$map".*' EXIT
+cat > "$map" <<'EOF'
+etc/init.d/hanoip-ml-modem hanoip-ml-modem.initd
+etc/init.d/hanoip-ml-charge hanoip-ml-charge.initd
+etc/local.d/05-hanoip-ml-guard.start hanoip-ml-guard.start
+etc/local.d/10-hanoip-usb.start hanoip-usb.start
+etc/local.d/20-hanoip-deadman.start hanoip-deadman.start
+etc/local.d/30-hanoip-battery.start hanoip-battery.start
+etc/local.d/98-hanoip-ml-slot.start hanoip-ml-slot.start
+etc/local.d/99-hanoip-ml-up.start hanoip-ml-up.start
+etc/modprobe.d/hanoip-ml.conf hanoip-ml.conf
+etc/NetworkManager/conf.d/hanoip-ml.conf hanoip-ml-networkmanager.conf
+etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony hanoip-ml-chrony
+usr/bin/hanoip-ml-abl-slot hanoip-ml-abl-slot
+usr/bin/hanoip-ml-charge hanoip-ml-charge
+EOF
+
+while read -r src name; do
+	[ -f "$ov/$src" ] || { fail "$ov/$src is missing"; continue; }
+	[ -f "$d/$name" ] || { fail "$d/$name is missing (the copy of $ov/$src)"; continue; }
+	cmp -s "$ov/$src" "$d/$name" || fail "$d/$name is not identical to $ov/$src"
+	# The bug this test was written for: the copy existed only in the working tree, so the package built here and
+	# failed on a clean clone.
+	git ls-files --error-unmatch "$d/$name" >/dev/null 2>&1 || fail "$d/$name is not in git (a clean clone cannot build the package)"
+	echo "$code" | grep -qF -- "\"\$srcdir/$name\" \"\$pkgdir/$src\"" ||
+		fail "package() does not install $name as /$src"
+	# amove takes the path as a word of its own list; the tokenised list must hold it exactly.
+	sed -n '/^mainline()/,/^}/p' "$apk" | tr -s ' \t\\' '\n' | grep -qxF "$src" ||
+		fail "mainline() does not move /$src out of the device package"
+done < "$map"
+
+# The other direction: a file added to the overlay must be packaged, and amove must not name a path nothing installs.
+awk '{print $1}' "$map" | LC_ALL=C sort > "$map.want"
+(cd "$ov" && find . -type f | sed 's|^\./||' | LC_ALL=C sort) > "$map.have"
+cmp -s "$map.want" "$map.have" || fail "the overlay and the package's copies hold different files: $(diff "$map.want" "$map.have" | tr '\n' ' ')"
+sed -n '/^mainline()/,/^}/p' "$apk" | tr -s ' \t\\' '\n' | grep -E '^(etc|usr)/' | while read -r p; do
+	awk -v p="$p" '$1 == p { found = 1 } END { exit !found }' "$map" ||
+		echo "FAIL: mainline() moves /$p, which the overlay does not have" >&2
+done > "$map.amove"
+[ ! -s "$map.amove" ] || { cat "$map.amove"; bad=1; }
+
+[ $bad -eq 0 ] && echo "device mainline subpackage: ok"
+exit $bad
