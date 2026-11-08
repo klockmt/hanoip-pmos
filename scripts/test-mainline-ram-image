@@ -1,0 +1,38 @@
+#!/bin/sh
+# Checks the RAM-only mainline test image (no phone needed): the safety rules of kernel/mainline/ram-test-init, and
+# that scripts/mainline-ram-image packs fake inputs into a header-v2 image whose DTB sits where U-Boot looks for it.
+set -eu
+cd "$(dirname "$0")/.."
+init=kernel/mainline/ram-test-init
+fail() { echo "FAIL: $*" >&2; exit 1; }
+code=$(grep -v '^[[:space:]]*#' "$init")
+
+# Every disk read-only before anything else: the first lock_all call comes before the USB gadget, and a loop keeps
+# locking the UFS LUNs that probe late. userdata is the server and super holds the Android volumes.
+first_lock=$(echo "$code" | grep -n '^lock_all$' | head -1 | cut -d: -f1)
+gadget=$(echo "$code" | grep -n 'usb_gadget' | head -1 | cut -d: -f1)
+[ -n "$first_lock" ] && [ -n "$gadget" ] && [ "$first_lock" -lt "$gadget" ] || fail "lock_all does not run before the USB gadget"
+echo "$code" | grep -q 'blockdev --setro' || fail "lock_all does not set the disks read-only"
+echo "$code" | grep -q 'while :; do lock_all; sleep 1; done' || fail "no loop locks the disks that show up later"
+# Nothing from a disk is ever mounted, looped or switched to.
+if echo "$code" | grep -qE 'mount[^-]*/dev/(sd|mmc|disk|loop)|losetup|switch_root|pivot_root'; then fail "the init touches a disk"; fi
+# The dead man reboots the phone back to the server if nobody logs in.
+echo "$code" | grep -q 'sleep 600; \[ -e /tmp/keep \] || {.*reboot -f' || fail "no 10-minute dead man"
+# The shell listens on the USB address only.
+echo "$code" | grep -q 'nc -lk -s 172.16.42.1 -p 2323 -e /bin/sh' || fail "the nc shell is not bound to 172.16.42.1"
+grep -q 'panic=5 oops=panic' scripts/mainline-ram-image || fail "the image command line lacks panic=5 oops=panic"
+
+if ! command -v mkbootimg >/dev/null 2>&1 || ! command -v cpio >/dev/null 2>&1; then
+	echo "ok    test-mainline-ram-image (packing skipped: no mkbootimg or cpio)"
+	exit 0
+fi
+dir=$(mktemp -d)
+trap 'rm -rf "$dir"' EXIT
+mkdir -p "$dir/out" "$dir/mods/7.3.0-test/kernel"
+head -c 4096 /dev/urandom | gzip -n > "$dir/out/Image.gz"
+{ printf '\320\015\376\355'; head -c 2044 /dev/zero; } > "$dir/out/kernel.dtb"
+tar -C "$dir/mods" -czf "$dir/out/modules-7.3.0-test.tar.gz" 7.3.0-test
+printf '#!/bin/sh\n' > "$dir/busybox"
+HANOIP_MAINLINE_DIR=$dir BUSYBOX=$dir/busybox scripts/mainline-ram-image "$dir/test.img" >/dev/null || fail "packing fake inputs failed"
+[ -s "$dir/test.img" ] || fail "no image written"
+echo "ok    test-mainline-ram-image"
