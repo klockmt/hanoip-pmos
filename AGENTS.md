@@ -2,7 +2,7 @@
 
 postmarketOS on the Moto G60 (hanoip, SM7150), run as a **headless server reached over SSH**. The repo is public.
 
-The rules are here. Before touching anything read `docs/STATUS.md` (what works), then `NOTES.md` (the log of the investigations); `docs/PITFALLS.md` and `docs/HOMELAB.md` say what broke and how the phone is run.
+The rules are here. Before touching anything read `docs/STATUS.md` (what works), then `NOTES.md` (the log of the investigations); `docs/PITFALLS.md` and `docs/HOMELAB.md` say what broke and how the phone is run. The Duranium work follows `docs/DURANIUM.md`.
 
 ## Rules that always apply
 - The repo check is `scripts/check-repo`: run it before every commit and push.

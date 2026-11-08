@@ -88,5 +88,5 @@ server keeps running on slot `b`, frozen as release v0.2.2.
   guard; a `duranium-build` image (console) set up without the on-screen first-boot wizard; U-Boot's EFI boot of
   `userdata` through `blkmap`. Slot b then holds our U-Boot and the Alpine root in super as the rescue system.
   Last, after a verified backup of the 4.14 root and a new confirmation from the user: `userdata` is written.
-  The server's services move with it.
+  The server's services move with it. The steps in detail: [`DURANIUM.md`](DURANIUM.md).
 - The 2026-11-02 plan (our own hardened 4.14 kernel) is on hold; the 4.14 still gets fixes while it is the server.
