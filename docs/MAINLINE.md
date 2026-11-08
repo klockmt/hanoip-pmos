@@ -257,6 +257,39 @@ Still open:
   33 to 47 s.
 - `tailscale ping` gets no reply from this node; SSH over the tailnet works.
 
+## 7e. 2026-11-08: what Duranium needs on this phone (research only)
+
+Duranium is Nura's image-based variant ([blog](https://nura.eco/blog/2026/03/17/introducing-duranium/),
+[wiki](https://wiki.nura.eco/wiki/Duranium_(Immutable_Nura)),
+[DESIGN.md](https://gitlab.nura.eco/nura/duranium-build/-/blob/main/DESIGN.md); the wiki and GitLab sit behind a
+bot check, so they were read through a browser). In short:
+
+- **Build:** mkosi, through `build-image.py device-<name> ui-<ui> --release=edge` in `duranium-build`. It resolves the
+  device package, its kernel subpackage and its `deviceinfo` from pmaports, so a Duranium for this phone needs a
+  pmaports device package with a mainline kernel. Ours is the downstream 4.14 one. Everything is systemd, the initramfs
+  too.
+- **Boot:** EFI. On phones U-Boot gives it, and systemd-boot on the ESP starts a UKI holding kernel, initramfs, command
+  line and DTBs; systemd-stub picks the DTB whose `compatible` matches what U-Boot passes. A new image that fails twice
+  falls back to the previous one. Our U-Boot already has the EFI loader, `bootefi`, the EFI boot manager, `blkmap` and
+  FAT.
+- **Disk:** the image ships an ESP and `/usr` slot A with its dm-verity partition; on first boot systemd-repart adds
+  slot B and its verity partition and the root on LUKS2, which fills the rest. Each `/usr` slot is 5 GB (EROFS), and
+  16 GB is the recommended minimum. On a phone the image is flashed into `userdata`, which U-Boot's `blkmap` presents
+  as a disk (`fastboot flash userdata *.raw`). That erases what is there.
+- **Encryption:** LUKS2 is always on, but repart creates it with a blank passphrase and it unlocks by itself; the
+  first-boot wizard (f0rmz) offers to set one. It also creates the user on the screen, so a headless image needs that
+  step done another way.
+- **Images:** built ones exist only for fairphone-fp5 and fp6, google-sargo, oneplus-enchilada and fajita,
+  lenovo-21bx, google-x64cros and the generic x86_64 and loongarch64 ([duranium.nura.eco](https://duranium.nura.eco/)).
+  Nothing for SM7150.
+
+On this phone `userdata` is 116 GB and holds the 4.14 server, whose root uses 4.2 GB of its 104 GB; super's free region
+is 2.4 GB. So the choice is where Duranium lives: super's region for a first boot with smaller `/usr` slots (it would
+replace the Alpine development root, which `mainline-make-root` writes again at will), a region cut from the end of
+`userdata` after shrinking the server's root, or all of `userdata` in place of the 4.14. The device package, the
+kernel package and systemd units for the phone's own pieces (the modem start, the charge limit, the guard) are needed
+in every case; systemd's own watchdog support would replace the stage-1 daemon.
+
 ## 8. Commands used to reproduce (first attempt)
 ```
 # Running DTB

@@ -80,6 +80,7 @@ server keeps running on slot `b`, frozen as release v0.2.2.
   `userdata`, which holds the server. Nothing is flashed until the user approves it.
 - **Then the server pieces**, each with its test: the charge limit (the PM6150 charger is not upstream yet), a hardware
   watchdog, Wi-Fi and the modem, the USB network, Tailscale and the firewall. Packaging can move to systemd.
-- **Long term:** Nura's Duranium (immutable, A/B updates with rollback). It needs U-Boot with UEFI, and its mandatory
-  LUKS2 would have to go for an unattended server.
+- **Long term:** Nura's Duranium (immutable, A/B updates with rollback). Our U-Boot already has what it needs (EFI,
+  `blkmap`), and its LUKS2 unlocks by itself with a blank passphrase; it needs a pmaports device package with the
+  mainline kernel, systemd units for the phone's pieces, and 16 GB of disk (`MAINLINE.md`, section 7e).
 - The 2026-11-02 plan (our own hardened 4.14 kernel) is on hold; the 4.14 still gets fixes while it is the server.
