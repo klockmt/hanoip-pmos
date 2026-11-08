@@ -21,6 +21,7 @@ Up to v0.1.14 the notes lived only in the message of each annotated tag; this fi
 - Kernel direction: mainline is the goal again, starting from the mainline base (U-Boot plus Linux 7.3, RAM-only); the downstream 4.14 server stays on slot `b` meanwhile (`docs/STATUS.md`, section 5). The 2026-11-02 plan of a hardened 4.14 fork is on hold (#6).
 
 ### Fixed
+- `scripts/env.sh` no longer prints the values of `.env` when a script runs under `sh -x`: the trace of its `eval` showed every value, passwords included. `scripts/test-env-xtrace` covers it.
 - elogind no longer hangs a CPU on the 4.14 kernel: its memory-pressure trigger corrupted a list in `psi_trigger_create` on three boots in a row, leaving the server with slow SSH logins and a `reboot` that hangs. The device package (`pkgrel` 41) overrides elogind's D-Bus service file to start it with `MEMORY_PRESSURE_WATCH=/dev/null`; `scripts/test-elogind` covers it (#31).
 
 ## [0.2.2] - 2026-11-07

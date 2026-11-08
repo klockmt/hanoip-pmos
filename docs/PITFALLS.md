@@ -80,6 +80,7 @@ Every bug gets an automated test that fails before the fix and passes after (`sc
 | Modem/Wi-Fi userspace missing on a fresh image, `fsg` linked to `fsg_b` only | The files were installed by hand and the udev rule hard-coded the slot | The `-modem` subpackage; the rule reads `androidboot.slot_suffix` | `scripts/test-modem-package` |
 | A private value in a tracked file | Nothing looked for it | A 15-digit number (IMEI-like) and the login user are flagged, along with MACs, serials and home paths | `scripts/check-repo`, `scripts/test-check-repo` |
 | A script that changes state ran without a dry run | Four scripts had no `DRY_RUN` | Every state-changing script takes `DRY_RUN=1` | `scripts/test-dry-run` |
+| Debugging a script with `sh -x` printed every value of `.env`, passwords included, into the terminal (2026-11-07) | `env.sh` loads `.env` with an `eval`, and the trace of that `eval` shows each `export NAME="value"` | `env.sh` turns tracing off around the `eval` and back on after it. A trace of your own lines can still show values you expand, so never share one | `scripts/test-env-xtrace` |
 
 ## The pmOS flow (found on 2026-10-18)
 
