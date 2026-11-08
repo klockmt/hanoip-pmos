@@ -91,17 +91,10 @@ on `linux-motorola-hanoip-mainline`; `deviceinfo` has the mainline overrides (`d
 
 ### 3. systemd units for the phone's own pieces
 
-Port what `kernel/mainline/root-overlay` does under OpenRC, each with the test it has now:
-- the modem: EFS copied to RAM (`modemst1`, `modemst2`, `fsg_b`/`fsg_a`, `fsc`) and served read-only by
-  `rmtfs -o /run/efs -r`, `tqftpserv`, modules in this order: `hanoip_mmi_unit_info`, `qcom_pd_mapper`, `qrtr_smd`,
-  `qcom_q6v5_pas`, `ipa`, `ath10k_snoc`, recovery off, then `echo start` to the modem's remoteproc
-  (`scripts/test-mainline-root` has the details);
-- the charge limit (`hanoip-ml-charge`: 75-80 %, never over 4.30 V or 40 °C, through the kernel's
-  `/sys/kernel/debug/hanoip-charge`);
-- the guard: every block device read-only except what Duranium owns;
-- the slot marking (`qbootctl -m <slot>` after `boot-complete.target`, the same exception, the same lent disks);
-- the watchdog: systemd's `RuntimeWatchdogSec` replaces the stage-1 daemon (U-Boot leaves it running);
-- Wi-Fi with the server's MAC, Tailscale's state, nftables (port 22 closed from the LAN), no `rtcsync` in chrony.
+**State (2026-11-08, `beta`):** mainline subpackage added in commit 2ea3e8d with systemd units for modem, charge limit, guard, slot marking, watchdog, and network. Files from `kernel/mainline/root-overlay` copied to device package, `amove` in `mainline()` subpackage places them under `/etc/init.d`, `/etc/local.d`, `/usr/bin`, `/etc/modprobe.d`, `/etc/NetworkManager/conf.d`, `/etc/NetworkManager/dispatcher.d`. Still open:
+- Build the mainline kernel package (step 1) so the modules are available.
+- Write systemd unit files (`.service`, `.timer`, etc.) to replace the OpenRC init scripts when Duranium (systemd) is built.
+- Test on the phone once the Duranium image boots.
 
 ### 4. A Duranium image for the hanoip
 
