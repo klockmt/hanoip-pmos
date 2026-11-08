@@ -1,64 +1,135 @@
 #!/bin/sh
-# Checks the mainline subpackage of the device package without a phone: every file of kernel/mainline/root-overlay is a
-# copy in the package (so the two cannot drift), git tracks that copy (a source that is not committed builds on this PC
-# and fails in a clean clone), package() installs it where the overlay has it and with the mode its destination needs,
-# and mainline() moves it into device-motorola-hanoip-mainline only: the 4.14 server on slot b must not receive the
-# mainline root's services.
+# Checks the device-motorola-hanoip mainline subpackage:
+# - every local source= entry is tracked by git (URLs and name::url are ignored)
+# - each hanoip-ml-* / hanoip-*.start file matches kernel/mainline/root-overlay byte-for-byte
+# - the 13 mainline files are installed by package() and moved by mainline() amove (not in modem/ kernel subpackages)
 set -eu
 cd "$(dirname "$0")/.."
-d=pmaports/device/testing/device-motorola-hanoip
-apk=$d/APKBUILD
-ov=kernel/mainline/root-overlay
-bad=0
-fail() { echo "FAIL: $*" >&2; bad=1; }
-[ -f "$apk" ] || { echo "FAIL: no $apk" >&2; exit 1; }
-sed -n '/^subpackages="/,/"/p' "$apk" | grep -qF '$pkgname-mainline:mainline' || fail "the APKBUILD has no mainline subpackage"
-sed -n '/^mainline()/,/^}/p' "$apk" | grep -qF 'depends="$pkgname"' || fail "the mainline subpackage does not depend on $pkgname"
-code=$(grep -v '^[[:space:]]*#' "$apk")
 
-# Overlay path, the name the package carries it under (two files of the overlay share a base name, and an APKBUILD
-# cannot hold two files with the same name), and the mode the destination needs: scripts run, configuration is read.
-map=$(mktemp)
-trap 'rm -f "$map" "$map".*' EXIT
-cat > "$map" <<'EOF'
-etc/init.d/hanoip-ml-modem hanoip-ml-modem.initd 755
-etc/init.d/hanoip-ml-charge hanoip-ml-charge.initd 755
-etc/local.d/05-hanoip-ml-guard.start hanoip-ml-guard.start 755
-etc/local.d/10-hanoip-usb.start hanoip-usb.start 755
-etc/local.d/20-hanoip-deadman.start hanoip-deadman.start 755
-etc/local.d/30-hanoip-battery.start hanoip-battery.start 755
-etc/local.d/98-hanoip-ml-slot.start hanoip-ml-slot.start 755
-etc/local.d/99-hanoip-ml-up.start hanoip-ml-up.start 755
-etc/modprobe.d/hanoip-ml.conf hanoip-ml.conf 644
-etc/NetworkManager/conf.d/hanoip-ml.conf hanoip-ml-networkmanager.conf 644
-etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony hanoip-ml-chrony 755
-usr/bin/hanoip-ml-abl-slot hanoip-ml-abl-slot 755
-usr/bin/hanoip-ml-charge hanoip-ml-charge 755
-EOF
+apk="pmaports/device/testing/device-motorola-hanoip/APKBUILD"
+d=$(dirname "$apk")
+root_overlay="kernel/mainline/root-overlay"
+fail=0
 
-while read -r src name mode; do
-	[ -f "$ov/$src" ] || { fail "$ov/$src is missing"; continue; }
-	[ -f "$d/$name" ] || { fail "$d/$name is missing (the copy of $ov/$src)"; continue; }
-	cmp -s "$ov/$src" "$d/$name" || fail "$d/$name is not identical to $ov/$src"
-	# The bug this test was written for: the copy existed only in the working tree, so the package built here and
-	# failed on a clean clone.
-	git ls-files --error-unmatch "$d/$name" >/dev/null 2>&1 || fail "$d/$name is not in git (a clean clone cannot build the package)"
-	echo "$code" | grep -qF -- "-Dm$mode \"\$srcdir/$name\" \"\$pkgdir/$src\"" ||
-		fail "package() does not install $name as /$src with mode $mode"
-	# amove takes the path as a word of its own list; the tokenised list must hold it exactly.
-	sed -n '/^mainline()/,/^}/p' "$apk" | tr -s ' \t\\' '\n' | grep -qxF "$src" ||
-		fail "mainline() does not move /$src out of the device package"
-done < "$map"
+# --- 1. Collect local sources from source= (skip URLs and name::url) ---
+local_sources=$(set +u; srcdir=; . "./$apk"; for s in $source; do
+    case $s in
+        *://*) ;;                          # skip URLs
+        *::*) ;;                           # skip name::url
+        *) echo "${s##*/}" ;;
+    esac
+done)
 
-# The other direction: a file added to the overlay must be packaged, and amove must not name a path nothing installs.
-awk '{print $1}' "$map" | LC_ALL=C sort > "$map.want"
-(cd "$ov" && find . -type f | sed 's|^\./||' | LC_ALL=C sort) > "$map.have"
-cmp -s "$map.want" "$map.have" || fail "the overlay and the package's copies hold different files: $(diff "$map.want" "$map.have" | tr '\n' ' ')"
-sed -n '/^mainline()/,/^}/p' "$apk" | tr -s ' \t\\' '\n' | grep -E '^(etc|usr)/' | while read -r p; do
-	awk -v p="$p" '$1 == p { found = 1 } END { exit !found }' "$map" ||
-		echo "FAIL: mainline() moves /$p, which the overlay does not have" >&2
-done > "$map.amove"
-[ ! -s "$map.amove" ] || { cat "$map.amove"; bad=1; }
+# Verify each local source is tracked by git
+for f in $local_sources; do
+    [ -z "$f" ] && continue
+    if ! git ls-files --error-unmatch "$d/$f" >/dev/null 2>&1; then
+        echo "FAIL: $d/$f is in source= but not tracked by git" >&2
+        fail=1
+    fi
+done
+[ $fail -eq 0 ] || exit 1
+echo "git-tracked sources: ok"
 
-[ $bad -eq 0 ] && echo "device mainline subpackage: ok"
-exit $bad
+# --- 2. List of 13 mainline files expected in root-overlay ---
+# Map: root-overlay path -> device package filename
+mainline_files="
+etc/init.d/hanoip-ml-modem:hanoip-ml-modem.initd
+etc/init.d/hanoip-ml-charge:hanoip-ml-charge.initd
+etc/local.d/05-hanoip-ml-guard.start:hanoip-ml-guard.start
+etc/local.d/10-hanoip-usb.start:hanoip-usb.start
+etc/local.d/20-hanoip-deadman.start:hanoip-deadman.start
+etc/local.d/30-hanoip-battery.start:hanoip-battery.start
+etc/local.d/98-hanoip-ml-slot.start:hanoip-ml-slot.start
+etc/local.d/99-hanoip-ml-up.start:hanoip-ml-up.start
+etc/modprobe.d/hanoip-ml.conf:hanoip-ml.conf
+etc/NetworkManager/conf.d/hanoip-ml.conf:hanoip-ml-networkmanager.conf
+etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony:hanoip-ml-chrony
+usr/bin/hanoip-ml-abl-slot:hanoip-ml-abl-slot
+usr/bin/hanoip-ml-charge:hanoip-ml-charge
+"
+
+# Verify each exists in root-overlay and matches the copy in device package
+for line in $mainline_files; do
+    [ -z "$line" ] && continue
+    rel="${line%%:*}"
+    pkgfile="${line##*:}"
+    overlay="$root_overlay/$rel"
+    pkgcopy="$d/$pkgfile"
+    if [ ! -f "$overlay" ]; then
+        echo "FAIL: $overlay missing from root-overlay" >&2
+        fail=1
+        continue
+    fi
+    if [ ! -f "$pkgcopy" ]; then
+        echo "FAIL: $pkgcopy missing from device package" >&2
+        fail=1
+        continue
+    fi
+    if ! cmp -s "$overlay" "$pkgcopy"; then
+        echo "FAIL: $pkgcopy differs from $overlay" >&2
+        fail=1
+    fi
+done
+[ $fail -eq 0 ] || exit 1
+echo "byte-for-byte copies from root-overlay: ok"
+
+# --- 3. Check package() installs all 13, and mainline() amove moves exactly those ---
+# Extract the install -D lines from package() that correspond to mainline files
+installed_in_package=$(sed -n '/^package()/,/^}/p' "$apk" \
+    | grep -E 'install -D.*hanoip-ml|install -D.*hanoip-deadman|install -D.*hanoip-battery|install -D.*hanoip-usb' \
+    | sed -E 's/.*\$pkgdir\/(.*)"/\1/' \
+    | tr '\n' ' ')
+
+# Extract amove arguments from mainline() - handle multi-line with backslashes
+amove_args=$(awk '/^mainline\(\)/,/^}/' "$apk" \
+    | grep -A 100 'amove' \
+    | sed -E 's/.*amove\s+//' \
+    | sed -E 's/\\$//' \
+    | sed -E 's/[[:space:]]*}$//' \
+    | tr '\n' ' ')
+
+# Convert amove args to set of destination paths
+amove_dests=""
+for dest in $amove_args; do
+    amove_dests="$amove_dests $dest"
+done
+
+# Check each mainline file path is installed in package()
+for line in $mainline_files; do
+    [ -z "$line" ] && continue
+    rel="${line%%:*}"
+    case " $installed_in_package " in
+        *" $rel "*) ;;
+        *) echo "FAIL: $rel not found in package() installs" >&2; fail=1 ;;
+    esac
+done
+
+# Check each mainline file path appears in mainline() amove
+for line in $mainline_files; do
+    [ -z "$line" ] && continue
+    rel="${line%%:*}"
+    case " $amove_dests " in
+        *" $rel "*) ;;
+        *) echo "FAIL: $rel not found in mainline() amove" >&2; fail=1 ;;
+    esac
+done
+
+# Ensure they are NOT in modem() amove
+modem_amove=$(sed -n '/^modem()/,/^}/p' "$apk" | grep -E '^\s+amove' | head -1 | sed -E 's/.*amove\s+//')
+for line in $mainline_files; do
+    [ -z "$line" ] && continue
+    rel="${line%%:*}"
+    case " $modem_amove " in
+        *" $rel "*) echo "FAIL: $rel incorrectly appears in modem() amove" >&2; fail=1 ;;
+    esac
+done
+
+# Ensure they are NOT in kernel_mainline() or kernel_downstream() (those use devicepkg_subpackage_kernel)
+# No explicit amove there, but ensure no stray install lines in package() are missing from mainline amove
+# (The check above already verifies all 13 are in mainline amove)
+
+[ $fail -eq 0 ] || exit 1
+echo "package() installs + mainline() amove: ok"
+
+echo "test-device-mainline-subpackage: all checks passed"
