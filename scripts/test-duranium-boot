@@ -64,7 +64,7 @@ grep -qx 'reboot -f' "$calls" || fail "past the deadline at the first look, it d
 
 # --- the wiring ---
 cmd=$(cat "$d/kernel-cmdline.mainline.conf")
-for a in clk_ignore_unused panic=5 oops=panic androidboot.slot_suffix=_b; do
+for a in clk_ignore_unused panic=5 oops=panic androidboot.slot_suffix=_a; do
 	case " $cmd " in *" $a "*) ;; *) fail "the kernel command line lacks $a" ;; esac
 done
 case $cmd in *watchdog.open_timeout=*) ;; *) fail "no watchdog.open_timeout: a hang before systemd opens the watchdog would never reset" ;; esac
