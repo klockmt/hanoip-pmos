@@ -62,7 +62,9 @@ else
 	printf '# Read before 60-hanoip-keys-only.conf (the first value wins): root by key, never by password.\nPermitRootLogin prohibit-password\n' \
 		> "$x/etc/ssh/sshd_config.d/50-hanoip-root-key.conf"
 	f=$x/usr/lib/firmware/qcom/sm7150/motorola/hanoip
-	for n in "$fw"/adsp.* "$fw"/modem.* "$fw"/ipa_fws.* "$fw"/wlanmdsp.mbn; do cp "$n" "$f/"; done
+	# The *.jsn files are the protection-domain maps pd-mapper reads from the same directory as the remoteprocs' firmware: without them it
+	# stops with "no pd maps available" and the system stays degraded.
+	for n in "$fw"/adsp.* "$fw"/modem.* "$fw"/ipa_fws.* "$fw"/wlanmdsp.mbn "$fw"/*.jsn; do cp "$n" "$f/"; done
 	cp "$fw/bdwlan_hanoip_ipa.bin" "$x/usr/lib/firmware/ath10k/WCN3990/hw1.0/board.bin"
 fi
 

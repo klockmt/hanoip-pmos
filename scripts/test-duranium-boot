@@ -162,4 +162,8 @@ sed -n '/^mainline()/,/^}/p' "$apk" | grep -qF 'etc/pam.d/sudo' || fail "mainlin
 
 # hdshare (the Samba share's user) is 1000 and owns files on the NAS disk; the login user the image creates must not take that ID.
 grep -q "u %s 1001 " scripts/duranium-image && ! grep -q "u %s 1000 " scripts/duranium-image || fail "the login user is created as 1000, the ID of hdshare"
+
+# hanoip-pd-mapper failed with "no pd maps available" on the first Duranium boots (the system stayed degraded): it reads the
+# *.jsn maps next to the remoteprocs' firmware, which the image did not carry.
+grep -v '^[[:space:]]*#' scripts/duranium-image | grep -q '"\$fw"/\*\.jsn' || fail "scripts/duranium-image does not copy the pd-mapper maps (*.jsn)"
 echo "ok    test-duranium-boot"
