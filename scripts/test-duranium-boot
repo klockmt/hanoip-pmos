@@ -76,7 +76,7 @@ pk=$(sed -n '/^package()/,/^}/p' "$apk")
 # survives it (2026-11-09: the first Duranium boot had no usb0 because hanoip-usb-gadget was no longer enabled).
 echo "$pk" | grep -q 'usr/lib/systemd/system-preset/10-hanoip.preset' || fail "package() does not install the preset that enables the units"
 grep -qx '	hanoip.preset' "$apk" || fail "hanoip.preset is not in source="
-for u in hanoip-usb-gadget.service hanoip-health.service hanoip-charge.service; do
+for u in hanoip-usb-gadget.service hanoip-health.service hanoip-charge.service hanoip-modem.service; do
 	grep -qx "enable $u" "$d/hanoip.preset" || fail "$u is not enabled by hanoip.preset"
 done
 ! echo "$pk" | grep -q 'ln -s .*wants/' || fail "package() still enables units with links in /etc, which preset-all removes"

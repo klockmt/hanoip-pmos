@@ -2,3 +2,4 @@
 enable hanoip-usb-gadget.service
 enable hanoip-health.service
 enable hanoip-charge.service
+enable hanoip-modem.service
