@@ -43,3 +43,4 @@ graphify-out/
 
 # Local Claude Code settings (contains local paths)
 .claude/settings.json
+.claude/
