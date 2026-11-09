@@ -150,4 +150,10 @@ for pair in hanoip-journald.conf:etc/systemd/journald.conf.d/10-hanoip.conf hano
 	echo "$pk" | grep -qF "\"\$srcdir/$src\" \"\$pkgdir/$dest\"" || fail "package() does not install $src"
 	sed -n '/^mainline()/,/^}/p' "$apk" | grep -qF "$dest" || fail "mainline() does not move $dest"
 done
+
+# sudo-rs uses the PAM service "sudo". The image has base-auth and friends in /usr/lib/pam.d but no "sudo", so the fallback
+# "other" denies everyone and the login user could never administer the phone (root login goes off at the end).
+grep -qx 'auth		include		base-auth' "$d/hanoip-pam-sudo" || fail "the sudo PAM service does not use base-auth"
+grep -qx "	hanoip-pam-sudo" "$apk" && echo "$pk" | grep -qF '"$srcdir/hanoip-pam-sudo" "$pkgdir/etc/pam.d/sudo"' || fail "package() does not install the sudo PAM service"
+sed -n '/^mainline()/,/^}/p' "$apk" | grep -qF 'etc/pam.d/sudo' || fail "mainline() does not move etc/pam.d/sudo"
 echo "ok    test-duranium-boot"

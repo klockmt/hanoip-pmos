@@ -113,6 +113,7 @@ source="
 	hanoip-resolved.conf
 	hanoip-coredump.conf
 	hanoip-screen-off.service
+	hanoip-pam-sudo
 "
 
 prepare() {
@@ -225,6 +226,9 @@ package() {
 	install -Dm644 "$srcdir/hanoip-coredump.conf" "$pkgdir/etc/systemd/coredump.conf.d/10-hanoip.conf"
 	install -Dm644 "$srcdir/hanoip-screen-off.service" "$pkgdir/etc/systemd/system/hanoip-screen-off.service"
 
+	# sudo-rs asks PAM for the service sudo; without this file the image falls back to other, which refuses everyone
+	install -Dm644 "$srcdir/hanoip-pam-sudo" "$pkgdir/etc/pam.d/sudo"
+
 	# Modem and Wi-Fi userspace; modem() below moves it into its own subpackage.
 	install -Dm755 "$srcdir/hanoip-qrtr-ns" "$pkgdir/usr/bin/hanoip-qrtr-ns"
 	install -Dm755 "$srcdir/hanoip-pd-mapper" "$pkgdir/usr/bin/hanoip-pd-mapper"
@@ -310,7 +314,8 @@ mainline() {
 		usr/lib/systemd/system-preset etc/systemd/system/qbootctl.service \
 		etc/systemd/system/adguardhome.service etc/systemd/system/smb.service etc/systemd/system/syncthing.service etc/systemd/system/mnt-hd\\x2da.mount etc/systemd/system/mnt-hd\\x2db.mount usr/lib/sysusers.d/20-hanoip-services.conf \
 		etc/systemd/system/hanoip-thermal.service etc/systemd/system/hanoip-led.service \
-		etc/systemd/journald.conf.d/10-hanoip.conf etc/systemd/resolved.conf.d/10-hanoip.conf etc/systemd/coredump.conf.d/10-hanoip.conf etc/systemd/system/hanoip-screen-off.service
+		etc/systemd/journald.conf.d/10-hanoip.conf etc/systemd/resolved.conf.d/10-hanoip.conf etc/systemd/coredump.conf.d/10-hanoip.conf etc/systemd/system/hanoip-screen-off.service \
+		etc/pam.d/sudo
 }
 
 sha512sums="
@@ -397,4 +402,5 @@ aa62ddba3548bbd2bf4643197818ab93acc75b5e2cfa96c40b3d9e7ea747c0baee71b4e922b231d6
 6c66d66a309862b55aa13713e1b42abf5a73dd1d20ffe78a8ffc3d51f13f772e2e63c248769a7485a3abd8a4f071e40f62df3d42a01369b14a8aa2d286478cd8  hanoip-resolved.conf
 d6a5690c49b697ec9afbe371d78b832375fe15f678b26cfb0f9c43caf0529d5318f2af6269d0ae008a7eda34b6acab0ebb0f64f3ae70f5e735d30dd65e86cf9f  hanoip-coredump.conf
 a7ea12a4ef0f76db8a4ea63159a4705cfa3e56c15b81a44f2e5b4096730963ccbe5ebb9ca68e8903f3d9374920506dc4a8eab51fca13300be887967630c8d9c3  hanoip-screen-off.service
+cc7712730d5aabe0b958f553cf0d1accde5812322839a854fbb761fc00c88ff73f9fe4a97b3d80219c2c3cc98cc7262915f27d17395395afee46eff8011fd795  hanoip-pam-sudo
 "
