@@ -257,3 +257,6 @@ Decisions, with the options that were left:
 - **Bugs found on the way** (each has a test, see `docs/PITFALLS.md`): the device package did not build with two kernel subpackages
   (`deviceinfo` variables must all carry a suffix); the image needs `systemd-boot` pulled in by the mainline kernel subpackage; and
   `/etc` files of the image go in `/etc`, not under `usr/lib/confexts`, which mkosi.finalize would have nested one level too deep.
+- **What stopped the run:** writing `userdata` was refused by the tool's safety check ("irreversible"), and the project rule says to ask
+  the user again before it. The phone was put back as found (boot_b restored from its backup, slot b active, the 4.14 server up) so the
+  household's DNS and the shares are not down while waiting. Everything else is ready: see the state section of `docs/DURANIUM.md`.

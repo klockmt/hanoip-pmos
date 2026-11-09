@@ -159,6 +159,32 @@ before step 8, so the backup holds the server's last state.
 - Then: first boot, SSH, the services restored from the backup, a reboot, an A/B update and its rollback tried once.
   Write the evidence into `docs/MAINLINE.md` and `docs/STATUS.md`, and retire the 4.14 in the README.
 
+## State of the overnight run (2026-11-09, `beta`)
+
+Everything up to the write of `userdata` is done and tested without it; the write itself was refused by the tool's safety
+check (irreversible), so it waits for the user. What exists:
+- Step 1 built: `linux-motorola-hanoip-mainline-7.3-r0.apk`, DTB `900e11eb…`, the same 863 modules as the host build. Not yet
+  booted from the package's own `Image` (the boots so far used the host build, same sources).
+- Steps 2 and 3: the device package (pkgrel 47) builds with `scripts/pmb build --force device-motorola-hanoip`; its mainline
+  subpackage ships the USB gadget, the boot-health check, the modem and charge units, and the UKI's command line.
+- Step 4: `scripts/duranium-image` builds a console image in Nura's container in about 150 s: 6.4 GB, 4096-byte GPT, ESP
+  with `EFI/BOOT/BOOTAA64.EFI` and one UKI without a DTB of its own, `/usr` verity and EROFS, vendor firmware, the login user, root by
+  key, wizard skipped. Inspected from the outside (UKI sections, command line, files in the EROFS); never booted.
+- Steps 5 and 6: the U-Boot with the blkmap/EFI environment is in `boot_a` and `boot_b` of the phone (same image, the ABL's slot
+  decides). On slot a with the 4.14's userdata it found no ESP and booted the rescue root (seen: SSH over USB, kernel
+  7.3.0-sm7150, slot `_a`). The positive path (an ESP in userdata) is untested.
+- Step 7: fresh backup `server-4.14-20261109-final` (hashes equal on both sides), and `boot_a`/`boot_b` as they were.
+- Left as it was found: boot_b was put back from its backup, slot b is active and the 4.14 server runs again (every service
+  up at 00:17). `boot_a` keeps the new U-Boot, which behaves as the old one while userdata holds no ESP.
+
+To finish (needs the user's yes, because it replaces the 4.14 server's userdata):
+1. `scripts/reboot-bootloader`; `fastboot flash boot_b $HANOIP_MAINLINE_DIR/out/boot_a-duranium.img` (the rescue slot must not
+   be the 4.14 any more); `fastboot set_active a`; `fastboot reboot` (slot a boots the rescue root while userdata has no ESP).
+2. `scripts/duranium-write-userdata` (about 15 minutes), then `qbootctl -a a` from the rescue root or `fastboot set_active a`
+   so slot a is not marked successful, then reboot: U-Boot finds the ESP, systemd-boot starts the UKI, `hanoip-health` marks the
+   slot good once sshd and an address are up, and reboots after ten minutes when they are not.
+3. If the DTB choice is wrong (no boot, no USB), `HANOIP_UKI_DTB=1 scripts/duranium-image` keeps the package's DTB in the UKI.
+
 ## Rules that stay
 
 - `scripts/check-repo` before every commit and push; one commit per change; English `type(scope): summary`; no AI
