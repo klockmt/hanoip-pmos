@@ -68,4 +68,10 @@ fi
 cd "$dir"
 MKOSI=./scripts/mkosi-container
 export MKOSI
-run ./scripts/build-image.py device-motorola-hanoip ui-console --release=edge --extra-tree=hanoip-extra "$@"
+# The UKI carries no DTB of its own: systemd-stub then leaves U-Boot's, the one every mainline boot of this phone ran with
+# (boot_with_embedded_fdt, docs/MAINLINE.md) and the one that carries the ABL's fixups. HANOIP_UKI_DTB=1 keeps the kernel
+# package's DTB in the UKI instead.
+dtb=--remove-files=/usr/lib/modules/*/dtb/qcom/sm7150-motorola-hanoip.dtb
+[ -z "${HANOIP_UKI_DTB:-}" ] || dtb=
+# shellcheck disable=SC2086
+run ./scripts/build-image.py device-motorola-hanoip ui-console --release=edge --extra-tree=hanoip-extra $dtb "$@"
