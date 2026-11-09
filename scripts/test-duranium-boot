@@ -64,7 +64,7 @@ grep -qx 'reboot -f' "$calls" || fail "past the deadline at the first look, it d
 
 # --- the wiring ---
 cmd=$(cat "$d/kernel-cmdline.mainline.conf")
-for a in clk_ignore_unused panic=5 oops=panic androidboot.slot_suffix=_a; do
+for a in clk_ignore_unused panic=5 oops=panic loop.max_part=7 androidboot.slot_suffix=_a; do
 	case " $cmd " in *" $a "*) ;; *) fail "the kernel command line lacks $a" ;; esac
 done
 case $cmd in *watchdog.open_timeout=*) ;; *) fail "no watchdog.open_timeout: a hang before systemd opens the watchdog would never reset" ;; esac
@@ -76,4 +76,7 @@ for u in hanoip-usb-gadget.service hanoip-health.service; do
 	echo "$pk" | grep -q "wants/$u" || fail "$u is not enabled by package()"
 done
 echo "$pk" | grep -q 'qbootctl.service' || fail "qbootctl.service (marks the slot good at multi-user.target, before anything is checked) is not masked"
+# mkosi.finalize moves /etc of the image into usr/lib/confexts/duranium-base-config/etc; an /etc path pre-made there by the
+# extra tree makes it land one level too deep (etc/etc), and the confext then carries none of the image's /etc (2026-11-09).
+! grep -v '^[[:space:]]*#' scripts/duranium-image | grep -q 'usr/lib/confexts' || fail "scripts/duranium-image writes under usr/lib/confexts: /etc files go in \$x/etc"
 echo "ok    test-duranium-boot"
