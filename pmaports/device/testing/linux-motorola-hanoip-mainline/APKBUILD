@@ -6,7 +6,7 @@
 # image build takes: the EFI kernel (EFI_ZBOOT) as /boot/vmlinuz, the DTB under /boot/dtbs and the modules in /usr.
 pkgname=linux-motorola-hanoip-mainline
 pkgver=7.3
-pkgrel=0
+pkgrel=1
 pkgdesc="Motorola Moto G (60) mainline kernel (Linux 7.3 and this project's patches)"
 arch="aarch64"
 _carch="arm64"
@@ -37,7 +37,7 @@ makedepends="
 "
 
 _base_tree=30fd2ef82912c26cf3a58ad0ba6afc375fa851ac # git tree of tag v7.3
-_tree=276fbce0ae673c83e456cfe359c33ed3c4e3468b      # v7.3 + the patches: the tree that booted on the phone
+_tree=0cf5808c14ddfce6e191b2fa6aeefbbf6cb38709      # v7.3 + the patches: the tree that booted on the phone
 source="
 	https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-$pkgver.tar.xz
 	0001-FROMLIST-dt-bindings-cpufreq-qcom-hw-Add-the-SM7150-.patch
@@ -409,7 +409,7 @@ f1d5660d6a0a8d44056a29eebb6ffbf19d966b5bbebb77a37eef996b67eaa03c62d8a2b40a434781
 ef3a94cf884eb27f5796bf5ce4ac003a66a0ca1fdccb0b66dd72e18defe7e934f2f71d236d5b8d8e31456c94ab13b086b437edea0cb8e36cb7b2507133d662ad  0118-hanoip-pinctrl-clk-soc.patch
 3f6f300b89771f67735abf61f4d7c40d311900ad9f44d01f8616bbdcebde6b251de2f008d6ede702f8b92b92216eb408960e13f7e5bfc366bfee955c33253665  0119-hanoip-lcdb-regulator.patch
 cc250e367ff45d722376f59612c14e7706b4e9c9fe30f83f8772c89cb2de6bc4d5bb8e03b6d49de9d0e141f717f786e61581bdc963e51fafebfdcfca8da5f995  0120-hanoip-panel-ili7807s.patch
-3e929edb22d1d831f9a6fd532718fe0dede69398c34de1e11c2d5da1674a34649c028c01c2a93d41d90694e813dbcd2138d5f6b8cb428021acfd2548a5f433a3  0121-hanoip-simplefb.patch
+60373b39d25e0f93ae396cbeb7dab6e2926d56e5525b4b345a45e33de3be5743c650aa4f3d100cc166e204c35855660690442afecffce79e462a9a1a85cb77ac  0121-hanoip-simplefb.patch
 d46928e1319ac41d2a133714d14dfc470fe7e9ca69262567554cf64f3bf9de9b30a7f4f7eba7c4f303c22edb16a3bdb3d2ad34101091244a7413cffc6a2281d5  0122-hanoip-ufs.patch
 8cf42c4361a5eed4d521c105bd727d90d629e7a8e29d7462f58da88246a8506da4eadee5821d9f12ac8883d620d7c5b4545b80700fadd2da5eef7f4522b64a92  0123-hanoip-iommu-smmu.patch
 1cb9e6c62db533201fa173aa0aa02124bf62f6eeab7f74a6cd52066558571c6326a4fd48ff22d910424a9a16e25f2ddab79655a34b80eb26444cda699aba10f9  0124-hanoip-msm-display.patch

@@ -4,8 +4,8 @@ Date: Sun, 25 Oct 2026 20:56:33 +0000
 Subject: [PATCH 121/194] hanoip: simplefb
 
 ---
- drivers/video/fbdev/simplefb.c | 78 ++++++++++++++++++++++++++++++++--
- 1 file changed, 74 insertions(+), 4 deletions(-)
+ drivers/video/fbdev/simplefb.c | 79 ++++++++++++++++++++++++++++++++--
+ 1 file changed, 75 insertions(+), 4 deletions(-)
 
 diff --git a/drivers/video/fbdev/simplefb.c b/drivers/video/fbdev/simplefb.c
 index 60e5dcec2..fbd26a11c 100644
@@ -99,7 +99,7 @@ index 60e5dcec2..fbd26a11c 100644
  static const struct fb_ops simplefb_ops = {
  	.owner		= THIS_MODULE,
  	FB_DEFAULT_IOMEM_OPS,
-@@ -599,8 +657,19 @@ static int simplefb_probe(struct platform_device *pdev)
+@@ -599,8 +657,20 @@ static int simplefb_probe(struct platform_device *pdev)
  	par->size = info->fix.smem_len;
  
  	info->fbops = &simplefb_ops;
@@ -107,7 +107,8 @@ index 60e5dcec2..fbd26a11c 100644
 -				       info->fix.smem_len);
 +
 +#ifdef CONFIG_ARM64
-+	if (info->fix.smem_start == 0x9c000000) {
++	if (info->fix.smem_start == 0x9c000000 &&
++	    pfn_is_map_memory(__phys_to_pfn(info->fix.smem_start))) {
 +		par->linear_mapping = true;
 +		info->screen_buffer = phys_to_virt(info->fix.smem_start);
 +		info->screen_base = (char __iomem *)info->screen_buffer;
@@ -121,7 +122,7 @@ index 60e5dcec2..fbd26a11c 100644
  	if (!info->screen_base) {
  		ret = -ENOMEM;
  		goto error_fb_release;
-@@ -654,7 +723,8 @@ static int simplefb_probe(struct platform_device *pdev)
+@@ -654,7 +724,8 @@ static int simplefb_probe(struct platform_device *pdev)
  error_clocks:
  	simplefb_clocks_destroy(par);
  error_unmap:

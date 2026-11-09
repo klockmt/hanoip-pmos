@@ -56,4 +56,8 @@ for a in 'arch/arm64/boot/vmlinuz.efi "$pkgdir"/boot/vmlinuz' \
 	'"$pkgdir"/boot/dtbs/qcom/sm7150-motorola-hanoip.dtb' 'INSTALL_MOD_PATH="$pkgdir"/usr'; do
 	echo "$code" | grep -qF -- "$a" || fail "package() does not install $a"
 done
+# simplefb's linear-mapping shortcut for the framebuffer (patch 0121) is valid only where the kernel really mapped that RAM: a
+# boot through U-Boot's EFI reserves it, and the kernel then oopsed in fbcon at 0.46 s (2026-11-09, Duranium's first boot).
+grep -A1 '^+	if (info->fix.smem_start == 0x9c000000 &&$' "$ml/patches/0121-hanoip-simplefb.patch" | grep -q 'pfn_is_map_memory(' ||
+	fail "patch 0121 uses the linear mapping of the framebuffer without checking pfn_is_map_memory()"
 echo "mainline kernel package: ok"
