@@ -215,6 +215,33 @@ To finish (needs the user's yes, because it replaces the 4.14 server's userdata)
    `fastboot set_active a`, reboot, watch for SSH. Once a boot reaches userspace, a full rewrite wipes what repart created.
 5. Then: first boot checks, services restored from the backup, a reboot, the A/B rollback once, `docs/STATUS.md` and the README.
 
+## State after the second write of `userdata` (2026-11-09, evening, `beta`)
+
+**Done and seen on the phone**
+- The kernel package with the framebuffer fix (`linux-motorola-hanoip-mainline-7.3-r1`) and a new image were built; the UKI's
+  kernel is byte-identical to the package's `vmlinuz`, the DTB `900e11eb…`. The 4.14 backup's hashes were checked, then
+  `userdata` was written again from the rescue root (718 s, SHA-256 read back equal). Slot a active.
+- Slot a boots Duranium through EFI to `Duranium login:` on the screen: the framebuffer oops is gone. Nothing could reach the phone
+  at first, because the units were not enabled (`docs/PITFALLS.md`: mkosi's `systemctl preset-all` removes enable links in
+  `/etc`). The systemd-boot menu has a `debug-shell` entry: a telnet shell in the initramfs on `172.16.42.1:23`; from there the
+  root was mounted read-only (`/dev/mapper/root`, blank-passphrase LUKS) and its journal read.
+- Fixed live (the image on the phone is r47-based and still has no preset): links for `hanoip-usb-gadget` (in the mutable `/etc`
+  under `/var/lib/extensions.mutable`), then `systemctl enable` for `hanoip-health`, `hanoip-charge`, `hanoip-modem` and `tailscaled`.
+  Fixed in the package for the next image: preset `10-hanoip.preset`, `device-motorola-hanoip` `pkgrel=49` (**not built**: `pmbootstrap`
+  needed sudo and the password in `.env` was refused that evening).
+- Checked after a reboot of Duranium: it comes back by itself, SSH over USB (`root`, key), `hanoip-health` marks slot `_a` good,
+  Wi-Fi (the two profiles from the 4.14 backup, copied with mode 600), Tailscale with the node state from the backup (same name,
+  SSH over the tailnet), port 22 closed from the LAN, nftables with the USB/tailnet SSH rules. The tailnet host key changed (new
+  system): its fingerprint was compared with the one seen over USB, then the old `known_hosts` entry was replaced.
+
+**Still open**
+1. AdGuard Home (the household's DNS), Samba, Syncthing and the Telegram bot are **not in the image** and are down. They have to be added to the
+   image's package list and the data restored from `server-4.14-20261109-final` (`/var/lib` of each, `/etc/AdGuardHome.yaml`, Samba's config).
+2. `hanoip-pd-mapper` fails with "no pd maps available": the firmware's protection-domain maps are not in the image. Wi-Fi works without it.
+3. Rebuild the package (`scripts/pmb build --force device-motorola-hanoip`, needs sudo) and the image, and check offline that the
+   confext has the three enable links, before the next write. A write is now only needed for a changed image: A/B update and its rollback are untested.
+4. The login user has no sudo (by design); administration is `root` over USB.
+
 ## Rules that stay
 
 - `scripts/check-repo` before every commit and push; one commit per change; English `type(scope): summary`; no AI
