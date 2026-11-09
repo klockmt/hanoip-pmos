@@ -252,7 +252,34 @@ mainline() {
 	pkgdesc="Mainline root services for Motorola Moto G (60): modem, charge limit, guard, slot marking, watchdog, network"
 	# The modem subpackage carries the binaries the modem units run (and rmtfs): without it pmOS's tqftpserv.service, which these
 	# units replace, would fail at every boot.
-	depends="$pkgname $pkgname-modem adguardhome samba-server samba-common-tools syncthing"
+	depends="
+		$pkgname
+		$pkgname-modem
+		adguardhome
+		samba-server
+		samba-common-tools
+		syncthing
+		btop
+		btrfs-progs
+		btrfs-progs-extra
+		debootstrap
+		doas
+		fastfetch
+		gcompat
+		hwloc-tools
+		iperf3
+		libdrm-tests
+		libstdc++
+		memtester
+		musl-utils
+		openssl
+		smartmontools
+		stress-ng
+		sudo-rs
+		tar
+		tzdata
+		wget
+	"
 	amove etc/systemd/system/hanoip-efs.service etc/systemd/system/rmtfs.service \
 		etc/systemd/system/hanoip-qrtr-ns.service etc/systemd/system/hanoip-pd-mapper.service \
 		etc/systemd/system/tqftpserv.service etc/systemd/system/hanoip-modem.service \

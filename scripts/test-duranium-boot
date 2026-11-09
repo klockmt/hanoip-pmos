@@ -84,7 +84,7 @@ echo "$pk" | grep -q 'qbootctl.service' || fail "qbootctl.service (marks the slo
 # mkosi.finalize moves /etc of the image into usr/lib/confexts/duranium-base-config/etc; an /etc path pre-made there by the
 # extra tree makes it land one level too deep (etc/etc), and the confext then carries none of the image's /etc (2026-11-09).
 ! grep -v '^[[:space:]]*#' scripts/duranium-image | grep -q 'usr/lib/confexts' || fail "scripts/duranium-image writes under usr/lib/confexts: /etc files go in \$x/etc"
-sed -n '/^mainline()/,/^}/p' "$apk" | grep -q 'depends=.*\$pkgname-modem' || fail "the mainline subpackage does not pull in the modem subpackage (the binaries of its units)"
+sed -n '/^mainline()/,/^}/p' "$apk" | sed -n '/depends="/,/"/p' | grep -q '\$pkgname-modem' || fail "the mainline subpackage does not pull in the modem subpackage (the binaries of its units)"
 
 # --- the server's services on systemd (the 4.14 ran them under OpenRC; Alpine ships no units for these three) ---
 # source:destination in the package. A mount unit is named after its path, so the dash of "hd-a" is spelled \x2d.
@@ -124,4 +124,13 @@ for pair in 'hanoip-thermal.service:etc/systemd/system/hanoip-thermal.service' '
 done
 grep -qx 'enable hanoip-bot.service' "$d/hanoip.preset" || fail "hanoip-bot.service is not enabled by hanoip.preset"
 grep -q 'ExecStopPost=.*hanoip-thermal.hot.*scaling_max_freq' "$d/hanoip-thermal.service" || fail "stopping hanoip-thermal leaves the charge paused or the CPU capped"
+
+# Everything the 4.14 server's world had that is not part of the base image, and the two tools asked for on top (fastfetch,
+# lstopo: the second is in hwloc-tools). The OpenRC pieces (postmarketos-base*, mkinitfs, apk-tools, *-openrc) stay out.
+deps=$(sed -n '/^mainline()/,/^}/p' "$apk" | sed -n '/depends="/,/"/p')
+for p in adguardhome samba-server samba-common-tools syncthing btop btrfs-progs btrfs-progs-extra debootstrap doas fastfetch gcompat \
+	hwloc-tools iperf3 libdrm-tests libstdc++ memtester musl-utils openssl smartmontools stress-ng sudo-rs tar tzdata wget; do
+	echo "$deps" | grep -qw -- "$p" || fail "the mainline subpackage does not depend on $p (the 4.14 server had it)"
+done
+echo "$deps" | grep -q 'openrc\|postmarketos-base\|mkinitfs\|apk-tools' && fail "the mainline subpackage depends on an OpenRC/pmOS 4.14 piece"
 echo "ok    test-duranium-boot"
