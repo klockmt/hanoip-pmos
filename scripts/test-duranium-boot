@@ -156,4 +156,7 @@ done
 grep -qx 'auth		include		base-auth' "$d/hanoip-pam-sudo" || fail "the sudo PAM service does not use base-auth"
 grep -qx "	hanoip-pam-sudo" "$apk" && echo "$pk" | grep -qF '"$srcdir/hanoip-pam-sudo" "$pkgdir/etc/pam.d/sudo"' || fail "package() does not install the sudo PAM service"
 sed -n '/^mainline()/,/^}/p' "$apk" | grep -qF 'etc/pam.d/sudo' || fail "mainline() does not move etc/pam.d/sudo"
+
+# hdshare (the Samba share's user) is 1000 and owns files on the NAS disk; the login user the image creates must not take that ID.
+grep -q "u %s 1001 " scripts/duranium-image && ! grep -q "u %s 1000 " scripts/duranium-image || fail "the login user is created as 1000, the ID of hdshare"
 echo "ok    test-duranium-boot"

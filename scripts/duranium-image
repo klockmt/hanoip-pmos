@@ -49,7 +49,8 @@ else
 	mkdir -p "$x/usr/lib/sysusers.d" "$x/usr/lib/tmpfiles.d" "$x/usr/share/hanoip" \
 		"$x/etc/ssh/sshd_config.d" \
 		"$x/usr/lib/firmware/qcom/sm7150/motorola/hanoip" "$x/usr/lib/firmware/ath10k/WCN3990/hw1.0"
-	printf 'u %s 1000 "%s" /home/%s /bin/sh\nm %s wheel\n' "$HANOIP_USER" "$HANOIP_USER" "$HANOIP_USER" "$HANOIP_USER" > "$x/usr/lib/sysusers.d/20-hanoip-user.conf"
+	# 1001, not 1000: the 4.14's NAS share user (hdshare) is 1000 and owns files on the disk (hanoip-sysusers.conf).
+	printf 'u %s 1001 "%s" /home/%s /bin/sh\nm %s wheel\n' "$HANOIP_USER" "$HANOIP_USER" "$HANOIP_USER" "$HANOIP_USER" > "$x/usr/lib/sysusers.d/20-hanoip-user.conf"
 	cp "$pub" "$x/usr/share/hanoip/authorized_keys"
 	chmod 644 "$x/usr/share/hanoip/authorized_keys"
 	{
