@@ -133,4 +133,21 @@ for p in adguardhome samba-server samba-common-tools syncthing btop btrfs-progs 
 	echo "$deps" | grep -qw -- "$p" || fail "the mainline subpackage does not depend on $p (the 4.14 server had it)"
 done
 echo "$deps" | grep -q 'openrc\|postmarketos-base\|mkinitfs\|apk-tools' && fail "the mainline subpackage depends on an OpenRC/pmOS 4.14 piece"
+
+# What a headless server must not run or listen on. Nura's preset (80-duranium.preset) enables avahi, rtkit, oomd and getty@;
+# ours is read first, so a disable line here wins. LLMNR (5355) and mDNS (5353) go through resolved's own configuration.
+for u in avahi-daemon.service avahi-daemon.socket rtkit-daemon.service systemd-oomd.service systemd-oomd.socket getty@.service; do
+	grep -qx "disable $u" "$d/hanoip.preset" || fail "$u is not disabled by hanoip.preset"
+done
+grep -qx 'enable hanoip-screen-off.service' "$d/hanoip.preset" || fail "the backlight is not switched off at boot"
+grep -qx 'LLMNR=no' "$d/hanoip-resolved.conf" && grep -qx 'MulticastDNS=no' "$d/hanoip-resolved.conf" || fail "resolved still answers LLMNR or mDNS"
+grep -qx 'Storage=none' "$d/hanoip-coredump.conf" || fail "core files would be stored on a 4 GB phone"
+grep -q '^SystemMaxUse=' "$d/hanoip-journald.conf" || fail "the journal has no size limit"
+for pair in hanoip-journald.conf:etc/systemd/journald.conf.d/10-hanoip.conf hanoip-resolved.conf:etc/systemd/resolved.conf.d/10-hanoip.conf \
+	hanoip-coredump.conf:etc/systemd/coredump.conf.d/10-hanoip.conf hanoip-screen-off.service:etc/systemd/system/hanoip-screen-off.service; do
+	src=${pair%%:*} dest=${pair#*:}
+	grep -qx "	$src" "$apk" || fail "$src is not in source="
+	echo "$pk" | grep -qF "\"\$srcdir/$src\" \"\$pkgdir/$dest\"" || fail "package() does not install $src"
+	sed -n '/^mainline()/,/^}/p' "$apk" | grep -qF "$dest" || fail "mainline() does not move $dest"
+done
 echo "ok    test-duranium-boot"
