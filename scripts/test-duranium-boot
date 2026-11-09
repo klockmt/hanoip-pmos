@@ -79,4 +79,5 @@ echo "$pk" | grep -q 'qbootctl.service' || fail "qbootctl.service (marks the slo
 # mkosi.finalize moves /etc of the image into usr/lib/confexts/duranium-base-config/etc; an /etc path pre-made there by the
 # extra tree makes it land one level too deep (etc/etc), and the confext then carries none of the image's /etc (2026-11-09).
 ! grep -v '^[[:space:]]*#' scripts/duranium-image | grep -q 'usr/lib/confexts' || fail "scripts/duranium-image writes under usr/lib/confexts: /etc files go in \$x/etc"
+sed -n '/^mainline()/,/^}/p' "$apk" | grep -q 'depends=.*\$pkgname-modem' || fail "the mainline subpackage does not pull in the modem subpackage (the binaries of its units)"
 echo "ok    test-duranium-boot"

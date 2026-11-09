@@ -4,7 +4,7 @@
 pkgname=device-motorola-hanoip
 pkgdesc="Motorola Moto G (60)"
 pkgver=0
-pkgrel=46
+pkgrel=47
 _qrtr_rev=29e36ae164389580a0f8ea7a7fdb728140ae978d
 _pdmapper_rev=5ecd2fe926aca7abfe40724177f63b942cff3947
 url="https://postmarketos.org"
@@ -233,7 +233,9 @@ kernel_mainline() {
 
 mainline() {
 	pkgdesc="Mainline root services for Motorola Moto G (60): modem, charge limit, guard, slot marking, watchdog, network"
-	depends="$pkgname"
+	# The modem subpackage carries the binaries the modem units run (and rmtfs): without it pmOS's tqftpserv.service, which these
+	# units replace, would fail at every boot.
+	depends="$pkgname $pkgname-modem"
 	amove etc/systemd/system/hanoip-efs.service etc/systemd/system/rmtfs.service \
 		etc/systemd/system/hanoip-qrtr-ns.service etc/systemd/system/hanoip-pd-mapper.service \
 		etc/systemd/system/tqftpserv.service etc/systemd/system/hanoip-modem.service \
