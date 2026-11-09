@@ -1,0 +1,57 @@
+#!/bin/sh
+# Step 8 of docs/DURANIUM.md: writes the Duranium raw image (scripts/duranium-image) into the userdata partition from the
+# mainline Alpine rescue root, over the USB network, then reads it back and compares SHA-256. It REPLACES what userdata
+# holds (the 4.14 server's image: back it up first, scripts/backup-server). Approved by the user for the overnight run of
+# 2026-11-09 (AGENTS.md). The 4.14 server's own root is on userdata, so the phone must be running the mainline rescue root
+# (checked), and nothing may have userdata mounted or looped (checked). Only the userdata partition is made writable, by
+# stopping the rescue root's guard, which the reboot afterwards starts again.
+# The image goes gzip-compressed at 1 MB/s (a burst takes the USB network down); its holes are zeros and compress to
+# nothing, so only the 0.9 GB of real data crosses. DRY_RUN=1 only prints; ASSUME_YES=1 skips the question.
+# Usage: scripts/duranium-write-userdata [image.raw]
+set -eu
+. "$(dirname "$0")/env.sh"
+dir=$(cd "$(dirname "$0")" && pwd)
+ssh_=${HANOIP_SSH_CMD:-$dir/hanoip-ssh}
+img=${1:-}
+if [ -z "$img" ]; then
+	img=$(ls -t "${HANOIP_DURANIUM_DIR:-$HANOIP_SRC_DIR/duranium-build}"/mkosi.output/*/*_*.raw 2>/dev/null | grep -v -E '\.(usr|esp|dev-tools|waydroid)' | head -1 || true)
+fi
+[ -f "$img" ] || { echo "no image (run scripts/duranium-image, or pass the .raw)" >&2; exit 1; }
+size=$(wc -c < "$img")
+[ $((size % 4096)) -eq 0 ] || { echo "image size $size is not a multiple of 4096" >&2; exit 1; }
+dev=/dev/disk/by-partlabel/userdata
+
+if [ -n "${DRY_RUN:-}" ]; then
+	echo "+ check on the phone: mainline kernel, $dev not mounted or looped, partition at least $size bytes"
+	echo "+ stop the guard, blockdev --setrw the userdata partition"
+	echo "+ gzip -1 -c $img | pv -L 1m | hanoip-ssh 'sudo gunzip | dd of=$dev bs=4M conv=fsync'"
+	echo "+ read $size bytes back from $dev and compare sha256"
+	exit 0
+fi
+command -v pv >/dev/null || { echo "pv is needed to throttle the transfer" >&2; exit 1; }
+root_() { "$dir/hanoip-sudo" "$1"; }
+
+kernel=$($ssh_ 'uname -r')
+case $kernel in 4.*) echo "the phone runs the 4.14 server ($kernel): its root is on userdata. Boot the mainline rescue root first." >&2; exit 1 ;; esac
+root_ "set -e
+part=\$(readlink -f $dev)
+! grep -q \"^\$part\" /proc/mounts || { echo 'userdata is mounted' >&2; exit 1; }
+! losetup -a | grep -q . || { echo 'a loop device is in use' >&2; losetup -a >&2; exit 1; }
+have=\$(blockdev --getsize64 \$part)
+[ \$have -ge $size ] || { echo \"userdata is \$have bytes, the image $size\" >&2; exit 1; }
+echo \"userdata \$part: \$have bytes, image $size\""
+echo "Image: $img ($size bytes), kernel on the phone: $kernel"
+confirm "This REPLACES userdata on the phone with the Duranium image. Continue?" || { echo aborted; exit 1; }
+
+want=$(sha256sum "$img" | cut -d' ' -f1)
+# The guard loop (local.d/05-hanoip-ml-guard.start) sets every partition but super's read-only every 2 s: stop it, then unlock userdata.
+root_ "pkill -f 05-hanoip-ml-guard || true; touch /run/hanoip-ml-keep; blockdev --setrw \$(readlink -f $dev); sleep 3; blockdev --getro \$(readlink -f $dev)" |
+	grep -qx 0 || { echo "userdata could not be made writable" >&2; exit 1; }
+{
+	printf '%s\n' "$HANOIP_SUDO_PASSWORD"
+	gzip -1 -c "$img" | pv -L 1m
+} | $ssh_ "sudo -S -p '' sh -c 'gunzip | dd of=$dev bs=4M conv=fsync 2>&1 | tail -1'" # sudo reads its password from the first line, the image follows
+got=$(root_ "dd if=$dev bs=4096 count=$((size / 4096)) 2>/dev/null | sha256sum" | cut -d' ' -f1)
+echo "image: $want"
+echo "read:  $got"
+[ "$want" = "$got" ] && echo "userdata written and verified." || { echo "MISMATCH: write again." >&2; exit 1; }

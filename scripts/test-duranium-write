@@ -1,0 +1,21 @@
+#!/bin/sh
+# Checks scripts/duranium-write-userdata without a phone: it refuses an image that is not whole 4096-byte blocks, refuses
+# to write while the phone runs the 4.14 server (whose root is on userdata), and its dry run names every step.
+set -eu
+cd "$(dirname "$0")/.."
+fail() { echo "FAIL: $*" >&2; exit 1; }
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+head -c 8192 /dev/zero > "$tmp/ok.raw"
+head -c 8193 /dev/zero > "$tmp/odd.raw"
+if sh scripts/duranium-write-userdata "$tmp/odd.raw" >/dev/null 2>&1; then fail "an image of 8193 bytes was accepted"; fi
+out=$(DRY_RUN=1 sh scripts/duranium-write-userdata "$tmp/ok.raw") || fail "the dry run failed"
+for w in 'mainline kernel' 'blockdev --setrw' 'pv -L 1m' 'compare sha256'; do
+	case $out in *"$w"*) ;; *) fail "the dry run does not mention: $w" ;; esac
+done
+printf '#!/bin/sh\necho 4.14.357-openela-Cybertron-v18-pmos\n' > "$tmp/ssh"
+chmod +x "$tmp/ssh"
+if ASSUME_YES=1 HANOIP_SSH_CMD=$tmp/ssh sh scripts/duranium-write-userdata "$tmp/ok.raw" >/dev/null 2>&1; then
+	fail "it wrote while the phone ran the 4.14 server"
+fi
+echo "ok    test-duranium-write"
