@@ -112,7 +112,7 @@ The kernel received only the boot image's command line, not the `bootargs` of th
 the boot image.
 
 **Our own build, same day.** Linux 7.3 from kernel.org (`linux-7.3.tar.xz`, checked against `sha256sums.asc`; its git
-tree is `30fd2ef8`, the tree of tag v7.3) plus the 195 patches (`kernel/mainline/patches`) gives tree `276fbce0`,
+tree is `30fd2ef8`, the tree of tag v7.3) plus the 195 patches (`kernel/mainline/patches`) gives tree `0cf5808c`,
 the one that booted. `config-7.3-hanoip` plus `QCOM_WDT=y` and `WATCHDOG_SYSFS=y`, built with the host's
 `aarch64-linux-gnu-gcc` 16.2 (the first set used 13.3), with no errors. The DTB came out byte-identical to the first set's (`900e11eb`).
 Booted the same way with our modules in the initramfs and `panic=5 oops=panic` on the command line:

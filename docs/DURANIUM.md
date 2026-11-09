@@ -26,7 +26,7 @@ it touches the phone, evidence written into `docs/MAINLINE.md`.
 | Mainline root | Alpine edge + pmOS repo, OpenRC, in super's approved region (`sdb23`, offset 1174405120, size 2516582400); written by `scripts/mainline-make-root` from the 4.14 |
 | `userdata` | `sdb24` (LUN 1), 116 GB: a GPT image with 4096-byte sectors holding the 4.14's boot (503 MB) and root (115 GB, 4.2 GB used) |
 | U-Boot | `scripts/build-mainline-uboot` (sm7150-mainline/u-boot `tauchgang` at `f8c04469`, the board diffs in `kernel/mainline/uboot/base`, tree `a38f1757`), already with the EFI loader, `bootefi`, the EFI boot manager, `blkmap` and FAT |
-| Kernel | `scripts/build-mainline-kernel`: kernel.org 7.3 + the 195 patches in `kernel/mainline/patches`, trees `30fd2ef8` (v7.3) and `276fbce0` (patched), `kernel/mainline/config-7.3-hanoip` plus `kernel/mainline/server.config`; it already has `EFI_STUB`, `EFI_ZBOOT`, dm-verity, EROFS, dm-crypt, overlayfs and efivarfs |
+| Kernel | `scripts/build-mainline-kernel`: kernel.org 7.3 + the 195 patches in `kernel/mainline/patches`, trees `30fd2ef8` (v7.3) and `0cf5808c` (patched), `kernel/mainline/config-7.3-hanoip` plus `kernel/mainline/server.config`; it already has `EFI_STUB`, `EFI_ZBOOT`, dm-verity, EROFS, dm-crypt, overlayfs and efivarfs |
 
 ## What Duranium is (`docs/MAINLINE.md`, section 7e)
 
@@ -184,6 +184,36 @@ To finish (needs the user's yes, because it replaces the 4.14 server's userdata)
    so slot a is not marked successful, then reboot: U-Boot finds the ESP, systemd-boot starts the UKI, `hanoip-health` marks the
    slot good once sshd and an address are up, and reboots after ten minutes when they are not.
 3. If the DTB choice is wrong (no boot, no USB), `HANOIP_UKI_DTB=1 scripts/duranium-image` keeps the package's DTB in the UKI.
+
+## State after the first write of `userdata` (2026-11-09, paused by the user)
+
+**Done**
+- `userdata` now holds the Duranium image (6.4 GB, written with `scripts/duranium-write-userdata` from the rescue root, 718 s,
+  SHA-256 read back equal). The 4.14 server is no longer on the phone: its backup is `server-4.14-20261109-final` in
+  `$HANOIP_BACKUP_DIR` (hashes checked again before the write); `boot_b` was backed up before it got the rescue U-Boot.
+- Slot b is the rescue (`boot_b` = `boot_a-duranium.img`, the Alpine root in `super`, SSH over USB and Tailscale only); slot a
+  is the active slot and tries Duranium first. The services of the 4.14 (AdGuard DNS, Samba, Syncthing, the bot) are down until
+  Duranium boots.
+- First boot of slot a: U-Boot found the ESP through `blkmap`, systemd-boot started the UKI and the package's own kernel ran
+  (the EFI path is proven up to the kernel), then it oopsed at 0.46 s in `fbcon` -> `simplefb_hanoip_imageblit` writing to
+  `ffff00001c000000` (level 2 translation fault); the ABL fell back to slot b. Read from `/sys/fs/pstore/console-ramoops-0`
+  in the rescue root.
+- Cause: patch `0121-hanoip-simplefb` writes the framebuffer at `0x9c000000` through the linear mapping. The legacy boot leaves
+  that RAM mapped (`/proc/iomem`: inside `System RAM`); the EFI memory map from U-Boot reserves it, so it is not mapped.
+  The DTB in the UKI is not the cause (`HANOIP_UKI_DTB=1` would not help).
+- Fixed and committed on `beta`: the patch (both copies) takes the linear mapping only when
+  `pfn_is_map_memory()` is true, otherwise `ioremap_wc`; the patched tree is now `0cf5808c` (was `276fbce0`, only that line
+  differs), `pkgrel=1`, `scripts/test-mainline-kernel-package` fails on the old patch and passes on the new one. A write script
+  bug found on the way is already committed (the rescue root's own loop over `super` stopped it).
+
+**Left, in order**
+1. Done: the sums, the fix and its test, the PITFALLS row and the CHANGELOG `Fixed` line.
+2. Build (the user runs it): `scripts/pmb build --force linux-motorola-hanoip-mainline`, then `scripts/duranium-image`.
+3. `grep` the patches for the same class of bug: `phys_to_virt`, `__va`, hard-coded `0x9...` addresses, anything that assumes
+   a reserved region is mapped. The next EFI-only crash costs a 15-minute write.
+4. `scripts/duranium-write-userdata` again (safe while no boot reached userspace: systemd-repart has not touched the GPT yet),
+   `fastboot set_active a`, reboot, watch for SSH. Once a boot reaches userspace, a full rewrite wipes what repart created.
+5. Then: first boot checks, services restored from the backup, a reboot, the A/B rollback once, `docs/STATUS.md` and the README.
 
 ## Rules that stay
 
