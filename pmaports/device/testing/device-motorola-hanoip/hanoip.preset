@@ -9,3 +9,6 @@ enable smb.service
 enable syncthing.service
 enable mnt-hd\x2da.mount
 enable mnt-hd\x2db.mount
+enable hanoip-thermal.service
+enable hanoip-led.service
+enable hanoip-bot.service

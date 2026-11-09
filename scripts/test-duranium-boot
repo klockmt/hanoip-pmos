@@ -111,4 +111,17 @@ grep -qx 'WantedBy=local-fs.target' "$d/hanoip-mnt-hd-a.mount" && ! grep -hv '^#
 for l in 'u hdshare 1000:1000 ' 'u syncthing 105:108 ' 'u adguardhome 106:109 '; do
 	grep -qF "$l" "$d/hanoip-sysusers.conf" || fail "hanoip-sysusers.conf lacks '$l'"
 done
+
+# Heat protection and the LED run as units on Duranium; the bot too (it stays off until its secrets are restored). Stopping the
+# heat protection must lift what it did: the paused charge and the CPU cap.
+for pair in 'hanoip-thermal.service:etc/systemd/system/hanoip-thermal.service' 'hanoip-led.service:etc/systemd/system/hanoip-led.service'; do
+	src=${pair%%:*} dest=${pair#*:}
+	[ -f "$d/$src" ] || fail "$src is missing"
+	grep -qx "	$src" "$apk" || fail "$src is not in source="
+	echo "$pk" | grep -qF "\"\$srcdir/$src\" \"\$pkgdir/$dest\"" || fail "package() does not install $src"
+	sed -n '/^mainline()/,/^}/p' "$apk" | grep -qF "$dest" || fail "mainline() does not move $dest"
+	grep -qx "enable $src" "$d/hanoip.preset" || fail "$src is not enabled by hanoip.preset"
+done
+grep -qx 'enable hanoip-bot.service' "$d/hanoip.preset" || fail "hanoip-bot.service is not enabled by hanoip.preset"
+grep -q 'ExecStopPost=.*hanoip-thermal.hot.*scaling_max_freq' "$d/hanoip-thermal.service" || fail "stopping hanoip-thermal leaves the charge paused or the CPU capped"
 echo "ok    test-duranium-boot"
