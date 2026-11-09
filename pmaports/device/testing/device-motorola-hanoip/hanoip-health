@@ -1,0 +1,30 @@
+#!/bin/sh
+# Duranium on the hanoip: the boot counts as good only when the phone can be reached. Once sshd runs and the phone has an
+# address (usb0, or wlan0 on the LAN), the slot is marked successful for the ABL; if that has not happened within the
+# deadline, the phone reboots, so the ABL counts a failed boot and, when the retries run out, starts the other slot
+# (the Alpine rescue root). Paths and times can be moved with HANOIP_UPTIME / HANOIP_DEADLINE / HANOIP_POLL (the test does).
+set -u
+uptime_file=${HANOIP_UPTIME:-/proc/uptime}
+deadline=${HANOIP_DEADLINE:-600}
+poll=${HANOIP_POLL:-5}
+reachable() {
+	systemctl is-active --quiet sshd || return 1
+	ip -4 -o addr show dev usb0 2>/dev/null | grep -q 'inet 172\.16\.42\.1/' && return 0
+	ip -4 -o addr show dev wlan0 2>/dev/null | grep -q 'inet ' && return 0
+	return 1
+}
+while :; do
+	if reachable; then
+		qbootctl -m && logger -t hanoip-health "slot marked successful" || logger -t hanoip-health "qbootctl -m failed"
+		touch "${HANOIP_UP:-/run/hanoip-up}"
+		exit 0
+	fi
+	up=$(cut -d. -f1 "$uptime_file")
+	if [ "$up" -ge "$deadline" ]; then
+		logger -t hanoip-health "not reachable ${up}s after the kernel started, rebooting"
+		sync
+		reboot -f
+		exit 1
+	fi
+	sleep "$poll"
+done

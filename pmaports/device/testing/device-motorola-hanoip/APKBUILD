@@ -4,7 +4,7 @@
 pkgname=device-motorola-hanoip
 pkgdesc="Motorola Moto G (60)"
 pkgver=0
-pkgrel=43
+pkgrel=44
 _qrtr_rev=29e36ae164389580a0f8ea7a7fdb728140ae978d
 _pdmapper_rev=5ecd2fe926aca7abfe40724177f63b942cff3947
 url="https://postmarketos.org"
@@ -95,6 +95,11 @@ source="
 	hanoip-ml-abl-slot
 	hanoip-ml-charge
 	hanoip-ml.conf
+	kernel-cmdline.mainline.conf
+	hanoip-usb-gadget
+	hanoip-usb-gadget.service
+	hanoip-health
+	hanoip-health.service
 "
 
 prepare() {
@@ -180,6 +185,19 @@ package() {
 	install -Dm755 "$srcdir/hanoip-ml-charge" "$pkgdir/usr/bin/hanoip-ml-charge"
 	install -Dm644 "$srcdir/hanoip-ml.conf" "$pkgdir/etc/modprobe.d/hanoip-ml.conf"
 
+	# Duranium: the USB gadget and the boot-health check, enabled the way `systemctl enable` does it; qbootctl.service
+	# (pmOS marks the slot good at multi-user.target, before anything is checked) is masked: hanoip-health marks it.
+	install -Dm755 "$srcdir/hanoip-usb-gadget" "$pkgdir/usr/bin/hanoip-usb-gadget"
+	install -Dm644 "$srcdir/hanoip-usb-gadget.service" "$pkgdir/etc/systemd/system/hanoip-usb-gadget.service"
+	install -Dm755 "$srcdir/hanoip-health" "$pkgdir/usr/bin/hanoip-health"
+	install -Dm644 "$srcdir/hanoip-health.service" "$pkgdir/etc/systemd/system/hanoip-health.service"
+	mkdir -p "$pkgdir/etc/systemd/system/sysinit.target.wants" "$pkgdir/etc/systemd/system/multi-user.target.wants" \
+		"$pkgdir/etc/systemd/system/basic.target.wants"
+	ln -s /etc/systemd/system/hanoip-usb-gadget.service "$pkgdir/etc/systemd/system/sysinit.target.wants/hanoip-usb-gadget.service"
+	ln -s /etc/systemd/system/hanoip-health.service "$pkgdir/etc/systemd/system/multi-user.target.wants/hanoip-health.service"
+	ln -s /etc/systemd/system/hanoip-charge.service "$pkgdir/etc/systemd/system/basic.target.wants/hanoip-charge.service"
+	ln -s /dev/null "$pkgdir/etc/systemd/system/qbootctl.service"
+
 	# Modem and Wi-Fi userspace; modem() below moves it into its own subpackage.
 	install -Dm755 "$srcdir/hanoip-qrtr-ns" "$pkgdir/usr/bin/hanoip-qrtr-ns"
 	install -Dm755 "$srcdir/hanoip-pd-mapper" "$pkgdir/usr/bin/hanoip-pd-mapper"
@@ -209,7 +227,7 @@ kernel_downstream() {
 
 kernel_mainline() {
 	pkgdesc="Mainline kernel for Motorola Moto G (60)"
-	depends="linux-motorola-hanoip-mainline systemd-boot"
+	depends="linux-motorola-hanoip-mainline systemd-boot $pkgname-mainline"
 	devicepkg_subpackage_kernel $startdir $pkgname $subpkgname
 }
 
@@ -230,7 +248,11 @@ mainline() {
 		usr/bin/hanoip-ml-abl-slot usr/bin/hanoip-ml-charge \
 		etc/modprobe.d/hanoip-ml.conf \
 		etc/NetworkManager/conf.d/hanoip-ml.conf \
-		etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony
+		etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony \
+		usr/bin/hanoip-usb-gadget etc/systemd/system/hanoip-usb-gadget.service \
+		usr/bin/hanoip-health etc/systemd/system/hanoip-health.service \
+		etc/systemd/system/sysinit.target.wants etc/systemd/system/multi-user.target.wants \
+		etc/systemd/system/basic.target.wants etc/systemd/system/qbootctl.service
 }
 
 sha512sums="

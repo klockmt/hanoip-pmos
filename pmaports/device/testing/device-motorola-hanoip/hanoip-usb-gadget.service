@@ -1,0 +1,18 @@
+[Unit]
+Description=USB NCM gadget and the server's address on it
+Documentation=man:systemd.service(5)
+DefaultDependencies=no
+After=sys-kernel-config.mount systemd-modules-load.service
+Requires=sys-kernel-config.mount
+Before=network-pre.target sshd.service unudhcpd@usb0.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=120
+ExecStart=/usr/bin/hanoip-usb-gadget
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=sysinit.target

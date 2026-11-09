@@ -13,7 +13,21 @@ grep -q '^ml_load_boot=.*setexpr ml_blk $ml_start + 0x1000 && scsi dev $ml_dev &
 	fail "ml_load_boot does not read 32 MiB at 16 MiB into boot_a and bootm it"
 # scsi read reads the current device, not the one part found boot_a on: boot_a is on LUN 4, the default is 0 (2026-11-08).
 grep '^ml_load_boot=' "$env" | grep -qF 'scsi dev $ml_dev && scsi read ' || fail "scsi read would read LUN 0, not boot_a's LUN"
-grep -q '^ml_boot=.*part number scsi $d boot_a ml_part' "$env" || fail "boot_a is not found by name"
+grep -q '^ml_legacy=.*part number scsi $d boot${ml_slot} ml_part' "$env" || fail "boot_a / boot_b is not found by name from the slot"
+# Duranium (docs/DURANIUM.md steps 5 and 6): only from slot a, U-Boot presents userdata through blkmap and boots the EFI loader of
+# a first partition of the ESP's type, so the 4.14's filesystems are never read; slot b is the rescue and never tries it.
+grep -qx 'ml_boot=scsi scan; if test "${ml_slot}" = _a; then run ml_efi; fi; run ml_legacy' "$env" ||
+	fail "ml_boot does not try Duranium from slot a only, then the legacy kernel image"
+grep '^ml_efi_load=' "$env" | grep -qF 'test "${ml_esp}" = c12a7328-f81f-11d2-ba4b-00a0c93ec93b' || fail "the first partition is not checked for the ESP type"
+grep '^ml_efi_load=' "$env" | grep -qF 'blkmap map ml_root 0 $ml_ud_size linear scsi $ml_ud_dev 0x$ml_ud_start' || fail "userdata is not mapped through blkmap (part start prints hex without 0x)"
+grep '^ml_efi_load=' "$env" | grep -qF 'load blkmap ${ml_bm}:1 $kernel_addr_r EFI/BOOT/BOOTAA64.EFI && bootefi $kernel_addr_r' || fail "the EFI loader is not booted from the ESP"
+if grep -v '^#' "$env" | grep -q -E '(scsi|mmc|fat|ext4|blkmap) *(write|erase)|fatwrite|ext4write'; then fail "the environment writes a disk"; fi
+# The patches the build applies after 0001: the quiesce hook runs for the EFI handoff too (UFS and USB powered down before
+# the kernel), and the ABL's slot reaches the environment as $ml_slot (only that argument of its command line is read).
+qp=kernel/mainline/uboot/0002-run-the-quiesce-hook-for-the-efi-handoff.patch
+sp=kernel/mainline/uboot/0003-export-the-abl-slot-to-the-environment.patch
+grep -q '^+void board_quiesce_devices(void)' "$qp" || fail "$qp does not define board_quiesce_devices()"
+grep -q 'env_set("ml_slot"' "$sp" && grep -q 'androidboot.slot_suffix=' "$sp" || fail "$sp does not export the slot as ml_slot"
 grep -qx 'bootcmd=run ml_boot; echo hanoip: mainline boot failed, resetting; sleep 5; reset' "$env" ||
 	fail "a failed boot does not reset (the ABL would never fall back to slot b)"
 # A key already pending at autoboot (seen on the phone, 2026-11-08: "stop autoboot: 0 ^H^H^H 0") stops bootdelay=0 and

@@ -1,0 +1,79 @@
+#!/bin/sh
+# Checks what a Duranium boot of the hanoip depends on, without the phone (docs/DURANIUM.md): the USB gadget script, the
+# boot-health script (marks the slot good once the phone is reachable, reboots when it is not in time) run against
+# stand-ins, and the package wiring (kernel command line, units enabled, qbootctl's early mark masked).
+set -eu
+cd "$(dirname "$0")/.."
+d=pmaports/device/testing/device-motorola-hanoip
+fail() { echo "FAIL: $*" >&2; exit 1; }
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+bin=$tmp/bin calls=$tmp/calls
+mkdir -p "$bin"
+# Stand-ins: they log what they were asked to do. sleep moves the fake uptime forward, so a loop ends.
+for c in ip logger sync reboot qbootctl; do
+	printf '#!/bin/sh\necho "%s $*" >> "%s"\n' "$c" "$calls" > "$bin/$c"
+done
+cat > "$bin/ip" <<EOF2
+#!/bin/sh
+echo "ip \$*" >> "$calls"
+case "\$*" in
+"-4 -o addr show dev usb0") [ -z "\${FAKE_USB:-}" ] || echo "5: usb0    inet 172.16.42.1/24 scope global usb0" ;;
+"-4 -o addr show dev wlan0") [ -z "\${FAKE_WLAN:-}" ] || echo "3: wlan0    inet 192.168.0.9/24 scope global wlan0" ;;
+esac
+exit 0
+EOF2
+cat > "$bin/systemctl" <<EOF2
+#!/bin/sh
+echo "systemctl \$*" >> "$calls"
+[ -n "\${FAKE_SSHD:-}" ]
+EOF2
+printf '#!/bin/sh\nn=$(cat "%s"); echo $((n + 100)) > "%s"\n' "$tmp/uptime" "$tmp/uptime" > "$bin/sleep"
+chmod +x "$bin"/*
+export PATH=$bin:$PATH
+
+# --- the gadget: IDs, one NCM function, bound to the first UDC, the server's address on usb0 ---
+mkdir -p "$tmp/udc/a600000.usb" "$tmp/net/usb0"
+: > "$calls"
+HANOIP_CONFIGFS=$tmp/cfg HANOIP_UDC_DIR=$tmp/udc HANOIP_NETDIR=$tmp/net sh "$d/hanoip-usb-gadget" || fail "the gadget script failed"
+g=$tmp/cfg/usb_gadget/hanoip
+[ "$(cat "$g/idVendor")" = 0x18d1 ] && [ "$(cat "$g/idProduct")" = 0xd001 ] || fail "the gadget does not use the IDs of stage 1 (the PC's setup)"
+[ -d "$g/functions/ncm.usb0" ] && [ -L "$g/configs/c.1/ncm.usb0" ] || fail "no NCM function linked into the configuration"
+[ "$(cat "$g/UDC")" = a600000.usb ] || fail "the gadget is not bound to the UDC"
+grep -qx 'ip addr add 172.16.42.1/24 dev usb0' "$calls" && grep -qx 'ip link set usb0 up' "$calls" || fail "usb0 has no address"
+rmdir "$tmp/udc/a600000.usb"
+if HANOIP_WAIT=0 HANOIP_CONFIGFS=$tmp/cfg2 HANOIP_UDC_DIR=$tmp/udc HANOIP_NETDIR=$tmp/net sh "$d/hanoip-usb-gadget" 2>/dev/null; then
+	fail "the gadget script succeeded without a UDC"
+fi
+
+# --- the health script ---
+health() { # health UPTIME  (env FAKE_SSHD FAKE_USB FAKE_WLAN set by the caller)
+	echo "$1" > "$tmp/uptime"; : > "$calls"; rm -f "$tmp/up"
+	HANOIP_UPTIME=$tmp/uptime HANOIP_UP=$tmp/up HANOIP_POLL=1 HANOIP_DEADLINE=600 sh "$d/hanoip-health" >/dev/null 2>&1 || true
+}
+FAKE_SSHD=1 FAKE_USB=1 health 20
+grep -qx 'qbootctl -m' "$calls" && [ -e "$tmp/up" ] && ! grep -q '^reboot' "$calls" || fail "a reachable phone (sshd, usb0) was not marked good"
+FAKE_SSHD=1 FAKE_WLAN=1 health 20
+grep -qx 'qbootctl -m' "$calls" || fail "a phone reachable over Wi-Fi was not marked good"
+FAKE_SSHD= FAKE_USB=1 health 20
+! grep -q '^qbootctl' "$calls" && grep -qx 'reboot -f' "$calls" || fail "a phone with no sshd was marked good, or never rebooted"
+FAKE_SSHD=1 FAKE_USB= FAKE_WLAN= health 20
+! grep -q '^qbootctl' "$calls" && grep -qx 'reboot -f' "$calls" && [ ! -e "$tmp/up" ] || fail "a phone with no address was marked good, or never rebooted"
+FAKE_SSHD=1 FAKE_USB= health 700
+grep -qx 'reboot -f' "$calls" || fail "past the deadline at the first look, it did not reboot"
+
+# --- the wiring ---
+cmd=$(cat "$d/kernel-cmdline.mainline.conf")
+for a in clk_ignore_unused panic=5 oops=panic androidboot.slot_suffix=_b; do
+	case " $cmd " in *" $a "*) ;; *) fail "the kernel command line lacks $a" ;; esac
+done
+case $cmd in *watchdog.open_timeout=*) ;; *) fail "no watchdog.open_timeout: a hang before systemd opens the watchdog would never reset" ;; esac
+apk=$d/APKBUILD
+grep -qx '	kernel-cmdline.mainline.conf' "$apk" || fail "kernel-cmdline.mainline.conf is not in source= (devicepkg installs it into the UKI's command line)"
+sed -n '/^kernel_mainline()/,/^}/p' "$apk" | grep -q 'depends=.*\$pkgname-mainline' || fail "the mainline kernel subpackage does not pull in the mainline subpackage (the units)"
+pk=$(sed -n '/^package()/,/^}/p' "$apk")
+for u in hanoip-usb-gadget.service hanoip-health.service; do
+	echo "$pk" | grep -q "wants/$u" || fail "$u is not enabled by package()"
+done
+echo "$pk" | grep -q 'qbootctl.service' || fail "qbootctl.service (marks the slot good at multi-user.target, before anything is checked) is not masked"
+echo "ok    test-duranium-boot"
