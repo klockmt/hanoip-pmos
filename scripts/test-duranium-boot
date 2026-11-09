@@ -106,11 +106,14 @@ grep -qx 'ConditionPathExists=/var/lib/adguardhome/AdGuardHome.yaml' "$d/adguard
 grep -qx 'ConditionPathExists=/var/lib/syncthing/.local/state/syncthing/config.xml' "$d/syncthing.service" || fail "syncthing.service starts without its identity"
 grep -qx 'RequiresMountsFor=/mnt/hd-a' "$d/syncthing.service" && grep -qx 'RequiresMountsFor=/mnt/hd-b' "$d/smb.service" || fail "Samba or Syncthing can run without its disk"
 grep -qx 'WantedBy=local-fs.target' "$d/hanoip-mnt-hd-a.mount" && ! grep -hv '^#' "$d"/hanoip-mnt-hd-[ab].mount | grep -q 'RequiredBy' || fail "a missing NAS disk would stop the boot (the mounts must be WantedBy, never RequiredBy)"
-# The IDs the 4.14 gave its service users: the NAS disk and the restored data belong to these numbers. hdshare is 1000, so the
-# login user cannot be.
-for l in 'u hdshare 1000:1000 ' 'u syncthing 105:108 ' 'u adguardhome 106:109 '; do
-	grep -qF "$l" "$d/hanoip-sysusers.conf" || fail "hanoip-sysusers.conf lacks '$l'"
+# hdshare keeps the ID the 4.14 gave it: the NAS disk's share belongs to 1000, so the login user cannot be. syncthing and adguardhome
+# must not ask for the 4.14's numbers (105 and 106): in the image those are chrony and dnsmasq, made by Alpine's package scripts
+# (seen on the running image, 2026-11-09), and a fixed ID that is taken makes systemd-sysusers fail.
+grep -qF 'u hdshare 1000:1000 ' "$d/hanoip-sysusers.conf" || fail "hdshare is not 1000"
+for l in 'u syncthing - ' 'u adguardhome - '; do
+	grep -qF "$l" "$d/hanoip-sysusers.conf" || fail "hanoip-sysusers.conf: '$l' (an ID the image chooses) is missing"
 done
+! grep -v '^#' "$d/hanoip-sysusers.conf" | grep -q -E '^u (syncthing|adguardhome) [0-9]' || fail "syncthing or adguardhome asks for a fixed ID, which the image may already use"
 
 # Heat protection and the LED run as units on Duranium; the bot too (it stays off until its secrets are restored). Stopping the
 # heat protection must lift what it did: the paused charge and the CPU cap.
