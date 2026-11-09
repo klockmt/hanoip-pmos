@@ -4,7 +4,7 @@
 pkgname=device-motorola-hanoip
 pkgdesc="Motorola Moto G (60)"
 pkgver=0
-pkgrel=42
+pkgrel=43
 _qrtr_rev=29e36ae164389580a0f8ea7a7fdb728140ae978d
 _pdmapper_rev=5ecd2fe926aca7abfe40724177f63b942cff3947
 url="https://postmarketos.org"
@@ -209,7 +209,7 @@ kernel_downstream() {
 
 kernel_mainline() {
 	pkgdesc="Mainline kernel for Motorola Moto G (60)"
-	depends="linux-motorola-hanoip-mainline"
+	depends="linux-motorola-hanoip-mainline systemd-boot"
 	devicepkg_subpackage_kernel $startdir $pkgname $subpkgname
 }
 

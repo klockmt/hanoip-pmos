@@ -1,0 +1,38 @@
+#!/bin/sh
+# Builds the Duranium image for the hanoip with Nura's duranium-build, in its mkosi container (podman, no sudo).
+# It puts this repo's device package into the pmaports checkout that duranium-build reads, and the apks that
+# pmbootstrap built (scripts/pmb build --force device-motorola-hanoip linux-motorola-hanoip-mainline) into
+# duranium-build's mkosi.packages, which mkosi turns into a local apk repository. Nothing here touches the phone.
+# The output is $DURANIUM_DIR/mkosi.output/hanoip_console_edge*/. DRY_RUN=1 only prints.
+# Usage: scripts/duranium-image [mkosi build options]
+set -eu
+. "$(dirname "$0")/env.sh"
+dir=${HANOIP_DURANIUM_DIR:-$HANOIP_SRC_DIR/duranium-build}
+repo=$PMB_WORK/packages/edge/aarch64
+[ -d "$dir/scripts" ] || { echo "no duranium-build checkout in $dir (git clone https://gitlab.nura.eco/nura/duranium-build.git)" >&2; exit 1; }
+
+rel=$(sed -n 's/^pkgrel=//p' "$HANOIP_ROOT/pmaports/device/testing/device-motorola-hanoip/APKBUILD")
+kver=$(sed -n 's/^pkgver=//p' "$HANOIP_ROOT/pmaports/device/testing/linux-motorola-hanoip-mainline/APKBUILD")
+krel=$(sed -n 's/^pkgrel=//p' "$HANOIP_ROOT/pmaports/device/testing/linux-motorola-hanoip-mainline/APKBUILD")
+apks="device-motorola-hanoip-0-r$rel device-motorola-hanoip-kernel-mainline-0-r$rel device-motorola-hanoip-mainline-0-r$rel
+device-motorola-hanoip-modem-0-r$rel linux-motorola-hanoip-mainline-$kver-r$krel"
+
+# The packages come first: an old apk left in mkosi.packages would be installed in place of the new one.
+for a in $apks; do
+	[ -f "$repo/$a.apk" ] || { echo "$repo/$a.apk is missing: build it with scripts/pmb build --force" >&2; exit 1; }
+done
+run rm -rf "$dir/mkosi.packages"
+run mkdir -p "$dir/mkosi.packages"
+for a in $apks; do run cp "$repo/$a.apk" "$dir/mkosi.packages/"; done
+
+# build-image.py resolves the device from this pmaports checkout; git reset --hard keeps untracked directories.
+run mkdir -p "$dir/pmaports/device/testing"
+for p in device-motorola-hanoip linux-motorola-hanoip-mainline; do
+	run rm -rf "$dir/pmaports/device/testing/$p"
+	run cp -r "$HANOIP_ROOT/pmaports/device/testing/$p" "$dir/pmaports/device/testing/$p"
+done
+
+cd "$dir"
+MKOSI=./scripts/mkosi-container
+export MKOSI
+run ./scripts/build-image.py device-motorola-hanoip ui-console --release=edge "$@"
