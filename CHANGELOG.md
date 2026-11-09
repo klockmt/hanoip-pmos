@@ -43,6 +43,7 @@ Up to v0.1.14 the notes lived only in the message of each annotated tag; this fi
 - Kernel direction: mainline is the goal again, starting from a U-Boot and a Linux 7.3 tree for this phone (RAM-only at first); the downstream 4.14 server stays on slot `b` meanwhile (`docs/STATUS.md`, section 5). The 2026-11-02 plan of a hardened 4.14 fork is on hold (#6).
 
 ### Fixed
+- `hanoip-status` (and the bot's `/status`) works on the mainline kernel: `qcom_qg` and the PM6150 charger replace `battery` and `usb`, the GPU is read from devfreq, the sensors are the `*-thermal` zones, and a missing figure prints `n/a` instead of breaking the line. `scripts/test-status` covers it.
 - `hanoip-led` works on the mainline kernel: the LED is `white:status`, the cable shows on the PM6150 charger supply, and the kernel has no `timer` trigger, so the battery flash uses `oneshot`. `scripts/test-led` covers both kernels.
 - `hanoip-thermal` reads the mainline gauge (`qcom_qg`) when the 4.14's `battery` supply is not there. Without it the heat protection of a Duranium boot (pause at 40 °C, CPU cap at 45 °C, power off at 55 °C) read nothing and never acted. `scripts/test-thermal` fails on the old script.
 - The Duranium image enables `hanoip-usb-gadget`, `hanoip-health`, `hanoip-charge` and `hanoip-modem` with a systemd preset (`device-motorola-hanoip` `pkgrel=49`). Links in `/etc` were removed by mkosi's `systemctl preset-all`, so the first Duranium boot that reached userspace had no `usb0` and no SSH. `scripts/test-duranium-boot` checks the preset.
