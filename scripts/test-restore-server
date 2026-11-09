@@ -1,0 +1,101 @@
+#!/bin/sh
+# scripts/restore-server without the phone: a stand-in for hanoip-ssh records what it is asked to run and keeps the tar
+# stream it gets on stdin. A small archive shaped like the 4.14 backup (owners, modes, a secret) must come out with the
+# service data and the network state and nothing else, owners and modes intact, with no secret in the script's own output;
+# the password step must put only a hash on stdin and the password nowhere.
+set -eu
+cd "$(dirname "$0")/.."
+dir=$(mktemp -d)
+trap 'rm -rf "$dir"' EXIT
+fail() { echo "FAIL: $*" >&2; exit 1; }
+
+mkdir -p "$dir/scripts" "$dir/bin"
+cp scripts/env.sh scripts/restore-server "$dir/scripts/"
+printf 'HANOIP_BACKUP_DIR=%s/pc\nHANOIP_USER=tester\nHANOIP_SUDO_PASSWORD=hunter2-not-a-real-one\n' "$dir" > "$dir/.env"
+python3 -I - "$dir/backup.tar.gz" <<'PY'
+import sys, tarfile, io
+t = tarfile.open(sys.argv[1], "w:gz")
+def add(name, data=b"x", uid=0, gid=0, mode=0o644, kind=tarfile.REGTYPE):
+    i = tarfile.TarInfo("./" + name); i.uid, i.gid, i.mode, i.type = uid, gid, mode, kind
+    i.size = len(data) if kind == tarfile.REGTYPE else 0
+    t.addfile(i, io.BytesIO(data) if kind == tarfile.REGTYPE else None)
+add("var/lib/adguardhome/", kind=tarfile.DIRTYPE, uid=106, gid=109, mode=0o700)
+add("var/lib/adguardhome/AdGuardHome.yaml", uid=106, gid=109, mode=0o600)
+add("var/lib/syncthing/.local/state/syncthing/config.xml", uid=105, gid=108)
+add("var/lib/syncthing/.local/state/syncthing/syncthing.lock", uid=105, gid=108)
+add("var/lib/samba/private/passdb.tdb", mode=0o600)
+add("var/lib/samba/private/msg.sock/1234", kind=tarfile.FIFOTYPE)
+add("etc/samba/smb.conf")
+add("etc/hanoip/telegram.env", b"TOKEN=SECRET-TOKEN-VALUE\n", mode=0o600)
+add("etc/NetworkManager/system-connections/home.nmconnection", mode=0o600)
+add("var/lib/tailscale/tailscaled.state", mode=0o600)
+add("var/lib/hanoip/cycle-restored")
+add("var/lib/hanoip/boot_b-before-mmi.img", b"y" * 100)
+add("etc/passwd")
+add("etc/shadow", mode=0o640)
+add("var/lib/adguardhome-other/file")
+t.close()
+PY
+# The stand-in for hanoip-ssh: logs the command and the user it runs as, keeps stdin.
+cat > "$dir/scripts/hanoip-ssh" <<'EOF2'
+#!/bin/sh
+n=$(ls "$T" | grep -c '^stdin' || true)
+echo "user=$HANOIP_USER cmd=$*" >> "$T/calls"
+cat > "$T/stdin.$n"
+EOF2
+printf '#!/bin/sh\ncat\n' > "$dir/bin/pv"
+chmod +x "$dir/scripts/hanoip-ssh" "$dir/bin/pv"
+runit() { (cd "$dir" && T=$dir PATH="$dir/bin:$PATH" HANOIP_SERVER_BACKUP="$dir/backup.tar.gz" sh scripts/restore-server "$@" 2>&1); }
+
+# --- the listing of a dry run ---
+out=$(DRY_RUN=1 runit)
+for want in var/lib/adguardhome/AdGuardHome.yaml var/lib/syncthing/.local/state/syncthing/config.xml var/lib/samba/private/passdb.tdb \
+	etc/samba/smb.conf etc/hanoip/telegram.env etc/NetworkManager/system-connections/home.nmconnection var/lib/tailscale/tailscaled.state \
+	var/lib/hanoip/cycle-restored; do
+	echo "$out" | grep -q " $want\$" || fail "the dry run does not list $want"
+done
+for not in etc/passwd etc/shadow boot_b-before-mmi var/lib/adguardhome-other syncthing.lock msg.sock; do
+	! echo "$out" | grep -q "$not" || fail "the dry run lists $not, which is not the server's data"
+done
+! echo "$out" | grep -q SECRET-TOKEN || fail "the dry run printed the bot's secret"
+[ ! -e "$dir/calls" ] || fail "the dry run reached the phone"
+
+# --- a real run ---
+out=$(runit)
+! echo "$out" | grep -q SECRET-TOKEN || fail "the run printed the bot's secret"
+grep -q '^user=root cmd=tar -xf - -C / ' "$dir/calls" || fail "the data does not go in as root with tar"
+grep -q 'systemctl --no-block restart NetworkManager tailscaled adguardhome syncthing smb hanoip-bot' "$dir/calls" || fail "the services are not restarted"
+grep -q 'chmod 600 /etc/hanoip/telegram.env' "$dir/calls" || fail "the bot's secrets are not made private"
+grep -q 'chown -R syncthing:syncthing $d' "$dir/calls" && grep -q 'd=/mnt/hd-a/obsidian' "$dir/calls" || fail "Syncthing's folder on the NAS disk does not get its owner fixed"
+! grep -q 'chown -R .* /mnt/hd-b' "$dir/calls" || fail "the Samba share's files would be re-owned"
+list=$(tar -tvf "$dir/stdin.0")
+echo "$list" | grep -q '^drwx------ 106/109 .* var/lib/adguardhome/$' || fail "AdGuard's directory lost its owner or mode"
+echo "$list" | grep -q '^-rw------- 0/0 .* etc/hanoip/telegram.env$' || fail "the bot's secrets lost their mode"
+echo "$list" | grep -q '^-rw-r--r-- 105/108 .* var/lib/syncthing/.local/state/syncthing/config.xml$' || fail "Syncthing's files lost their owner"
+! echo "$list" | grep -q 'etc/passwd\|etc/shadow' || fail "an unrelated file was sent"
+tar -xOf "$dir/stdin.0" etc/hanoip/telegram.env | grep -q SECRET-TOKEN-VALUE || fail "the secret did not arrive intact"
+
+# --- the password: a hash on stdin, the password nowhere else ---
+rm -f "$dir/calls" "$dir"/stdin.*
+out=$(DRY_RUN=1 runit password)
+! echo "$out" | grep -q hunter2 || fail "the dry run printed the password"
+[ ! -e "$dir/calls" ] || fail "the dry run of the password reached the phone"
+out=$(runit password)
+! echo "$out" | grep -q hunter2 || fail "the password step printed the password"
+! grep -q hunter2 "$dir/calls" || fail "the password is in an argument list"
+grep -q '^\$6\$' "$dir/stdin.0" && ! grep -q hunter2 "$dir/stdin.0" || fail "stdin is not a bare sha512-crypt hash"
+grep -q "u='tester'" "$dir/calls" || fail "the hash is not written for the login user of .env"
+
+# --- harden: only when sudo works, and then root login goes ---
+cat > "$dir/scripts/hanoip-sudo" <<'EOF2'
+#!/bin/sh
+echo "sudo $1" >> "$T/sudo-calls"
+case $1 in "id -u") echo "${FAKE_UID:-0}" ;; esac
+EOF2
+chmod +x "$dir/scripts/hanoip-sudo"
+out=$(DRY_RUN=1 runit harden); [ ! -e "$dir/sudo-calls" ] || fail "the dry run of harden reached the phone"
+! FAKE_UID=1000 runit harden >/dev/null 2>&1 || fail "harden turned root off although sudo does not work"
+! grep -q PermitRootLogin "$dir/sudo-calls" || fail "harden wrote the sshd setting although sudo does not work"
+rm -f "$dir/sudo-calls"; runit harden >/dev/null
+grep -q "PermitRootLogin no.*50-hanoip-root-key.conf" "$dir/sudo-calls" && grep -q 'rm -f /root/.ssh/authorized_keys' "$dir/sudo-calls" || fail "harden did not turn root login off"
+echo "ok    test-restore-server"

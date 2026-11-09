@@ -1,0 +1,82 @@
+#!/bin/sh
+# Puts the 4.14 server's data back on a fresh Duranium, from the backup scripts/backup-server made (root.tar.gz): the Wi-Fi
+# profiles and Tailscale's node state (so the phone is the same node on the tailnet), AdGuard Home,
+# Samba (config and password database), Syncthing (identity and folders), the Telegram bot's secrets and the cycle-count
+# marker. A write of `userdata` erases all of it, so run this after every one (docs/DURANIUM.md). Only the paths below are
+# read from the archive, as a tar stream with the owners, modes and times the backup has; nothing is printed from it, and the
+# bot's secrets go straight from the archive to the phone. The data goes in as root over the USB: the services start only
+# once their data is there (ConditionPathExists in their units), and this script starts them at the end.
+# Usage: scripts/restore-server [data]        everything above (default)
+#        scripts/restore-server password     the login user's sudo password: hash of HANOIP_SUDO_PASSWORD, never printed
+#        scripts/restore-server harden       last, once sudo works: root login off and root's key removed (a new write of
+#                                            userdata brings root's key back for the next restore, so harden again after it)
+# HANOIP_SERVER_BACKUP is the archive (default: the newest server-4.14-* in $HANOIP_BACKUP_DIR). DRY_RUN=1 lists what would
+# be sent.
+set -eu
+. "$(dirname "$0")/env.sh"
+dir=$(dirname "$0")
+what=${1:-data}
+root() { HANOIP_USER=root "$dir/hanoip-ssh" "$@"; }
+
+case $what in
+password)
+	[ -n "${HANOIP_SUDO_PASSWORD:-}" ] || { echo "HANOIP_SUDO_PASSWORD is not set in .env" >&2; exit 1; }
+	[ -n "${HANOIP_USER:-}" ] || { echo "HANOIP_USER is not set in .env" >&2; exit 1; }
+	if [ -n "${DRY_RUN:-}" ]; then echo "+ set the password hash of $HANOIP_USER (value not shown)"; exit 0; fi
+	# The hash goes over the ssh stdin, so the password is in no argument list; it is read from stdin by openssl for the same reason.
+	printf '%s' "$HANOIP_SUDO_PASSWORD" | openssl passwd -6 -stdin | root "umask 077; cat > /run/hanoip-pw.hash
+		awk -F: -v OFS=: -v u='$HANOIP_USER' 'FNR==NR { h = \$0; next } \$1 == u { \$2 = h } { print }' /run/hanoip-pw.hash /etc/shadow > /run/hanoip-shadow.new
+		[ \"\$(wc -l < /run/hanoip-shadow.new)\" = \"\$(wc -l < /etc/shadow)\" ] && cat /run/hanoip-shadow.new > /etc/shadow
+		rm -f /run/hanoip-pw.hash /run/hanoip-shadow.new"
+	echo "password hash of $HANOIP_USER written; check it with scripts/hanoip-sudo 'id -u' before turning root login off."
+	exit 0 ;;
+harden)
+	if [ -n "${DRY_RUN:-}" ]; then echo "+ check that sudo works for $HANOIP_USER, then PermitRootLogin no and remove root's authorized_keys"; exit 0; fi
+	# Root is the way in until sudo is proven: with the check failing the phone keeps both.
+	[ "$("$dir/hanoip-sudo" 'id -u')" = 0 ] || { echo "sudo does not work for $HANOIP_USER (scripts/restore-server password first): root login stays on" >&2; exit 1; }
+	"$dir/hanoip-sudo" "printf 'PermitRootLogin no\\n' > /etc/ssh/sshd_config.d/50-hanoip-root-key.conf && rm -f /root/.ssh/authorized_keys && systemctl reload sshd"
+	echo "root login is off; the way in is $HANOIP_USER with sudo (scripts/hanoip-sudo)."
+	exit 0 ;;
+data) ;;
+*) echo "usage: $0 [data|password|harden]" >&2; exit 2 ;;
+esac
+
+archive=${HANOIP_SERVER_BACKUP:-}
+if [ -z "$archive" ]; then
+	d=$(ls -d "$HANOIP_BACKUP_DIR"/server-4.14-* 2>/dev/null | sort | tail -1)
+	[ -n "$d" ] || { echo "no server-4.14-* backup in \$HANOIP_BACKUP_DIR (scripts/backup-server)" >&2; exit 1; }
+	archive=$d/root.tar.gz
+fi
+[ -f "$archive" ] || { echo "no archive at $archive" >&2; exit 1; }
+if [ -z "${DRY_RUN:-}" ] && ! command -v pv >/dev/null; then echo "pv is missing: a large copy over the USB network must be throttled" >&2; exit 1; fi
+
+# What goes back: the prefixes are matched on whole path components. Sockets and Samba's message directories are skipped.
+paths="etc/NetworkManager/system-connections var/lib/tailscale var/lib/adguardhome var/lib/syncthing etc/samba/smb.conf var/lib/samba etc/hanoip/telegram.env var/lib/hanoip/cycle-restored"
+send() { # tar stream of the wanted paths on stdout
+	python3 -I - "$archive" $paths <<'PY'
+import sys, tarfile
+want = [p.strip("/") for p in sys.argv[2:]]
+src = tarfile.open(sys.argv[1], "r:gz")
+out = tarfile.open(fileobj=sys.stdout.buffer, mode="w|", format=tarfile.PAX_FORMAT)
+n = 0
+for m in src:
+    name = m.name[2:] if m.name.startswith("./") else m.name
+    if not any(name == w or name.startswith(w + "/") for w in want): continue
+    if m.isfifo() or m.ischr() or m.isblk() or name.endswith(".lock") or "/msg.sock" in name: continue
+    m.name = name
+    out.addfile(m, src.extractfile(m) if m.isreg() else None)
+    n += 1
+out.close()
+print("%d entries" % n, file=sys.stderr)
+PY
+}
+if [ -n "${DRY_RUN:-}" ]; then
+	echo "+ send from $archive: $paths"
+	send | tar -tvf - | awk '{print $1, $2, $6}' | sed -n '1,200p'
+	exit 0
+fi
+# The files of Syncthing's folder on the NAS disk belong to the ID syncthing had on the 4.14, which the image does not give it
+# (hanoip-sysusers.conf): when the disk is mounted and the owner differs, set it. Only the ownership of that one folder changes.
+fixnas='d=/mnt/hd-a/obsidian; if [ -d $d ] && [ "$(stat -c %u $d)" != "$(id -u syncthing)" ]; then chown -R syncthing:syncthing $d && echo "owner of $d set to syncthing"; fi'
+send | pv -q -L 1m | root "tar -xf - -C / && chmod 600 /etc/hanoip/telegram.env /etc/NetworkManager/system-connections/* && chmod 700 /var/lib/adguardhome && systemctl daemon-reload && systemctl reset-failed && { $fixnas; true; } && systemctl --no-block restart NetworkManager tailscaled adguardhome syncthing smb hanoip-bot"
+echo "restored from $archive. Check: scripts/hanoip-ssh 'systemctl is-system-running; systemctl --failed'"
