@@ -18,4 +18,18 @@ chmod +x "$tmp/ssh"
 if ASSUME_YES=1 HANOIP_SSH_CMD=$tmp/ssh sh scripts/duranium-write-userdata "$tmp/ok.raw" >/dev/null 2>&1; then
 	fail "it wrote while the phone ran the 4.14 server"
 fi
+# The rescue root itself runs from a loop over super: only a loop over userdata, or a mount of it, may stop the write.
+# The stand-in root runs just the checking snippet (the one that holds losetup) and refuses the rest, so nothing is changed.
+printf '#!/bin/sh\necho 7.3.0-sm7150\n' > "$tmp/ssh"
+printf '#!/bin/sh\ncase "$1" in *losetup*) sh -c "$1" ;; *) exit 1 ;; esac\n' > "$tmp/sudo"
+mkdir -p "$tmp/bin"
+printf '#!/bin/sh\necho /dev/sdb24\n' > "$tmp/bin/readlink"
+printf '#!/bin/sh\ncase "$1" in --getsize64) echo 999999999999 ;; esac\n' > "$tmp/bin/blockdev"
+printf '#!/bin/sh\ncat "%s"\n' "$tmp/loops" > "$tmp/bin/losetup"
+chmod +x "$tmp/ssh" "$tmp/sudo" "$tmp/bin"/*
+run() { PATH=$tmp/bin:$PATH ASSUME_YES=1 HANOIP_SSH_CMD=$tmp/ssh HANOIP_SUDO_CMD=$tmp/sudo sh scripts/duranium-write-userdata "$tmp/ok.raw" 2>&1 || true; }
+echo '/dev/loop7: [0009]:262 (/dev/sdb23), offset 1174405120, sizelimit 2516582400' > "$tmp/loops"
+case $(run) in *"loop device is in use"*) fail "a loop over super (the rescue root) stopped the write" ;; esac
+echo '/dev/loop8: [0009]:263 (/dev/sdb24), offset 0' > "$tmp/loops"
+case $(run) in *"loop device is in use"*) ;; *) fail "a loop over userdata did not stop the write" ;; esac
 echo "ok    test-duranium-write"

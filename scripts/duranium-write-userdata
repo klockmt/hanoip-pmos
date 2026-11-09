@@ -29,14 +29,14 @@ if [ -n "${DRY_RUN:-}" ]; then
 	exit 0
 fi
 command -v pv >/dev/null || { echo "pv is needed to throttle the transfer" >&2; exit 1; }
-root_() { "$dir/hanoip-sudo" "$1"; }
+root_() { "${HANOIP_SUDO_CMD:-$dir/hanoip-sudo}" "$1"; }
 
 kernel=$($ssh_ 'uname -r')
 case $kernel in 4.*) echo "the phone runs the 4.14 server ($kernel): its root is on userdata. Boot the mainline rescue root first." >&2; exit 1 ;; esac
 root_ "set -e
 part=\$(readlink -f $dev)
 ! grep -q \"^\$part\" /proc/mounts || { echo 'userdata is mounted' >&2; exit 1; }
-! losetup -a | grep -q . || { echo 'a loop device is in use' >&2; losetup -a >&2; exit 1; }
+! losetup -a | grep -q \"(\$part)\" || { echo 'a loop device is in use over userdata' >&2; losetup -a >&2; exit 1; }
 have=\$(blockdev --getsize64 \$part)
 [ \$have -ge $size ] || { echo \"userdata is \$have bytes, the image $size\" >&2; exit 1; }
 echo \"userdata \$part: \$have bytes, image $size\""
