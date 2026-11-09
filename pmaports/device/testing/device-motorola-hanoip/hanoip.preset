@@ -3,3 +3,9 @@ enable hanoip-usb-gadget.service
 enable hanoip-health.service
 enable hanoip-charge.service
 enable hanoip-modem.service
+# The services the 4.14 server ran. Each one waits for its restored data (a Condition in the unit) or for its disk.
+enable adguardhome.service
+enable smb.service
+enable syncthing.service
+enable mnt-hd\x2da.mount
+enable mnt-hd\x2db.mount

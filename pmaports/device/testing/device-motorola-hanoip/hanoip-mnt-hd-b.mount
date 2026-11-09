@@ -1,0 +1,12 @@
+[Unit]
+Description=NAS disk, partition hd-b (the Samba share)
+
+[Mount]
+What=/dev/disk/by-label/hd-b
+Where=/mnt/hd-b
+Type=btrfs
+Options=compress=zstd,noatime
+
+# WantedBy, not RequiredBy: the phone boots without the disk (it was nofail in fstab too).
+[Install]
+WantedBy=local-fs.target

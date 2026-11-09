@@ -85,4 +85,30 @@ echo "$pk" | grep -q 'qbootctl.service' || fail "qbootctl.service (marks the slo
 # extra tree makes it land one level too deep (etc/etc), and the confext then carries none of the image's /etc (2026-11-09).
 ! grep -v '^[[:space:]]*#' scripts/duranium-image | grep -q 'usr/lib/confexts' || fail "scripts/duranium-image writes under usr/lib/confexts: /etc files go in \$x/etc"
 sed -n '/^mainline()/,/^}/p' "$apk" | grep -q 'depends=.*\$pkgname-modem' || fail "the mainline subpackage does not pull in the modem subpackage (the binaries of its units)"
+
+# --- the server's services on systemd (the 4.14 ran them under OpenRC; Alpine ships no units for these three) ---
+# source:destination in the package. A mount unit is named after its path, so the dash of "hd-a" is spelled \x2d.
+for pair in 'adguardhome.service:etc/systemd/system/adguardhome.service' 'smb.service:etc/systemd/system/smb.service' \
+	'syncthing.service:etc/systemd/system/syncthing.service' 'hanoip-mnt-hd-a.mount:etc/systemd/system/mnt-hd\x2da.mount' \
+	'hanoip-mnt-hd-b.mount:etc/systemd/system/mnt-hd\x2db.mount' 'hanoip-sysusers.conf:usr/lib/sysusers.d/20-hanoip-services.conf'; do
+	src=${pair%%:*} dest=${pair#*:}
+	[ -f "$d/$src" ] || fail "$src is missing"
+	grep -qx "	$src" "$apk" || fail "$src is not in source="
+	echo "$pk" | grep -qF "\"\$srcdir/$src\" \"\$pkgdir/$dest\"" || fail "package() does not install $src as $dest"
+	sed -n '/^mainline()/,/^}/p' "$apk" | grep -qF "$(printf '%s' "$dest" | sed 's/\\/\\\\/g')" || fail "mainline() does not move $dest"
+done
+for u in adguardhome.service smb.service syncthing.service 'mnt-hd\x2da.mount' 'mnt-hd\x2db.mount'; do
+	grep -qxF "enable $u" "$d/hanoip.preset" || fail "$u is not enabled by hanoip.preset"
+done
+# What a service must not do before its data is back, or while the disk is away: AdGuard would open its setup page on every
+# interface, Syncthing would invent a new device identity, and Samba or Syncthing would write into the bare mount point.
+grep -qx 'ConditionPathExists=/var/lib/adguardhome/AdGuardHome.yaml' "$d/adguardhome.service" || fail "adguardhome.service starts without its config"
+grep -qx 'ConditionPathExists=/var/lib/syncthing/.local/state/syncthing/config.xml' "$d/syncthing.service" || fail "syncthing.service starts without its identity"
+grep -qx 'RequiresMountsFor=/mnt/hd-a' "$d/syncthing.service" && grep -qx 'RequiresMountsFor=/mnt/hd-b' "$d/smb.service" || fail "Samba or Syncthing can run without its disk"
+grep -qx 'WantedBy=local-fs.target' "$d/hanoip-mnt-hd-a.mount" && ! grep -hv '^#' "$d"/hanoip-mnt-hd-[ab].mount | grep -q 'RequiredBy' || fail "a missing NAS disk would stop the boot (the mounts must be WantedBy, never RequiredBy)"
+# The IDs the 4.14 gave its service users: the NAS disk and the restored data belong to these numbers. hdshare is 1000, so the
+# login user cannot be.
+for l in 'u hdshare 1000:1000 ' 'u syncthing 105:108 ' 'u adguardhome 106:109 '; do
+	grep -qF "$l" "$d/hanoip-sysusers.conf" || fail "hanoip-sysusers.conf lacks '$l'"
+done
 echo "ok    test-duranium-boot"

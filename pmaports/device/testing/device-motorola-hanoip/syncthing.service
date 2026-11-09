@@ -1,0 +1,17 @@
+[Unit]
+Description=Syncthing (folders on the NAS disk, GUI on loopback)
+After=network.target tailscaled.service
+RequiresMountsFor=/mnt/hd-a
+# A fresh config would be a new device identity: wait for the restored one (scripts/restore-server).
+ConditionPathExists=/var/lib/syncthing/.local/state/syncthing/config.xml
+
+[Service]
+User=syncthing
+Group=syncthing
+ExecStart=/usr/bin/syncthing serve --no-browser --no-restart
+Environment=HOME=/var/lib/syncthing STNODEFAULTFOLDER=1
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
