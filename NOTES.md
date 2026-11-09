@@ -228,3 +228,32 @@ Checked on the phone after a clean `reboot` (slot `_b` before and after):
 - SSH answers over the USB cable and over the tailnet, with the key only. The tailnet answered about 20 s after the SSH on USB came back, with no manual step.
 - Port 22 is closed from the LAN: a TCP connect from the PC on the same network times out.
 - The Wi-Fi reconnected by itself to the saved profile; before that profile existed it stayed down after a boot, and `tailscaled` sat in `NoState` until the Wi-Fi was up.
+
+## The overnight Duranium run (2026-11-08 to 2026-11-09): decisions and what happened
+
+The user left the phone on USB and asked for Duranium to be made to boot by 05:00, with a restart timer in every boot, no
+questions asked (the recommended option each time, written down here with the others), and sudo on the PC allowed.
+
+Decisions, with the options that were left:
+- **Image build:** Nura's rootless podman container through `scripts/duranium-image` (the documented route). Left: install mkosi on
+  the host (a bigger change to the PC), or hand-roll a rootfs (loses what Nura maintains).
+- **aarch64 emulation for mkosi:** `pacman -S qemu-user-static qemu-user-static-binfmt` on the PC. pmbootstrap's own binfmt entry
+  points at a `qemu-aarch64-static` that exists only inside its chroots, so every aarch64 script of the image failed with
+  `execve: No such file`. Left: build a static qemu by hand; re-register by hand each session. `erofs-utils` was installed to read the image.
+  Both are reversible with `pacman -R`.
+- **Way in:** the user's key for the login user and for root (`PermitRootLogin prohibit-password`), no password. Left: a hashed password
+  in a systemd credential (it would sit in the world-readable `/usr` image), or passwordless sudo (the project says never). Root by key
+  is the weaker answer for a server and is to be replaced by a login user with sudo once the image can carry a secret.
+- **Where Duranium and the rescue live:** Duranium on slot a (U-Boot tries the ESP in `userdata` first), the Alpine root in super on
+  slot b as the rescue, one U-Boot for both slots (it reads the ABL's slot as `$ml_slot`). This is what `DURANIUM.md` step 6 says; an
+  earlier session had built that U-Boot without committing it, and it is in the repository now (patches 0002, 0003 and the environment).
+- **The restart timer:** `watchdog.open_timeout=300` on the command line (a hang before systemd opens the watchdog resets the phone),
+  `RuntimeWatchdogSec=20` once systemd runs, and `hanoip-health` (marks the slot good only when sshd runs and the phone has an address,
+  reboots after ten minutes otherwise). pmOS's `qbootctl.service` marks the slot good as soon as multi-user.target is reached, which would
+  stop the ABL from ever falling back, so it is masked. Left: keep it and rely on the watchdog alone.
+- **Writing userdata:** from the Alpine rescue root with `dd` (`scripts/duranium-write-userdata`, gzip over the USB network at 1 MB/s,
+  read back and hashed). Left: the Lineage recovery (needs `vendor_boot_b` swapped and restored, a longer and riskier dance). The 4.14
+  server was backed up again first (`server-4.14-20261109-final`).
+- **Bugs found on the way** (each has a test, see `docs/PITFALLS.md`): the device package did not build with two kernel subpackages
+  (`deviceinfo` variables must all carry a suffix); the image needs `systemd-boot` pulled in by the mainline kernel subpackage; and
+  `/etc` files of the image go in `/etc`, not under `usr/lib/confexts`, which mkosi.finalize would have nested one level too deep.
