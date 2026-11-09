@@ -263,3 +263,32 @@ To finish (needs the user's yes, because it replaces the 4.14 server's userdata)
 - `tailscale ping` gets no reply from this node; SSH over the tailnet works.
 - A GPT can be checked read-only by dumping its first 6 and last 5 sectors (4096 bytes) and checking both header
   CRCs, both entry-array CRCs and that the two arrays match: that showed `qbootctl -m a` changed only A/B bits.
+
+## State of the preparation for the single-system server (2026-11-09, night, `beta`)
+
+The goal the user set: Duranium is the only system on the phone (both Android slots), with everything the 4.14 server did, SSH
+guaranteed, tested, and then a v1.0.0 only with the user's yes. **Written and tested without the phone** (each with a
+`scripts/test-*` that fails on the old state): the heat protection, LED and `/status` on the 7.3 sysfs; units for AdGuard Home,
+Samba, Syncthing, the heat protection, the LED, the bot (each off until its restored data or its disk is there) and the NAS mounts;
+the 4.14 package list plus `fastfetch` and `lstopo` (`hwloc-tools`) in `device-motorola-hanoip-mainline`; what a headless server does
+not need switched off (avahi, rtkit, oomd, getty, LLMNR/mDNS, core files, backlight); a PAM service for sudo-rs; the login user as
+1001 (hdshare owns 1000); the pd-mapper maps in the image script; `scripts/restore-server` (data, `password`, `harden`); and the U-Boot
+environment that tries Duranium first from both slots with the Alpine root in `super` as the last resort.
+
+**Not done, and why** (nothing below was run on the phone): the build needs `pmbootstrap` with the PC's sudo (the agent's attempt to
+read that password was refused by the harness, so the user runs it); the image, the rewrite of `userdata`, `restore-server`, the
+flash of `boot_a`/`boot_b` and every stability test come after it. The password step and `harden` were refused as well, and are
+left to the user. In order:
+
+1. `scripts/setup-pmaports`, then `scripts/pmb build --force device-motorola-hanoip` (the kernel package is unchanged: r1), then
+   check `ls $PMB_WORK/packages/edge/aarch64 | grep 'device-motorola-hanoip.*-r49'`.
+2. `scripts/duranium-image`; look inside before writing: the confext's `/etc/passwd` must give `syncthing` and `adguardhome` any ID
+   (not 105/106 if chrony or dnsmasq hold them), `etc/pam.d/sudo`, the preset, the units, the `*.jsn` maps in the firmware directory.
+3. `scripts/duranium-write-userdata` from the rescue root (the same flow as the first two writes), `fastboot set_active a`.
+4. `scripts/restore-server`, then `scripts/restore-server password`, then `scripts/hanoip-sudo 'id -u'` over the USB **and** over the
+   tailnet; only then `scripts/restore-server harden`. Reboot once and check `systemctl is-system-running` = `running`.
+5. Back up `boot_a`, `boot_b`, `vendor_boot_*`, `dtbo_*` to `$HANOIP_BACKUP_DIR` with `SHA256SUMS`, then
+   `scripts/build-mainline-uboot`, `scripts/mainline-boot-a-image` (`DRY_RUN=1` first) and flash `boot_a` and `boot_b` only; prove
+   each slot (`fastboot set_active b`, reboot, `fastboot getvar slot-successful:b`) and then the Alpine last resort.
+6. The stability tests of the plan (10 reboots, panic, watchdog, A/B update and rollback, network, services, soak), each finding with a
+   test and a row in `PITFALLS.md`; then the v1.0.0 question to the user.
