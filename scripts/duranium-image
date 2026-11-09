@@ -32,7 +32,40 @@ for p in device-motorola-hanoip linux-motorola-hanoip-mainline; do
 	run cp -r "$HANOIP_ROOT/pmaports/device/testing/$p" "$dir/pmaports/device/testing/$p"
 done
 
+# Headless first boot (the phone's screen is off, so Duranium's on-screen wizard cannot run) and the way in: the login
+# user with the server's key, root by key only (no password hash may sit in the world-readable /usr), /etc/default_user so
+# the wizard is skipped (both under /etc: mkosi.finalize moves /etc into the base confext, and an /etc path under
+# usr/lib/confexts would end up nested one level too deep), and the vendor firmware from the collection. Built from .env into an extra tree that is never
+# committed; nothing private reaches the repository.
+x=$dir/hanoip-extra
+pub=${HANOIP_SSH_KEY:?}.pub
+fw=$HANOIP_COLLECTION_DIR/firmware/vendor/firmware_mnt/image
+[ -f "$pub" ] || { echo "no public key at $pub" >&2; exit 1; }
+[ -d "$fw" ] || { echo "no vendor firmware in $fw" >&2; exit 1; }
+if [ -n "${DRY_RUN:-}" ]; then
+	echo "+ extra tree in $x: user, authorized keys, /etc/default_user, sshd root-by-key, vendor firmware"
+else
+	rm -rf "$x"
+	mkdir -p "$x/usr/lib/sysusers.d" "$x/usr/lib/tmpfiles.d" "$x/usr/share/hanoip" \
+		"$x/etc/ssh/sshd_config.d" \
+		"$x/usr/lib/firmware/qcom/sm7150/motorola/hanoip" "$x/usr/lib/firmware/ath10k/WCN3990/hw1.0"
+	printf 'u %s 1000 "%s" /home/%s /bin/sh\nm %s wheel\n' "$HANOIP_USER" "$HANOIP_USER" "$HANOIP_USER" "$HANOIP_USER" > "$x/usr/lib/sysusers.d/20-hanoip-user.conf"
+	cp "$pub" "$x/usr/share/hanoip/authorized_keys"
+	chmod 644 "$x/usr/share/hanoip/authorized_keys"
+	{
+		printf 'd /root 0700 root root -\nd /root/.ssh 0700 root root -\nC /root/.ssh/authorized_keys 0600 root root - /usr/share/hanoip/authorized_keys\n'
+		printf 'd /home/%s 0700 %s %s -\nd /home/%s/.ssh 0700 %s %s -\n' "$HANOIP_USER" "$HANOIP_USER" "$HANOIP_USER" "$HANOIP_USER" "$HANOIP_USER" "$HANOIP_USER"
+		printf 'C /home/%s/.ssh/authorized_keys 0600 %s %s - /usr/share/hanoip/authorized_keys\n' "$HANOIP_USER" "$HANOIP_USER" "$HANOIP_USER"
+	} > "$x/usr/lib/tmpfiles.d/20-hanoip-ssh.conf"
+	printf '%s\n' "$HANOIP_USER" > "$x/etc/default_user"
+	printf '# Read before 60-hanoip-keys-only.conf (the first value wins): root by key, never by password.\nPermitRootLogin prohibit-password\n' \
+		> "$x/etc/ssh/sshd_config.d/50-hanoip-root-key.conf"
+	f=$x/usr/lib/firmware/qcom/sm7150/motorola/hanoip
+	for n in "$fw"/adsp.* "$fw"/modem.* "$fw"/ipa_fws.* "$fw"/wlanmdsp.mbn; do cp "$n" "$f/"; done
+	cp "$fw/bdwlan_hanoip_ipa.bin" "$x/usr/lib/firmware/ath10k/WCN3990/hw1.0/board.bin"
+fi
+
 cd "$dir"
 MKOSI=./scripts/mkosi-container
 export MKOSI
-run ./scripts/build-image.py device-motorola-hanoip ui-console --release=edge "$@"
+run ./scripts/build-image.py device-motorola-hanoip ui-console --release=edge --extra-tree=hanoip-extra "$@"
