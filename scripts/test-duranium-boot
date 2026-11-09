@@ -72,9 +72,14 @@ apk=$d/APKBUILD
 grep -qx '	kernel-cmdline.mainline.conf' "$apk" || fail "kernel-cmdline.mainline.conf is not in source= (devicepkg installs it into the UKI's command line)"
 sed -n '/^kernel_mainline()/,/^}/p' "$apk" | grep -q 'depends=.*\$pkgname-mainline' || fail "the mainline kernel subpackage does not pull in the mainline subpackage (the units)"
 pk=$(sed -n '/^package()/,/^}/p' "$apk")
-for u in hanoip-usb-gadget.service hanoip-health.service; do
-	echo "$pk" | grep -q "wants/$u" || fail "$u is not enabled by package()"
+# mkosi runs `systemctl preset-all` on the image, which removes the enable links a package leaves in /etc: only a preset
+# survives it (2026-11-09: the first Duranium boot had no usb0 because hanoip-usb-gadget was no longer enabled).
+echo "$pk" | grep -q 'usr/lib/systemd/system-preset/10-hanoip.preset' || fail "package() does not install the preset that enables the units"
+grep -qx '	hanoip.preset' "$apk" || fail "hanoip.preset is not in source="
+for u in hanoip-usb-gadget.service hanoip-health.service hanoip-charge.service; do
+	grep -qx "enable $u" "$d/hanoip.preset" || fail "$u is not enabled by hanoip.preset"
 done
+! echo "$pk" | grep -q 'ln -s .*wants/' || fail "package() still enables units with links in /etc, which preset-all removes"
 echo "$pk" | grep -q 'qbootctl.service' || fail "qbootctl.service (marks the slot good at multi-user.target, before anything is checked) is not masked"
 # mkosi.finalize moves /etc of the image into usr/lib/confexts/duranium-base-config/etc; an /etc path pre-made there by the
 # extra tree makes it land one level too deep (etc/etc), and the confext then carries none of the image's /etc (2026-11-09).

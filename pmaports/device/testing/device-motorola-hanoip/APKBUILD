@@ -4,7 +4,7 @@
 pkgname=device-motorola-hanoip
 pkgdesc="Motorola Moto G (60)"
 pkgver=0
-pkgrel=47
+pkgrel=48
 _qrtr_rev=29e36ae164389580a0f8ea7a7fdb728140ae978d
 _pdmapper_rev=5ecd2fe926aca7abfe40724177f63b942cff3947
 url="https://postmarketos.org"
@@ -98,6 +98,7 @@ source="
 	kernel-cmdline.mainline.conf
 	hanoip-usb-gadget
 	hanoip-usb-gadget.service
+	hanoip.preset
 	hanoip-health
 	hanoip-health.service
 "
@@ -185,17 +186,13 @@ package() {
 	install -Dm755 "$srcdir/hanoip-ml-charge" "$pkgdir/usr/bin/hanoip-ml-charge"
 	install -Dm644 "$srcdir/hanoip-ml.conf" "$pkgdir/etc/modprobe.d/hanoip-ml.conf"
 
-	# Duranium: the USB gadget and the boot-health check, enabled the way `systemctl enable` does it; qbootctl.service
-	# (pmOS marks the slot good at multi-user.target, before anything is checked) is masked: hanoip-health marks it.
+	# Duranium: the USB gadget, the boot-health check and the charge limit, enabled by a preset (mkosi's preset-all removes enable
+	# links in /etc); qbootctl.service (pmOS marks the slot good at multi-user.target, before anything is checked) is masked: hanoip-health marks it.
 	install -Dm755 "$srcdir/hanoip-usb-gadget" "$pkgdir/usr/bin/hanoip-usb-gadget"
 	install -Dm644 "$srcdir/hanoip-usb-gadget.service" "$pkgdir/etc/systemd/system/hanoip-usb-gadget.service"
 	install -Dm755 "$srcdir/hanoip-health" "$pkgdir/usr/bin/hanoip-health"
 	install -Dm644 "$srcdir/hanoip-health.service" "$pkgdir/etc/systemd/system/hanoip-health.service"
-	mkdir -p "$pkgdir/etc/systemd/system/sysinit.target.wants" "$pkgdir/etc/systemd/system/multi-user.target.wants" \
-		"$pkgdir/etc/systemd/system/basic.target.wants"
-	ln -s /etc/systemd/system/hanoip-usb-gadget.service "$pkgdir/etc/systemd/system/sysinit.target.wants/hanoip-usb-gadget.service"
-	ln -s /etc/systemd/system/hanoip-health.service "$pkgdir/etc/systemd/system/multi-user.target.wants/hanoip-health.service"
-	ln -s /etc/systemd/system/hanoip-charge.service "$pkgdir/etc/systemd/system/basic.target.wants/hanoip-charge.service"
+	install -Dm644 "$srcdir/hanoip.preset" "$pkgdir/usr/lib/systemd/system-preset/10-hanoip.preset"
 	ln -s /dev/null "$pkgdir/etc/systemd/system/qbootctl.service"
 
 	# Modem and Wi-Fi userspace; modem() below moves it into its own subpackage.
@@ -253,8 +250,7 @@ mainline() {
 		etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony \
 		usr/bin/hanoip-usb-gadget etc/systemd/system/hanoip-usb-gadget.service \
 		usr/bin/hanoip-health etc/systemd/system/hanoip-health.service \
-		etc/systemd/system/sysinit.target.wants etc/systemd/system/multi-user.target.wants \
-		etc/systemd/system/basic.target.wants etc/systemd/system/qbootctl.service
+		usr/lib/systemd/system-preset etc/systemd/system/qbootctl.service
 }
 
 sha512sums="
@@ -326,6 +322,7 @@ ca85d44d47dfbf71723236f0ddc0d655da6d513584db3ab4b35ccfe98530ee796689bc88c2d59956
 1ef6c1b720e3a034141cb0aa1bb9c9af79163125cdae51b88cf3f1a2f8ea885ee7c30d24bfeab1bd1b35b3dd483a6b386dee5d0e30544b1ef8f2cb2cc221dd6a  kernel-cmdline.mainline.conf
 6f5bb8bbb6b0c88fc3ded4702375050d46f9226c7e453af42475ffaeb443e63264e69e324e4ecf449c192ad9488a61b141999a7f592f915f541b9406aba993f9  hanoip-usb-gadget
 1bc1bbcc21170ace4e1f6610b39ca5f9545acf52cf18325d4724e79af44cb4626f18cf082f00d627d4ba41467c2e59de79e1f8b378fd9f8c5e75d3bdaaff7d30  hanoip-usb-gadget.service
+6d2d862ae72859a1c692857804affd42b3b0958a5ba6a917382dec2e2cc71da7bb4457686e585afde6a2b961ae9b67481e89ef3c17ad117b1ba181c937127117  hanoip.preset
 b8c3e78d7c116f7d4b546fc199896d2dac3abedb8499fc616d811d9275dd13f455a5f142f8521df9498c9e262d7652b797b0d88f1d9e3c61d0b0c439b43ed1e8  hanoip-health
 f7a55fa78f777b6bd8f59faed0370ce2a4147db68e41f93136c13384ccee61b9121c3fb02edc2f4515f5ccd18fc5150bd51426ba629e3becd9efbab92fc7a192  hanoip-health.service
 "
