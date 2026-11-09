@@ -14,10 +14,14 @@ grep -q '^ml_load_boot=.*setexpr ml_blk $ml_start + 0x1000 && scsi dev $ml_dev &
 # scsi read reads the current device, not the one part found boot_a on: boot_a is on LUN 4, the default is 0 (2026-11-08).
 grep '^ml_load_boot=' "$env" | grep -qF 'scsi dev $ml_dev && scsi read ' || fail "scsi read would read LUN 0, not boot_a's LUN"
 grep -q '^ml_legacy=.*part number scsi $d boot${ml_slot} ml_part' "$env" || fail "boot_a / boot_b is not found by name from the slot"
-# Duranium (docs/DURANIUM.md steps 5 and 6): only from slot a, U-Boot presents userdata through blkmap and boots the EFI loader of
-# a first partition of the ESP's type, so the 4.14's filesystems are never read; slot b is the rescue and never tries it.
-grep -qx 'ml_boot=scsi scan; if test "${ml_slot}" = _a; then run ml_efi; fi; run ml_legacy' "$env" ||
-	fail "ml_boot does not try Duranium from slot a only, then the legacy kernel image"
+# Duranium (docs/DURANIUM.md steps 5 and 6): from either slot, U-Boot presents userdata through blkmap and boots the EFI loader of
+# a first partition of the ESP's type, so the 4.14's filesystems are never read; the Alpine root in super (ml_legacy) is the last
+# resort, taken only when that fails, and the Volume Down menu can start it by hand.
+grep -qx 'ml_boot=scsi scan; run ml_efi; run ml_legacy' "$env" ||
+	fail "ml_boot does not try Duranium first from both slots, then the Alpine root in super"
+grep -qx 'bootmenu_2=Boot the Alpine rescue root (super)=scsi scan; run ml_legacy; echo hanoip: no rescue image in boot${ml_slot}; pause' "$env" ||
+	fail "the Volume Down menu has no way to start the Alpine rescue by hand"
+! grep -v '^#' "$env" | grep -q 'ml_slot}" = _a' || fail "the EFI try is still limited to slot a"
 grep '^ml_efi_load=' "$env" | grep -qF 'test "${ml_esp}" = c12a7328-f81f-11d2-ba4b-00a0c93ec93b' || fail "the first partition is not checked for the ESP type"
 grep '^ml_efi_load=' "$env" | grep -qF 'blkmap map ml_root 0 $ml_ud_size linear scsi $ml_ud_dev 0x$ml_ud_start' || fail "userdata is not mapped through blkmap (part start prints hex without 0x)"
 grep '^ml_efi_load=' "$env" | grep -qF 'load blkmap ${ml_bm}:1 $kernel_addr_r EFI/BOOT/BOOTAA64.EFI && bootefi $kernel_addr_r' || fail "the EFI loader is not booted from the ESP"
