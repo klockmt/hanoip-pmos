@@ -31,9 +31,10 @@ add("etc/NetworkManager/system-connections/home.nmconnection", mode=0o600)
 add("var/lib/tailscale/tailscaled.state", mode=0o600)
 add("var/lib/hanoip/cycle-restored")
 add("var/lib/hanoip/boot_b-before-mmi.img", b"y" * 100)
-add("etc/passwd")
 add("etc/shadow", mode=0o640)
 add("var/lib/adguardhome-other/file")
+add("etc/passwd", b"syncthing:x:105:108::/var/lib/syncthing:/sbin/nologin\nadguardhome:x:106:109::/x:/sbin/nologin\n")
+add("etc/group", b"syncthing:x:108:\nadguardhome:x:109:\n")
 t.close()
 PY
 # The stand-in for hanoip-ssh: logs the command and the user it runs as, keeps stdin.
@@ -69,9 +70,9 @@ grep -q 'chmod 600 /etc/hanoip/telegram.env' "$dir/calls" || fail "the bot's sec
 grep -q 'chown -R syncthing:syncthing $d' "$dir/calls" && grep -q 'd=/mnt/hd-a/obsidian' "$dir/calls" || fail "Syncthing's folder on the NAS disk does not get its owner fixed"
 ! grep -q 'chown -R .* /mnt/hd-b' "$dir/calls" || fail "the Samba share's files would be re-owned"
 list=$(tar -tvf "$dir/stdin.0")
-echo "$list" | grep -q '^drwx------ 106/109 .* var/lib/adguardhome/$' || fail "AdGuard's directory lost its owner or mode"
+echo "$list" | grep -q '^drwx------ adguardhome/adguardhome .* var/lib/adguardhome/$' || fail "AdGuard's directory has no owner by name (the new system numbers its users differently) or lost its mode"
 echo "$list" | grep -q '^-rw------- 0/0 .* etc/hanoip/telegram.env$' || fail "the bot's secrets lost their mode"
-echo "$list" | grep -q '^-rw-r--r-- 105/108 .* var/lib/syncthing/.local/state/syncthing/config.xml$' || fail "Syncthing's files lost their owner"
+echo "$list" | grep -q '^-rw-r--r-- syncthing/syncthing .* var/lib/syncthing/.local/state/syncthing/config.xml$' || fail "Syncthing's files have no owner by name (the backup holds only numbers, and the new system's numbers differ)"
 ! echo "$list" | grep -q 'etc/passwd\|etc/shadow' || fail "an unrelated file was sent"
 tar -xOf "$dir/stdin.0" etc/hanoip/telegram.env | grep -q SECRET-TOKEN-VALUE || fail "the secret did not arrive intact"
 

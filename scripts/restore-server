@@ -56,6 +56,17 @@ send() { # tar stream of the wanted paths on stdout
 	python3 -I - "$archive" $paths <<'PY'
 import sys, tarfile
 want = [p.strip("/") for p in sys.argv[2:]]
+# The backup records owners as numbers only, and the new system hands out other numbers (the 4.14's syncthing 105 is adguardhome
+# there). The names from the backup's own passwd and group go into the stream; tar on the phone maps names to its own numbers.
+users, groups = {}, {}
+first = tarfile.open(sys.argv[1], "r:gz")
+for m in first:
+    if m.name in ("./etc/passwd", "./etc/group"):
+        for line in first.extractfile(m).read().decode().splitlines():
+            f = line.split(":")
+            if len(f) >= 3:
+                (users if m.name.endswith("passwd") else groups).setdefault(int(f[2]), f[0])
+first.close()
 src = tarfile.open(sys.argv[1], "r:gz")
 out = tarfile.open(fileobj=sys.stdout.buffer, mode="w|", format=tarfile.PAX_FORMAT)
 n = 0
@@ -64,6 +75,7 @@ for m in src:
     if not any(name == w or name.startswith(w + "/") for w in want): continue
     if m.isfifo() or m.ischr() or m.isblk() or name.endswith(".lock") or "/msg.sock" in name: continue
     m.name = name
+    m.uname, m.gname = users.get(m.uid, ""), groups.get(m.gid, "")
     out.addfile(m, src.extractfile(m) if m.isreg() else None)
     n += 1
 out.close()
