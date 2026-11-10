@@ -8,6 +8,8 @@
 # once their data is there (ConditionPathExists in their units), and this script starts them at the end.
 # Usage: scripts/restore-server [data]        everything above (default)
 #        scripts/restore-server password     the login user's sudo password: hash of HANOIP_SUDO_PASSWORD, never printed
+#        scripts/restore-server keys         the login user's other authorized public keys from the backup (a Termux phone, another PC),
+#                                            added to the ones the image has, never replacing them; needs sudo (after password)
 #        scripts/restore-server harden       last, once sudo works: root login off and root's key removed (a new write of
 #                                            userdata brings root's key back for the next restore, so harden again after it)
 # HANOIP_SERVER_BACKUP is the archive (default: the newest server-4.14-* in $HANOIP_BACKUP_DIR). DRY_RUN=1 lists what would
@@ -30,6 +32,15 @@ password)
 		rm -f /run/hanoip-pw.hash /run/hanoip-shadow.new"
 	echo "password hash of $HANOIP_USER written; check it with scripts/hanoip-sudo 'id -u' before turning root login off."
 	exit 0 ;;
+keys)
+	archive=${HANOIP_SERVER_BACKUP:-$(ls -d "$HANOIP_BACKUP_DIR"/server-4.14-* 2>/dev/null | sort | tail -1)/root.tar.gz}
+	[ -f "$archive" ] || { echo "no archive at $archive" >&2; exit 1; }
+	if [ -n "${DRY_RUN:-}" ]; then echo "+ add the missing keys of $HANOIP_USER's authorized_keys from $archive"; exit 0; fi
+	# Public keys only; base64 keeps the command one safe word. Each is added when the phone's file lacks that exact line.
+	b64=$(tar -xzOf "$archive" "./home/$HANOIP_USER/.ssh/authorized_keys" | grep -E '^(ssh-|ecdsa-|sk-)' | base64 -w0)
+	[ -n "$b64" ] || { echo "no public keys for $HANOIP_USER in the backup" >&2; exit 1; }
+	"$dir/hanoip-sudo" "f=/home/$HANOIP_USER/.ssh/authorized_keys; echo $b64 | base64 -d | while read -r k; do grep -qxF \"\$k\" \$f || { echo \"\$k\" >> \$f; echo added; }; done; chown $HANOIP_USER:$HANOIP_USER \$f; chmod 600 \$f; wc -l < \$f"
+	exit 0 ;;
 harden)
 	if [ -n "${DRY_RUN:-}" ]; then echo "+ check that sudo works for $HANOIP_USER, then PermitRootLogin no and remove root's authorized_keys"; exit 0; fi
 	# Root is the way in until sudo is proven: with the check failing the phone keeps both.
@@ -38,7 +49,7 @@ harden)
 	echo "root login is off; the way in is $HANOIP_USER with sudo (scripts/hanoip-sudo)."
 	exit 0 ;;
 data) ;;
-*) echo "usage: $0 [data|password|harden]" >&2; exit 2 ;;
+*) echo "usage: $0 [data|password|keys|harden]" >&2; exit 2 ;;
 esac
 
 archive=${HANOIP_SERVER_BACKUP:-}

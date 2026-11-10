@@ -33,6 +33,7 @@ add("var/lib/hanoip/cycle-restored")
 add("var/lib/hanoip/boot_b-before-mmi.img", b"y" * 100)
 add("etc/shadow", mode=0o640)
 add("var/lib/adguardhome-other/file")
+add("home/tester/.ssh/authorized_keys", b"ssh-ed25519 AAAApublickey phone@termux\n-----BEGIN OPENSSH PRIVATE KEY-----\nSECRETKEYBODY\n")
 add("etc/passwd", b"syncthing:x:105:108::/var/lib/syncthing:/sbin/nologin\nadguardhome:x:106:109::/x:/sbin/nologin\n")
 add("etc/group", b"syncthing:x:108:\nadguardhome:x:109:\n")
 t.close()
@@ -99,4 +100,12 @@ out=$(DRY_RUN=1 runit harden); [ ! -e "$dir/sudo-calls" ] || fail "the dry run o
 ! grep -q PermitRootLogin "$dir/sudo-calls" || fail "harden wrote the sshd setting although sudo does not work"
 rm -f "$dir/sudo-calls"; runit harden >/dev/null
 grep -q "PermitRootLogin no.*50-hanoip-root-key.conf" "$dir/sudo-calls" && grep -q 'rm -f /root/.ssh/authorized_keys' "$dir/sudo-calls" || fail "harden did not turn root login off"
+# --- keys: only public key lines travel, as one safe word, added through sudo and never replacing the file ---
+rm -f "$dir/sudo-calls"; runit keys >/dev/null
+b64=$(grep -o 'echo [A-Za-z0-9+/=]* | base64' "$dir/sudo-calls" | cut -d' ' -f2)
+[ -n "$b64" ] || fail "keys sent nothing"
+dec=$(printf '%s' "$b64" | base64 -d)
+echo "$dec" | grep -q 'AAAApublickey' || fail "the public key was not sent"
+! echo "$dec" | grep -q 'SECRETKEYBODY\|PRIVATE' || fail "something that is not a public key line was sent"
+grep -q '>> \$f' "$dir/sudo-calls" && ! grep -q '[^>]> \$f' "$dir/sudo-calls" || fail "keys replaces the authorized_keys file instead of appending"
 echo "ok    test-restore-server"
