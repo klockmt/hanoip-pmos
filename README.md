@@ -174,3 +174,9 @@ Partition backups, the device collection (serial, MAC and IMEI), and the proprie
 ## License
 
 GPL-2.0-only, see [`LICENSE`](LICENSE) for the text and [`NOTICE`](NOTICE) for the scope. The kernel patches and the device-tree sources are derived from the Linux kernel; the packaging, scripts and documentation use the same license. Proprietary firmware and device identifiers are not part of the repository.
+
+## Duranium running
+
+`fastfetch` on the phone after the first boot of the mainline image: Linux 7.3.0-sm7150 on aarch64, `/usr` on a read-only erofs, the rootfs on `userdata`, Wi-Fi up.
+
+![fastfetch on the Moto G60 running Duranium: Linux 7.3.0-sm7150, aarch64, 3.47 GiB of RAM](docs/images/fastfetch-duranium.png)
