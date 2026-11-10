@@ -166,4 +166,7 @@ grep -q "u %s 1001 " scripts/duranium-image && ! grep -q "u %s 1000 " scripts/du
 # hanoip-pd-mapper failed with "no pd maps available" on the first Duranium boots (the system stayed degraded): it reads the
 # *.jsn maps next to the remoteprocs' firmware, which the image did not carry.
 grep -v '^[[:space:]]*#' scripts/duranium-image | grep -q '"\$fw"/\*\.jsn' || fail "scripts/duranium-image does not copy the pd-mapper maps (*.jsn)"
+# Alpine ships /usr/bin/adguardhome as rwxr-xr-- and the image has it as root:root (seen on the running phone, 2026-11-09: "Failed at
+# step EXEC ... Permission denied"): the adguardhome user cannot execute it, only the root group can.
+grep -qx 'Group=root' "$d/adguardhome.service" || fail "adguardhome.service cannot execute the binary (mode 754, root:root): the group must be root"
 echo "ok    test-duranium-boot"

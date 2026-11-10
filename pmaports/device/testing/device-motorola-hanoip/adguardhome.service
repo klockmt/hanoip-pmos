@@ -7,7 +7,9 @@ ConditionPathExists=/var/lib/adguardhome/AdGuardHome.yaml
 
 [Service]
 User=adguardhome
-Group=adguardhome
+# Group=root: Alpine ships /usr/bin/adguardhome as rwxr-xr-- and the image has it owned by root:root (the adguardhome group did
+# not exist when the package was unpacked), so only the root group may execute it. The data stays the user's (mode 700).
+Group=root
 ExecStart=/usr/bin/adguardhome --no-check-update --work-dir /var/lib/adguardhome --config /var/lib/adguardhome/AdGuardHome.yaml
 AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_NET_RAW
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_NET_RAW
