@@ -21,3 +21,5 @@ disable rtkit-daemon.service
 disable systemd-oomd.service
 disable systemd-oomd.socket
 disable getty@.service
+# The tailnet: the tailscale package ships its unit disabled, and the first Duranium image only had it because it was enabled by hand.
+enable tailscaled.service
