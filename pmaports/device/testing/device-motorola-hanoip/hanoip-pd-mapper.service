@@ -2,6 +2,9 @@
 Description=Qualcomm pd-mapper for service registration
 Documentation=man:systemd.service(5)
 DefaultDependencies=no
+# No start limit: the remoteprocs it reads do not exist until hanoip-modem (which starts after this unit) loads their modules, so the
+# first tries fail with "no pd maps available" and five in five seconds would give up for good.
+StartLimitIntervalSec=0
 Before=tqftpserv.service hanoip-modem.service
 After=hanoip-qrtr-ns.service
 Wants=hanoip-qrtr-ns.service
@@ -10,7 +13,7 @@ Wants=hanoip-qrtr-ns.service
 Type=simple
 ExecStart=/usr/bin/hanoip-pd-mapper
 Restart=always
-RestartSec=1
+RestartSec=2
 StandardOutput=journal
 StandardError=journal
 

@@ -172,4 +172,7 @@ grep -qx 'Group=root' "$d/adguardhome.service" || fail "adguardhome.service cann
 # The tailscale package ships its unit disabled; the first Duranium image only had the tailnet because it was enabled by hand, and
 # the rewritten image booted without it (2026-11-10): the phone was reachable over the USB cable only.
 grep -qx 'enable tailscaled.service' "$d/hanoip.preset" || fail "tailscaled.service is not enabled by hanoip.preset"
+# pd-mapper starts before hanoip-modem, which loads the remoteproc modules it needs: it fails at first and must be allowed to retry
+# (2026-11-10: five tries in five seconds, then the system stayed degraded for good).
+grep -qx 'StartLimitIntervalSec=0' "$d/hanoip-pd-mapper.service" || fail "hanoip-pd-mapper.service gives up after five quick failures"
 echo "ok    test-duranium-boot"
