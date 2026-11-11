@@ -155,8 +155,10 @@ for u in avahi-daemon.service avahi-daemon.socket rtkit-daemon.service systemd-o
 	grep -qx "disable $u" "$d/hanoip.preset" || fail "$u is not disabled by hanoip.preset"
 done
 # Bluetooth is not used and its firmware is not in the image; pmOS's unit that sets its MAC timed out in one boot of ten and
-# left the system degraded. A unit started by udev (SYSTEMD_WANTS) is not stopped by a preset, so it is masked.
-echo "$pk" | grep -qF 'ln -s /dev/null "$pkgdir/etc/systemd/system/bootmac@bluetooth.service"' && sed -n '/^mainline()/,/^}/p' "$apk" | grep -qF 'etc/systemd/system/bootmac@bluetooth.service' || fail "bootmac@bluetooth.service is not masked"
+# left the system degraded. A preset does not stop a unit udev starts (SYSTEMD_WANTS), and a mask link in /etc did not reach
+# the image (mkosi's preset-all removed it): an empty rules file with the name of pmOS's rule hides that rule.
+echo "$pk" | grep -qF 'install -Dm644 /dev/null "$pkgdir/etc/udev/rules.d/90-bootmac-bluetooth.rules"' && sed -n '/^mainline()/,/^}/p' "$apk" | grep -qF 'etc/udev/rules.d/90-bootmac-bluetooth.rules' || fail "pmOS's udev rule still starts bootmac@bluetooth.service"
+! echo "$pk" | grep -q 'ln -s /dev/null.*bootmac' || fail "bootmac@bluetooth.service is masked with a link, which mkosi's preset-all removes"
 grep -qx 'enable hanoip-screen-off.service' "$d/hanoip.preset" || fail "the backlight is not switched off at boot"
 grep -qx 'LLMNR=no' "$d/hanoip-resolved.conf" && grep -qx 'MulticastDNS=no' "$d/hanoip-resolved.conf" || fail "resolved still answers LLMNR or mDNS"
 grep -qx 'Storage=none' "$d/hanoip-coredump.conf" || fail "core files would be stored on a 4 GB phone"
