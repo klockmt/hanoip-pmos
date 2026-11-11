@@ -221,7 +221,7 @@ package() {
 	install -Dm644 "$srcdir/hanoip-led.service" "$pkgdir/etc/systemd/system/hanoip-led.service"
 
 	# What a headless server does not need, or needs bounded: no multicast name queries, no core files, a journal with a size limit, the backlight off
-	install -Dm644 "$srcdir/hanoip-journald.conf" "$pkgdir/etc/systemd/journald.conf.d/10-hanoip.conf"
+	install -Dm644 "$srcdir/hanoip-journald.conf" "$pkgdir/etc/systemd/journald.conf.d/90-hanoip.conf"
 	install -Dm644 "$srcdir/hanoip-resolved.conf" "$pkgdir/etc/systemd/resolved.conf.d/10-hanoip.conf"
 	install -Dm644 "$srcdir/hanoip-coredump.conf" "$pkgdir/etc/systemd/coredump.conf.d/10-hanoip.conf"
 	install -Dm644 "$srcdir/hanoip-screen-off.service" "$pkgdir/etc/systemd/system/hanoip-screen-off.service"
@@ -314,7 +314,7 @@ mainline() {
 		usr/lib/systemd/system-preset etc/systemd/system/qbootctl.service \
 		etc/systemd/system/adguardhome.service etc/systemd/system/smb.service etc/systemd/system/syncthing.service etc/systemd/system/mnt-hd\\x2da.mount etc/systemd/system/mnt-hd\\x2db.mount usr/lib/sysusers.d/20-hanoip-services.conf \
 		etc/systemd/system/hanoip-thermal.service etc/systemd/system/hanoip-led.service \
-		etc/systemd/journald.conf.d/10-hanoip.conf etc/systemd/resolved.conf.d/10-hanoip.conf etc/systemd/coredump.conf.d/10-hanoip.conf etc/systemd/system/hanoip-screen-off.service \
+		etc/systemd/journald.conf.d/90-hanoip.conf etc/systemd/resolved.conf.d/10-hanoip.conf etc/systemd/coredump.conf.d/10-hanoip.conf etc/systemd/system/hanoip-screen-off.service \
 		etc/pam.d/sudo
 }
 

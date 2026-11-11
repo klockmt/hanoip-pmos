@@ -151,7 +151,9 @@ grep -qx 'enable hanoip-screen-off.service' "$d/hanoip.preset" || fail "the back
 grep -qx 'LLMNR=no' "$d/hanoip-resolved.conf" && grep -qx 'MulticastDNS=no' "$d/hanoip-resolved.conf" || fail "resolved still answers LLMNR or mDNS"
 grep -qx 'Storage=none' "$d/hanoip-coredump.conf" || fail "core files would be stored on a 4 GB phone"
 grep -q '^SystemMaxUse=' "$d/hanoip-journald.conf" || fail "the journal has no size limit"
-for pair in hanoip-journald.conf:etc/systemd/journald.conf.d/10-hanoip.conf hanoip-resolved.conf:etc/systemd/resolved.conf.d/10-hanoip.conf \
+# Drop-ins of /etc and /usr/lib are read in one list sorted by file name and the last one wins: as 10-hanoip.conf ours lost to
+# pmOS's 10-postmarketos.conf (SystemMaxUse=1G) and the journal reached 500 MB on the phone.
+for pair in hanoip-journald.conf:etc/systemd/journald.conf.d/90-hanoip.conf hanoip-resolved.conf:etc/systemd/resolved.conf.d/10-hanoip.conf \
 	hanoip-coredump.conf:etc/systemd/coredump.conf.d/10-hanoip.conf hanoip-screen-off.service:etc/systemd/system/hanoip-screen-off.service; do
 	src=${pair%%:*} dest=${pair#*:}
 	grep -qx "	$src" "$apk" || fail "$src is not in source="
