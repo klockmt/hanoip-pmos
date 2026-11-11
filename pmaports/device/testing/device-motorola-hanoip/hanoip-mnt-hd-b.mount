@@ -5,7 +5,8 @@ Description=NAS disk, partition hd-b (the Samba share)
 What=/dev/disk/by-label/hd-b
 Where=/mnt/hd-b
 Type=btrfs
-Options=compress=zstd,noatime
+# nofail: without it systemd orders every mount before local-fs.target, and sshd waited 90 s for a disk that is away.
+Options=compress=zstd,noatime,nofail
 
 # WantedBy, not RequiredBy: the phone boots without the disk (it was nofail in fstab too).
 [Install]

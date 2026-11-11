@@ -106,6 +106,11 @@ grep -qx 'ConditionPathExists=/var/lib/adguardhome/AdGuardHome.yaml' "$d/adguard
 grep -qx 'ConditionPathExists=/var/lib/syncthing/.local/state/syncthing/config.xml' "$d/syncthing.service" || fail "syncthing.service starts without its identity"
 grep -qx 'RequiresMountsFor=/mnt/hd-a' "$d/syncthing.service" && grep -qx 'RequiresMountsFor=/mnt/hd-b' "$d/smb.service" || fail "Samba or Syncthing can run without its disk"
 grep -qx 'WantedBy=local-fs.target' "$d/hanoip-mnt-hd-a.mount" && ! grep -hv '^#' "$d"/hanoip-mnt-hd-[ab].mount | grep -q 'RequiredBy' || fail "a missing NAS disk would stop the boot (the mounts must be WantedBy, never RequiredBy)"
+# systemd orders a mount before local-fs.target unless it is nofail, and sshd starts after that target: with the disk away
+# SSH came 90 s late at every boot, the device's timeout (seen on the phone, 2026-11-11).
+for x in a b; do
+	grep -qx 'Options=compress=zstd,noatime,nofail' "$d/hanoip-mnt-hd-$x.mount" || fail "hanoip-mnt-hd-$x.mount is not nofail: a missing NAS disk holds sshd for 90 s"
+done
 # hdshare keeps the ID the 4.14 gave it: the NAS disk's share belongs to 1000, so the login user cannot be. syncthing and adguardhome
 # must not ask for the 4.14's numbers (105 and 106): in the image those are chrony and dnsmasq, made by Alpine's package scripts
 # (seen on the running image, 2026-11-09), and a fixed ID that is taken makes systemd-sysusers fail.
