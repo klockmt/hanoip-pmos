@@ -55,6 +55,13 @@ FAKE_SSHD=1 FAKE_USB=1 health 20
 grep -qx 'qbootctl -m' "$calls" && [ -e "$tmp/up" ] && ! grep -q '^reboot' "$calls" || fail "a reachable phone (sshd, usb0) was not marked good"
 FAKE_SSHD=1 FAKE_WLAN=1 health 20
 grep -qx 'qbootctl -m' "$calls" || fail "a phone reachable over Wi-Fi was not marked good"
+# The image's command line always says androidboot.slot_suffix=_a, which is what qbootctl takes as the current slot: a boot
+# from slot b would mark slot a, and the ABL would give up on b. The slot comes from the ABL's own arguments instead.
+printf '#!/bin/sh\necho "${FAKE_SLOT:-}"\n' > "$bin/hanoip-ml-abl-slot"; chmod +x "$bin/hanoip-ml-abl-slot"
+FAKE_SLOT=_b FAKE_SSHD=1 FAKE_USB=1 health 20
+grep -qx 'qbootctl -m b' "$calls" || fail "a boot from slot b did not mark slot b good"
+FAKE_SLOT=_a FAKE_SSHD=1 FAKE_USB=1 health 20
+grep -qx 'qbootctl -m a' "$calls" || fail "a boot from slot a did not mark slot a good"
 FAKE_SSHD= FAKE_USB=1 health 20
 ! grep -q '^qbootctl' "$calls" && grep -qx 'reboot -f' "$calls" || fail "a phone with no sshd was marked good, or never rebooted"
 FAKE_SSHD=1 FAKE_USB= FAKE_WLAN= health 20

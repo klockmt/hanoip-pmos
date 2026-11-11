@@ -15,7 +15,9 @@ reachable() {
 }
 while :; do
 	if reachable; then
-		qbootctl -m && logger -t hanoip-health "slot marked successful" || logger -t hanoip-health "qbootctl -m failed"
+		# The slot the ABL started, not qbootctl's "current": that one is read from the image's command line, always _a.
+		slot=$(hanoip-ml-abl-slot 2>/dev/null)
+		qbootctl -m ${slot#_} && logger -t hanoip-health "slot marked successful" || logger -t hanoip-health "qbootctl -m failed"
 		touch "${HANOIP_UP:-/run/hanoip-up}"
 		exit 0
 	fi
