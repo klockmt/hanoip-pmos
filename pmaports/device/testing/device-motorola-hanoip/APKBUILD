@@ -4,7 +4,7 @@
 pkgname=device-motorola-hanoip
 pkgdesc="Motorola Moto G (60)"
 pkgver=0
-pkgrel=50
+pkgrel=51
 _qrtr_rev=29e36ae164389580a0f8ea7a7fdb728140ae978d
 _pdmapper_rev=5ecd2fe926aca7abfe40724177f63b942cff3947
 url="https://postmarketos.org"
@@ -208,6 +208,8 @@ package() {
 	install -Dm644 "$srcdir/hanoip-health.service" "$pkgdir/etc/systemd/system/hanoip-health.service"
 	install -Dm644 "$srcdir/hanoip.preset" "$pkgdir/usr/lib/systemd/system-preset/10-hanoip.preset"
 	ln -s /dev/null "$pkgdir/etc/systemd/system/qbootctl.service"
+	# Bluetooth is unused; its MAC unit, started by udev, timed out now and then and left the system degraded
+	ln -s /dev/null "$pkgdir/etc/systemd/system/bootmac@bluetooth.service"
 
 	# The services of the 4.14 server on systemd (Alpine ships only OpenRC scripts): their users keep the old IDs, the NAS disk mounts on its own
 	install -Dm644 "$srcdir/adguardhome.service" "$pkgdir/etc/systemd/system/adguardhome.service"
@@ -313,7 +315,7 @@ mainline() {
 		etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony \
 		usr/bin/hanoip-usb-gadget etc/systemd/system/hanoip-usb-gadget.service \
 		usr/bin/hanoip-health etc/systemd/system/hanoip-health.service \
-		usr/lib/systemd/system-preset etc/systemd/system/qbootctl.service \
+		usr/lib/systemd/system-preset etc/systemd/system/qbootctl.service etc/systemd/system/bootmac@bluetooth.service \
 		etc/systemd/system/adguardhome.service etc/systemd/system/smb.service etc/systemd/system/syncthing.service etc/systemd/system/mnt-hd\\x2da.mount etc/systemd/system/mnt-hd\\x2db.mount usr/lib/sysusers.d/20-hanoip-services.conf \
 		etc/systemd/system/hanoip-thermal.service etc/systemd/system/hanoip-led.service \
 		etc/systemd/journald.conf.d/90-hanoip.conf etc/tmpfiles.d/hanoip-rtc.conf etc/systemd/resolved.conf.d/10-hanoip.conf etc/systemd/coredump.conf.d/10-hanoip.conf etc/systemd/system/hanoip-screen-off.service \
