@@ -350,3 +350,36 @@ rollback of a bad image; then the stability list of step 6 (ten reboots, panic, 
   `bootmac@bluetooth.service` timed out, which is now masked in the package (`PITFALLS.md`).
 - `scripts/pmb build --force device-motorola-hanoip` ran with the PC's sudo (the user approved the helper once), and
   `scripts/duranium-image` built an image from it.
+
+### The A/B update to `pkgrel 52`, its rollback and a panic (2026-11-11, night)
+
+- **Delivery.** `scripts/pmb build --force device-motorola-hanoip` (`pkgrel 52`), then
+  `scripts/duranium-image --image-version=26111101` (without the option the image keeps the version in duranium-build's
+  `mkosi.version`, and sysupdate offers nothing). Checked inside the image with `dump.erofs` before sending it: the
+  tmpfiles line, the `nofail` mounts, `90-hanoip.conf`, the health script and the empty udev rule. The three files
+  sysupdate wants (`…usr-arm64-verity.<uuid>.raw.zst`, `…usr-arm64.<uuid>.raw.zst`, both compressed with `zstd`, and
+  `….efi`) went to `/var/tmp/hanoip-update/` on the phone over the tailnet (777 MB in 107 s), hashes equal. The drop-ins in
+  `/etc/sysupdate.d/*.transfer.d/10-hanoip-test.conf` point sysupdate at that directory (`Type=regular-file`); they stay,
+  since no server publishes an image for this phone.
+- **Update.** `/usr/lib/systemd/systemd-sysupdate update` wrote the free partition pair and
+  `…_26111101+2-0.efi`. The hand-made fixes were deleted from the writable `/etc` layer
+  (`/var/lib/extensions.mutable/etc`) first, so that the package's files are the ones in use. After `reboot`: SSH over
+  the tailnet in 59 s, `IMAGE_VERSION=26111101`, `running`, nothing failed, sshd at 12.75 s, no SPMI line, the journal
+  limit at 200 MB, the slot marked by the packaged `hanoip-health`, no `bootmac@bluetooth` unit, the boot entry renamed
+  to `…_26111101.efi` (blessed). From the LAN no TCP port answers and root is refused.
+- **Rollback.** A UKI broken on purpose (1 MiB of zeros in the middle of its `.linux` section) was placed as
+  `…_26111102+2-0.efi`, the default entry. After `reboot` the phone came back by itself on 26111101, 117 s later, with
+  the bad entry at `+0-2`; slot a stayed the ABL's slot. The bad file was removed. Which reset ended each failed try
+  (the EFI stub returning, or the watchdog U-Boot leaves running) was not looked at.
+- **Panic.** `echo c > /proc/sysrq-trigger` (through `systemd-run`: a background shell of the ssh session dies with it):
+  "Kernel panic - not syncing: sysrq triggered crash", and the phone answered SSH on a new boot 197 s after the panic
+  was armed, `running`, slot marked.
+- **USB role after a reboot.** With the hub left plugged in, every boot leaves the port in the device role
+  (`/sys/class/typec/port0/data_role` and `/sys/class/usb_role/a600000.usb-role-switch/role`), so the hub, its Ethernet
+  and any disk are not there; the tailnet ran over Wi-Fi. Plugging the hub into the running system gives the host role.
+  Writing `host` to the Type-C port changes nothing; writing `host` to the role switch brings the hub and `eth0` back.
+  Nothing does that at boot yet: it must not take the USB network away from a PC on the cable, which is the way in
+  when everything else is down, and that half cannot be tried without the cable. Open.
+- **Not done:** the NAS disk (it never appeared on the bus, in either role); slot b and `boot_a` (the cable); a boot
+  with sshd down (the health script's reboot after ten minutes is only covered by `scripts/test-duranium-boot`); a
+  watchdog test on Duranium; Wi-Fi loss; a 24 to 72 h run.
