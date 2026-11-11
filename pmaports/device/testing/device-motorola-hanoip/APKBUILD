@@ -110,6 +110,7 @@ source="
 	hanoip-thermal.service
 	hanoip-led.service
 	hanoip-journald.conf
+	hanoip-rtc.conf
 	hanoip-resolved.conf
 	hanoip-coredump.conf
 	hanoip-screen-off.service
@@ -222,6 +223,7 @@ package() {
 
 	# What a headless server does not need, or needs bounded: no multicast name queries, no core files, a journal with a size limit, the backlight off
 	install -Dm644 "$srcdir/hanoip-journald.conf" "$pkgdir/etc/systemd/journald.conf.d/90-hanoip.conf"
+	install -Dm644 "$srcdir/hanoip-rtc.conf" "$pkgdir/etc/tmpfiles.d/hanoip-rtc.conf"
 	install -Dm644 "$srcdir/hanoip-resolved.conf" "$pkgdir/etc/systemd/resolved.conf.d/10-hanoip.conf"
 	install -Dm644 "$srcdir/hanoip-coredump.conf" "$pkgdir/etc/systemd/coredump.conf.d/10-hanoip.conf"
 	install -Dm644 "$srcdir/hanoip-screen-off.service" "$pkgdir/etc/systemd/system/hanoip-screen-off.service"
@@ -314,7 +316,7 @@ mainline() {
 		usr/lib/systemd/system-preset etc/systemd/system/qbootctl.service \
 		etc/systemd/system/adguardhome.service etc/systemd/system/smb.service etc/systemd/system/syncthing.service etc/systemd/system/mnt-hd\\x2da.mount etc/systemd/system/mnt-hd\\x2db.mount usr/lib/sysusers.d/20-hanoip-services.conf \
 		etc/systemd/system/hanoip-thermal.service etc/systemd/system/hanoip-led.service \
-		etc/systemd/journald.conf.d/90-hanoip.conf etc/systemd/resolved.conf.d/10-hanoip.conf etc/systemd/coredump.conf.d/10-hanoip.conf etc/systemd/system/hanoip-screen-off.service \
+		etc/systemd/journald.conf.d/90-hanoip.conf etc/tmpfiles.d/hanoip-rtc.conf etc/systemd/resolved.conf.d/10-hanoip.conf etc/systemd/coredump.conf.d/10-hanoip.conf etc/systemd/system/hanoip-screen-off.service \
 		etc/pam.d/sudo
 }
 
@@ -399,6 +401,7 @@ e30f6431ad38b980b3a78b5f2e3b1a353a2221c181da8a37fe5027643c1a5c736acc153faf269b3a
 aa62ddba3548bbd2bf4643197818ab93acc75b5e2cfa96c40b3d9e7ea747c0baee71b4e922b231d68f6988b05dbdff6a2d0d4c67917181e0eda6caa3457fbec2  hanoip-thermal.service
 644a0fccd9530f924b2aa49697a47576052daaf9ec4365afc6a8d9732f5c18df6e637dd0811067a100bcbb814718494177d348da8afd3395f6ac36f8c4d77775  hanoip-led.service
 49ed0974130bc31c39776e2ec05a36d745945dd6af1e451641d2e2a169da4aed0fafb4817aed55f4017362c401398719e7fd2f019ff3d969ccbc62e68bab3d38  hanoip-journald.conf
+b79b4620d52dc03b7078b672c49e490c14b5ed5ea4704b4e78a7b0364b283e72215bc30087f4692df66e796a8afa4d636f97148287d4dd4ec30079ba02c5230d  hanoip-rtc.conf
 6c66d66a309862b55aa13713e1b42abf5a73dd1d20ffe78a8ffc3d51f13f772e2e63c248769a7485a3abd8a4f071e40f62df3d42a01369b14a8aa2d286478cd8  hanoip-resolved.conf
 d6a5690c49b697ec9afbe371d78b832375fe15f678b26cfb0f9c43caf0529d5318f2af6269d0ae008a7eda34b6acab0ebb0f64f3ae70f5e735d30dd65e86cf9f  hanoip-coredump.conf
 a7ea12a4ef0f76db8a4ea63159a4705cfa3e56c15b81a44f2e5b4096730963ccbe5ebb9ca68e8903f3d9374920506dc4a8eab51fca13300be887967630c8d9c3  hanoip-screen-off.service
