@@ -320,3 +320,33 @@ Still open before a v1.0.0, in order: the NAS disk plugged in (the mounts, Samba
 a reboot with and without it; #27, #28); the bot's commands from Telegram; step 5 above (back up and flash `boot_a` and
 `boot_b`, prove each slot and the Alpine last resort); a build of `pkgrel 50` and its delivery as an A/B update, with one
 rollback of a bad image; then the stability list of step 6 (ten reboots, panic, watchdog, Wi-Fi loss, a 24 to 72 h run).
+
+### Later on 2026-11-11: the new U-Boot in `boot_b`, and what stopped the slot test
+
+- Backup first: `boot_a`, `boot_b`, `vendor_boot_a/b` and `dtbo_a/b` read from the running Duranium into
+  `$HANOIP_BACKUP_DIR/2026-11-11-before-uboot/` with `SHA256SUMS`, checked on both sides. Both boot partitions held the
+  same image, `boot_a-duranium.img` of 2026-11-08 (`ea819e45…` over the whole partition), the U-Boot that tries Duranium
+  on slot a only.
+- `scripts/build-mainline-uboot` and `scripts/mainline-boot-a-image` built the image with the U-Boot that tries Duranium
+  first from either slot. It was written to **`boot_b` only**, with `dd` from Duranium (the phone was on the hub, so no
+  fastboot), and read back: the whole partition is `bc2c6276…`, the image padded with zeros. `boot_a` is unchanged.
+- The new U-Boot **has not run yet**: slot b could not be made active from the phone. `qbootctl -s b` fails ("Failed to
+  set active": the kernel has no `SCSI_UFS_BSG`, which changes the UFS boot LUN), and this build of qbootctl lists `-i`
+  (write the GPT flags anyway) in its help but does not accept it. `xbl`, `xbl_config`, `abl`, `tz` and `hyp` are
+  byte-identical in both slots, so the GPT flags alone would do. `boot_a` stays as it is until the new U-Boot has
+  booted once: two slots with a U-Boot nobody has seen boot would leave no way back but the cable.
+- To finish step 5 with the cable on the PC: `fastboot set_active b`, reboot, check Duranium comes up and
+  `fastboot getvar slot-successful:b` says yes; then write the same image to `boot_a`, `fastboot set_active a`, check
+  again; then the Alpine last resort from a RAM boot.
+- `hanoip-health` on the phone runs the fixed script from `/etc/hanoip` through a drop-in
+  (`hanoip-health.service.d/r50.conf`) until the image carries `pkgrel 50`; remove both then.
+- The owner sent `/status` to the bot on Telegram and got the full report (Ethernet through the hub, 77 %, bypass).
+- The hub's Ethernet works (`eth0`, `cdc_ether`); the NAS disk did **not** appear on the bus. The only storage device is
+  the hub's own card reader (`05e3:0751`, no medium), and nothing sits on the SuperSpeed bus. Samba and Syncthing are
+  still unchecked.
+- Ten reboots in a row over the tailnet, with the three fixes in `/etc` and without the disk: SSH over the tailnet
+  answered 58 to 60 s after `reboot` every time, sshd started 12.6 to 12.9 s into the boot, the slot was marked good
+  ten times, no `disallowed SPMI` line. Nine boots ended `running`; one ended `degraded` because
+  `bootmac@bluetooth.service` timed out, which is now masked in the package (`PITFALLS.md`).
+- `scripts/pmb build --force device-motorola-hanoip` ran with the PC's sudo (the user approved the helper once), and
+  `scripts/duranium-image` built an image from it.
