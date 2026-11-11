@@ -292,3 +292,31 @@ left to the user. In order:
    each slot (`fastboot set_active b`, reboot, `fastboot getvar slot-successful:b`) and then the Alpine last resort.
 6. The stability tests of the plan (10 reboots, panic, watchdog, A/B update and rollback, network, services, soak), each finding with a
    test and a row in `PITFALLS.md`; then the v1.0.0 question to the user.
+
+## State on 2026-11-11 (`beta`): Duranium is the running system
+
+The image built on 2026-11-09 (`IMAGE_VERSION=26110901`, device package `pkgrel 49`) was written to `userdata` and restored
+(`scripts/restore-server`, `password`, `harden`) on 2026-11-10; steps 1 to 4 of the list above are done. Checked on the phone on
+2026-11-11 over the USB cable, without the NAS disk:
+
+- Slot `_a`, kernel `7.3.0-sm7150`, `systemctl is-system-running` = `running`, no failed unit, on three boots in a row;
+  `hanoip-health` marked the slot good each time. `watchdog.open_timeout=300`, `panic=5`, `RuntimeWatchdogSec=20`.
+- Access: `scripts/hanoip-sudo 'id -u'` prints 0; `sshd -T` gives `permitrootlogin no`, `passwordauthentication no`; a login as
+  root with the key is refused. Root's `authorized_keys` comes back at every boot (the image's tmpfiles line copies it), so
+  `harden` does not remove it for good; it is unused while `PermitRootLogin no` stands.
+- Network: Wi-Fi and Tailscale up by themselves; from the PC on the same LAN no TCP port of the phone answers, while it answers
+  ping. SSH over the tailnet was not tried: the PC was logged out of the tailnet.
+- Services active: AdGuard Home (`127.0.0.1:53` and `:3000`, resolves a name), `hanoip-charge` (78 %, not charging, on the
+  cable), `hanoip-thermal`, `hanoip-led`, `hanoip-bot` (its unit; no command was sent from Telegram), zram (zstd, 5.2 GB),
+  `systemd-timesyncd` for the clock (chrony is not used on Duranium). `smb` and `syncthing` are enabled and wait for the disk.
+- `hanoip-status` prints every line; the cycle count reads `n/a` on the mainline gauge.
+
+Three bugs found and fixed that day (rows in `PITFALLS.md`, checks in `scripts/test-duranium-boot`), applied to the phone's
+`/etc` by hand and measured over two reboots; the package that carries them is `pkgrel 50`, **not built yet**:
+the NAS mounts without `nofail` held sshd for 90 s (sshd at 101 s, now 12.8 s); the journal's limit lost to pmOS's 1 GB (501 MB,
+now about 200 MB); and the kernel flooded the log trying to set the PMIC RTC (about 40 lines a second, now none).
+
+Still open before a v1.0.0, in order: the NAS disk plugged in (the mounts, Samba from a client over the tailnet, Syncthing,
+a reboot with and without it; #27, #28); the bot's commands from Telegram; step 5 above (back up and flash `boot_a` and
+`boot_b`, prove each slot and the Alpine last resort); a build of `pkgrel 50` and its delivery as an A/B update, with one
+rollback of a bad image; then the stability list of step 6 (ten reboots, panic, watchdog, Wi-Fi loss, a 24 to 72 h run).
