@@ -17,6 +17,7 @@ depends="
 	firmware-qcom-sm7150
 	mkbootimg-osm0sis
 	postmarketos-base
+	python3
 	soc-qcom
 	soc-qcom-qbootctl
 	tailscale
@@ -59,6 +60,7 @@ source="
 	hanoip-tqftpserv.initd
 	hanoip-watchdog
 	hanoip-watchdog.initd
+	hanoip-dashboard
 	org.freedesktop.login1.service
 	pd-mapper-subsys-fallback.patch
 	tqftpserv-subsys-fallback.patch
@@ -167,6 +169,8 @@ package() {
 	install -Dm755 "$srcdir/hanoip-thermal.initd" "$pkgdir/etc/init.d/hanoip-thermal"
 	install -Dm755 "$srcdir/hanoip-watchdog" "$pkgdir/usr/bin/hanoip-watchdog"
 	install -Dm755 "$srcdir/hanoip-watchdog.initd" "$pkgdir/etc/init.d/hanoip-watchdog"
+	install -Dm755 "$srcdir/hanoip-dashboard" "$pkgdir/usr/bin/hanoip-dashboard"
+	install -Dm644 "$startdir/dashboard/index.html" "$pkgdir/usr/share/hanoip-dashboard/index.html"
 	install -Dm644 "$srcdir/org.freedesktop.login1.service" "$pkgdir/usr/share/device-motorola-hanoip/org.freedesktop.login1.service"
 
 	# Mainline systemd units and scripts (installed here, moved to mainline subpackage by amove)
@@ -353,6 +357,7 @@ e2718a5060419afccb775e70f07e91cd28df068b59e7712c9d1caa490869726f24655d9e22dc1b8c
 9aa163137d78b802f924cb38341102abd7c36129689220587a1b4a26bc528c23ac27de7cff6c85f266d059a30d41df3a25c45b2f03cbdaaffacb083fee619619  hanoip-tqftpserv.initd
 d73f8a395f5f4a886322cc6dc042b1bbe5cdd0f0a7f92123350874b312f7884b52d7031bcd08299a1adece5f22abc2705be9b04f2b987f746c8af466c2502e61  hanoip-watchdog
 833a8bef7313c05857e423034ade9dc22724e850e2d5eff5f583cb779d370586b732acaa8e452c9acfca213b798fc1310e78ff1c2a5b3e2ddca9e0ac6b6cab3d  hanoip-watchdog.initd
+d9febdb60702e7f7249222379f5606e5dd76c0afaaec8bff2b5331f654ec74cb4278bf5e6c68bdd7e801239cbdf5a38a59e5a9e5ffa472bc8f8749e6bedd6366  hanoip-dashboard
 123071b96bb753cb017c28959fdc8f9a7bb479fd837ba46709a97409b40b86a66861de5ff4cf4a3520bb5fc64d570828e30f358268fb787995034d86e0d6acfd  org.freedesktop.login1.service
 777d1dfc321840b6569981fc552742bac0b6c64e48f68c458775121fc1056017c371903862657de2c16eb98ff8942e9d3fbb52261735341ab172ed60752eba20  pd-mapper-subsys-fallback.patch
 0669d496aaa63bc654f8ea63b6f51426035e72b587d11ed17cd960b07a341ecbf705fdbd93fb04f0e07b6ed11f7c93a25148446b7c4bc266778ae9ad2f54f6b0  tqftpserv-subsys-fallback.patch

@@ -1,0 +1,210 @@
+#!/bin/sh
+# Checks hanoip-dashboard without the phone: the JSON contract (names, types and the values read from fake /proc, /sys,
+# journal, nmcli, tailscale, systemctl, ss, btrfs and hanoip-status), the null of every unreadable field, the two routes
+# and the refused methods, the 4 s cache (one run for two tabs, none before a request) and the address it binds to.
+set -eu
+cd "$(dirname "$0")/.."
+script=$PWD/pmaports/device/testing/device-motorola-hanoip/hanoip-dashboard
+py=$(command -v python3)
+dir=$(mktemp -d)
+pid=
+trap '[ -z "$pid" ] || kill "$pid" 2>/dev/null || true; rm -rf "$dir"' EXIT
+fail() { echo "FAIL: $*" >&2; exit 1; }
+# check <json file> <python expression on d that must be true> <what failed>
+check() { "$py" -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if eval(sys.argv[2]) else 1)' "$1" "$2" || fail "$3"; }
+# req <method> <path> <port>: the status code on the first line, the body after it
+REQ='import http.client,sys
+method, path, port = sys.argv[1:4]
+c = http.client.HTTPConnection("127.0.0.1", int(port), timeout=10)
+c.request(method, path)
+r = c.getresponse()
+sys.stdout.write("%d\n" % r.status)
+sys.stdout.flush()
+sys.stdout.buffer.write(r.read())'
+req() { "$py" -c "$REQ" "$@"; }
+
+export TEST_DIR=$dir
+bin=$dir/bin proc=$dir/proc sys=$dir/sys share=$dir/share nas=$dir/nas
+mkdir -p "$bin" "$proc" "$sys/block/zram0" "$sys/class/watchdog/watchdog0" "$share" "$nas"
+
+# Fake commands: the same names the script calls, with fixed answers.
+cat > "$bin/journalctl" <<'EOF'
+#!/bin/sh
+case "$*" in
+*--list-boots*) printf '%s\n' '-2 0000 Mon' '-1 0001 Tue' ' 0 0002 Wed' ;;
+*hanoip-health*) cat "$TEST_DIR/health" 2>/dev/null ;;
+esac
+EOF
+cat > "$bin/nmcli" <<'EOF'
+#!/bin/sh
+case "$*" in
+*"device status"*) printf '%s\n' 'wlan0:connected' 'eth0:unavailable' ;;
+*"wifi list"*) printf '%s\n' 'no:other-net' 'yes:example\:net' ;;
+esac
+EOF
+cat > "$bin/tailscale" <<'EOF'
+#!/bin/sh
+case "$1 $2" in
+"ip -4") echo "${TEST_TS_IP-192.0.2.10}" ;;
+"status --json") echo '{"BackendState": "Running"}' ;;
+esac
+EOF
+cat > "$bin/systemctl" <<'EOF'
+#!/bin/sh
+case "$2" in
+sshd|hanoip-bot) echo active ;;
+*) echo inactive; exit 3 ;;
+esac
+EOF
+cat > "$bin/ss" <<'EOF'
+#!/bin/sh
+printf '%s\n' 'LISTEN 0 128 0.0.0.0:22 0.0.0.0:*' 'LISTEN 0 128 127.0.0.1:3000 0.0.0.0:*'
+EOF
+cat > "$bin/btrfs" <<'EOF'
+#!/bin/sh
+case "$*" in "scrub status "*) cat "$TEST_DIR/scrub" ;; esac
+EOF
+cat > "$bin/hanoip-status" <<'EOF'
+#!/bin/sh
+echo x >> "$TEST_DIR/runs"
+printf '%s\n' 'Server - 0.9 ms' 'CPU - 3 %'
+EOF
+cat > "$bin/crun" <<'EOF'
+#!/bin/sh
+echo '[{"id": "web", "status": "running"}, {"id": "old", "status": "stopped"}]'
+EOF
+chmod +x "$bin"/*
+
+# Fake /proc, /sys and the U-Boot's command line.
+printf '12345.67 999.00\n' > "$proc/uptime"
+printf 'MemTotal:        8000000 kB\nMemAvailable:    6000000 kB\n' > "$proc/meminfo"
+printf 'nr_free_pages 1\noom_kill 2\n' > "$proc/vmstat"
+: > "$proc/mounts"
+printf '%s' 'androidboot.foo=1 androidboot.slot_suffix=_b' > "$dir/abl-bootargs"
+printf '5583667200\n' > "$sys/block/zram0/disksize"
+printf '4096 59 20480 0 20480 0 0 0 0\n' > "$sys/block/zram0/mm_stat"
+printf '20\n' > "$sys/class/watchdog/watchdog0/timeout"
+printf '15\n' > "$sys/class/watchdog/watchdog0/timeleft"
+printf '53\n' > "$share/pkgrel"
+echo "slot marked successful" > "$dir/health"
+printf 'page\n' > "$dir/index.html"
+
+# Every data run gets the fakes above, and nothing else from this machine.
+collect() {
+	env PATH="$bin:$PATH" HANOIP_PROC_DIR="$proc" HANOIP_SYS_DIR="$sys" HANOIP_SHARE_DIR="$share" \
+		HANOIP_DT_ABL_ARGS="$dir/abl-bootargs" HANOIP_NAS_DIR="$nas" HANOIP_STATUS_CMD="$bin/hanoip-status" \
+		HANOIP_WATCHDOG_STATE="$dir/no-count" "$py" "$script" --data
+}
+
+# 1. Full document: names, types and the values the fakes give.
+collect > "$dir/full.json"
+check "$dir/full.json" "list(d) == ['at', 'status_text', 'system', 'boot', 'storage', 'network', 'services', 'watchdog', 'version']" "top-level fields"
+check "$dir/full.json" "d['status_text'] == 'Server - 0.9 ms\nCPU - 3 %'" "status_text is the hanoip-status output"
+check "$dir/full.json" "d['system'] == {'uptime_s': 12345, 'reboots': 2, 'oom_kills': 2, 'ram': {'used_pct': 25, 'used_gb': 1.91, 'total_gb': 7.63}, 'zram': {'size_gb': 5.2, 'used_gb': 0.0}}" "system"
+check "$dir/full.json" "d['boot'] == {'slot': 'b', 'slot_successful': True}" "boot"
+check "$dir/full.json" "d['storage'] == {'nas': {'mounted': False, 'used_pct': None, 'used_gb': None, 'total_gb': None}, 'scrub': None}" "storage with the NAS disk away"
+check "$dir/full.json" "d['network'] == {'wifi': {'up': True, 'ssid': 'example:net'}, 'tailscale': {'up': True}, 'samba_tailnet': {'active': False}}" "network"
+check "$dir/full.json" "d['services'] == {'sshd': 'active', 'samba': 'inactive', 'bot': 'active', 'containers': {'running': 1, 'names': ['web', 'old']}}" "services"
+check "$dir/full.json" "d['watchdog'] == {'last_feed_s_ago': 5, 'resets': None}" "watchdog"
+check "$dir/full.json" "d['version'] == {'kernel': __import__('os').uname().release, 'pkgrel': '53'}" "version"
+echo "contract: ok"
+
+# 2. A mounted NAS disk: usage from statvfs, the scrub from btrfs (a scrub still running has no finish time).
+printf 'x %s btrfs rw 0 0\n' "$nas" > "$proc/mounts"
+printf '%s\n' 'UUID:             00000000-0000-0000-0000-000000000000' 'Scrub started:    Tue Nov  3 10:00:00 2026' \
+	'Status:           running' 'Duration:         0:02:31' 'Error summary:    csum=2 read=1' > "$dir/scrub"
+collect > "$dir/nas.json"
+check "$dir/nas.json" "d['storage']['nas']['mounted'] is True and isinstance(d['storage']['nas']['total_gb'], float) and d['storage']['nas']['used_pct'] in range(101)" "NAS usage when mounted"
+check "$dir/nas.json" "d['storage']['scrub'] == {'state': 'running', 'finished_at': None, 'errors': 3}" "scrub while running"
+printf '%s\n' 'Scrub started:    Tue Nov  3 10:00:00 2026' 'Status:           finished' 'Duration:         0:02:31' \
+	'Error summary:    no errors found' > "$dir/scrub"
+collect > "$dir/scrub.json"
+check "$dir/scrub.json" "d['storage']['scrub']['state'] == 'finished' and d['storage']['scrub']['errors'] == 0" "finished scrub"
+check "$dir/scrub.json" "d['storage']['scrub']['finished_at'] - __import__('time').mktime(__import__('time').strptime('Tue Nov 3 10:00:00 2026', '%a %b %d %H:%M:%S %Y')) == 151" "finish time = start + duration"
+echo "storage: ok"
+: > "$proc/mounts"
+
+# 3. Nothing readable: every field the contract allows to be null is null; only the time and the kernel are not.
+env PATH="$dir/empty" HANOIP_PROC_DIR="$dir/none" HANOIP_SYS_DIR="$dir/none" HANOIP_SHARE_DIR="$dir/none" \
+	HANOIP_DT_ABL_ARGS="$dir/none" HANOIP_NAS_DIR="$dir/none" HANOIP_STATUS_CMD="$dir/none" \
+	HANOIP_WATCHDOG_STATE="$dir/none" "$py" "$script" --data > "$dir/empty.json"
+check "$dir/empty.json" "d['status_text'] is None and d['at'] > 0 and d['version']['kernel'] == __import__('os').uname().release" "time and kernel only"
+check "$dir/empty.json" "d['system'] == {'uptime_s': None, 'reboots': None, 'oom_kills': None, 'ram': {'used_pct': None, 'used_gb': None, 'total_gb': None}, 'zram': {'size_gb': None, 'used_gb': None}}" "unreadable system fields are null"
+check "$dir/empty.json" "d['boot'] == {'slot': None, 'slot_successful': None} and d['storage'] == {'nas': None, 'scrub': None}" "unreadable boot and storage are null"
+check "$dir/empty.json" "d['network'] == {'wifi': {'up': None, 'ssid': None}, 'tailscale': {'up': None}, 'samba_tailnet': {'active': None}}" "unreadable network is null"
+check "$dir/empty.json" "d['services'] == {'sshd': None, 'samba': None, 'bot': None, 'containers': None} and d['watchdog'] == {'last_feed_s_ago': None, 'resets': None}" "unreadable services and watchdog are null"
+check "$dir/empty.json" "d['version']['pkgrel'] is None" "pkgrel without its file is null"
+echo "nulls: ok"
+
+# 4. The server. Nothing runs before the first request (no timer).
+rm -f "$dir/runs"
+port=18080
+env PATH="$bin:$PATH" HANOIP_PROC_DIR="$proc" HANOIP_SYS_DIR="$sys" HANOIP_SHARE_DIR="$share" \
+	HANOIP_DT_ABL_ARGS="$dir/abl-bootargs" HANOIP_NAS_DIR="$nas" HANOIP_STATUS_CMD="$bin/hanoip-status" \
+	HANOIP_WATCHDOG_STATE="$dir/no-count" HANOIP_DASHBOARD_BIND=127.0.0.1 HANOIP_DASHBOARD_PORT=$port \
+	HANOIP_DASHBOARD_PAGE="$dir/index.html" "$py" "$script" 2> "$dir/serve.log" &
+pid=$!
+i=0
+until req GET / $port > /dev/null 2>&1; do
+	i=$((i + 1)); [ $i -lt 100 ] || fail "the server did not answer (see $dir/serve.log)"
+	sleep 0.1
+done
+grep -q "listening on 127.0.0.1:$port" "$dir/serve.log" || fail "the server did not say where it listens"
+[ ! -e "$dir/runs" ] || fail "a run happened before any request"
+
+# Two tabs at the same moment: one run.
+req GET /api/status $port > "$dir/p1.raw" & a=$!
+req GET /api/status $port > "$dir/p2.raw" & b=$!
+wait "$a" "$b"
+tail -n +2 "$dir/p1.raw" > "$dir/p1"; tail -n +2 "$dir/p2.raw" > "$dir/p2"
+[ "$(wc -l < "$dir/runs")" -eq 1 ] || fail "two tabs made $(wc -l < "$dir/runs") runs, want 1"
+check "$dir/p1" "list(d) == ['at', 'status_text', 'system', 'boot', 'storage', 'network', 'services', 'watchdog', 'version']" "/api/status body"
+cmp -s "$dir/p1" "$dir/p2" || fail "the two tabs did not get the same document"
+
+# The routes: exactly / and /api/status; the rest is 404, the other methods 405.
+expect() { req "$1" "$2" $port > "$dir/code"; got=$(head -n 1 "$dir/code"); [ "$got" = "$3" ] || fail "$1 $2: got $got, want $3"; }
+expect GET / 200
+expect GET /api/status 200
+expect GET '/api/status?x=1' 404
+expect GET /api/status/ 404
+expect GET /api 404
+expect GET /cgi-bin/status 404
+expect GET '/../bin/hanoip-status' 404
+expect GET '/%2e%2e/bin' 404
+expect POST /api/status 405
+expect PUT /api/status 405
+expect DELETE /api/status 405
+echo "routes: ok"
+
+# The cache held: still one run for the whole burst above, and a new run after the 4 s TTL.
+[ "$(wc -l < "$dir/runs")" -eq 1 ] || fail "requests inside the TTL ran the status again"
+sleep 4.5
+req GET /api/status $port > /dev/null
+[ "$(wc -l < "$dir/runs")" -eq 2 ] || fail "no new run after the TTL"
+echo "cache: ok"
+kill "$pid" 2>/dev/null || true
+wait "$pid" 2>/dev/null || true
+pid=
+
+# 5. The address: the Tailscale one from `tailscale ip -4`, and no server at all without it.
+env PATH="$bin:$PATH" HANOIP_PROC_DIR="$proc" HANOIP_SYS_DIR="$sys" HANOIP_SHARE_DIR="$share" \
+	HANOIP_STATUS_CMD="$bin/hanoip-status" HANOIP_DASHBOARD_PORT=$((port + 1)) TEST_TS_IP=127.0.0.1 \
+	"$py" "$script" 2> "$dir/ts.log" &
+pid=$!
+i=0
+until grep -q 'listening' "$dir/ts.log" 2>/dev/null; do
+	i=$((i + 1)); [ $i -lt 100 ] || fail "no listening line for the Tailscale address"
+	sleep 0.1
+done
+grep -q "listening on 127.0.0.1:$((port + 1))$" "$dir/ts.log" || fail "not bound to the Tailscale address: $(cat "$dir/ts.log")"
+kill "$pid" 2>/dev/null || true
+wait "$pid" 2>/dev/null || true
+pid=
+if env PATH="$bin:$PATH" HANOIP_PROC_DIR="$proc" HANOIP_SYS_DIR="$sys" HANOIP_STATUS_CMD="$bin/hanoip-status" \
+	HANOIP_DASHBOARD_PORT=$((port + 2)) TEST_TS_IP= "$py" "$script" 2> "$dir/noaddr.log"; then
+	fail "the server started without a Tailscale address"
+fi
+grep -q 'not serving' "$dir/noaddr.log" || fail "no message without a Tailscale address"
+echo "address: ok"
+
+echo "dashboard: all checks pass"

@@ -1,0 +1,340 @@
+#!/usr/bin/env python3
+# Read-only status of the phone for the dashboard. `hanoip-dashboard --data` prints the JSON document the page reads;
+# with no argument it serves it on the Tailscale address: the page at /, the document at /api/status, nothing else.
+# A value that cannot be read is null, never estimated. The request is only matched against those two paths; no
+# request data reaches a command. The document is built at most once per TTL, so two open tabs cost one run.
+# Tests move the paths and commands with HANOIP_* variables (scripts/test-dashboard); the unit sets none of them.
+import http.server
+import ipaddress
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import time
+
+GIB = 2 ** 30
+PROC = os.environ.get("HANOIP_PROC_DIR", "/proc")
+SYS = os.environ.get("HANOIP_SYS_DIR", "/sys")
+SHARE = os.environ.get("HANOIP_SHARE_DIR", "/usr/share/device-motorola-hanoip")
+PAGE = os.environ.get("HANOIP_DASHBOARD_PAGE", "/usr/share/hanoip-dashboard/index.html")
+TTL = float(os.environ.get("HANOIP_DASHBOARD_TTL", "4"))
+
+
+def read(path):
+    try:
+        with open(path, "rb") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def text(path):
+    raw = read(path)
+    return None if raw is None else raw.decode(errors="replace")
+
+
+def run(*cmd, rc_any=False):
+    """Stdout of a fixed command; None when it is missing, fails or times out (rc_any: the exit code does not count)."""
+    if shutil.which(cmd[0]) is None:
+        return None
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return p.stdout if rc_any or p.returncode == 0 else None
+
+
+def num(s):
+    try:
+        return int(s)
+    except (TypeError, ValueError):
+        return None
+
+
+def safe(fn):
+    """A scalar field: None when reading it fails for any reason."""
+    def wrapped(*args):
+        try:
+            return fn(*args)
+        except Exception:
+            return None
+    return wrapped
+
+
+@safe
+def uptime_s():
+    return int(float(text(f"{PROC}/uptime").split()[0]))
+
+
+@safe
+def reboots():
+    # The boots the journal keeps, minus the current one.
+    boots = [line for line in (run("journalctl", "--list-boots", "--no-pager") or "").splitlines() if line.strip()]
+    return len(boots) - 1 if boots else None
+
+
+@safe
+def oom_kills():
+    for line in text(f"{PROC}/vmstat").splitlines():
+        key, _, value = line.partition(" ")
+        if key == "oom_kill":
+            return num(value)
+    return None
+
+
+def meminfo():
+    try:
+        return {k: int(v.split()[0]) for k, v in (l.split(":", 1) for l in text(f"{PROC}/meminfo").splitlines())}
+    except (AttributeError, ValueError, IndexError):
+        return {}
+
+
+def ram():
+    m = meminfo()
+    if "MemTotal" not in m or "MemAvailable" not in m:
+        return {"used_pct": None, "used_gb": None, "total_gb": None}
+    total, used = m["MemTotal"], m["MemTotal"] - m["MemAvailable"]  # kB
+    return {"used_pct": round(used * 100 / total), "used_gb": round(used * 1024 / GIB, 2),
+            "total_gb": round(total * 1024 / GIB, 2)}
+
+
+def zram():
+    # mm_stat's first field is the uncompressed data the swap holds, what zramctl calls DATA.
+    size = num((text(f"{SYS}/block/zram0/disksize") or "").strip())
+    data = num(((text(f"{SYS}/block/zram0/mm_stat") or "").split() or [""])[0])
+    return {"size_gb": None if size is None else round(size / GIB, 2),
+            "used_gb": None if data is None else round(data / GIB, 2)}
+
+
+@safe
+def boot_slot():
+    # The slot the ABL started, from the U-Boot's copy of its command line (hanoip-ml-abl-slot does the same);
+    # /proc/cmdline is not used: it always names _a. Only the slot suffix is read, never the rest of the line.
+    raw = read(os.environ.get("HANOIP_DT_ABL_ARGS", f"{PROC}/device-tree/chosen/u-boot,abl-bootargs"))
+    if raw is None:
+        return None
+    for item in re.split(rb"[\x00 ]", raw):
+        if item.startswith(b"androidboot.slot_suffix="):
+            return {b"_a": "a", b"_b": "b"}.get(item.split(b"=", 1)[1])
+    return None
+
+
+@safe
+def slot_successful():
+    # hanoip-health logs its result once per boot; the last one of this boot is the answer.
+    out = run("journalctl", "-b", "-t", "hanoip-health", "-o", "cat", "--no-pager")
+    if out is None:
+        return None
+    for line in reversed(out.splitlines()):
+        if line == "slot marked successful":
+            return True
+        if line == "qbootctl -m failed":
+            return False
+    return None
+
+
+def nas_dir():
+    return os.environ.get("HANOIP_NAS_DIR", "/mnt/hd-b")
+
+
+def nas():
+    mounts = text(f"{PROC}/mounts")
+    if mounts is None:
+        return None
+    d = nas_dir()
+    fields = [l.split() for l in mounts.splitlines()]
+    if not any(len(f) >= 3 and f[1] == d and f[2] == "btrfs" for f in fields):
+        return {"mounted": False, "used_pct": None, "used_gb": None, "total_gb": None}
+    try:
+        st = os.statvfs(d)
+        total = st.f_blocks * st.f_frsize
+        used = (st.f_blocks - st.f_bfree) * st.f_frsize
+        avail = st.f_bavail * st.f_frsize
+    except OSError:
+        return {"mounted": True, "used_pct": None, "used_gb": None, "total_gb": None}
+    # The same figures df shows: Use% is used / (used + available to users).
+    return {"mounted": True, "used_pct": round(used * 100 / (used + avail)), "used_gb": round(used / GIB, 2),
+            "total_gb": round(total / GIB, 2)}
+
+
+@safe
+def scrub():
+    out = run("btrfs", "scrub", "status", nas_dir())
+    if out is None:
+        return None
+    fields = {}
+    for line in out.splitlines():
+        key, sep, value = line.partition(":")
+        if sep:
+            fields[key.strip()] = value.strip()
+    state = fields.get("Status")
+    if not state:
+        return None
+    summary = fields.get("Error summary")
+    errors = None
+    if summary is not None:
+        errors = 0 if summary.startswith("no errors") else sum(int(n) for n in re.findall(r"=(\d+)", summary))
+    finished = None
+    if state == "finished" and "Scrub started" in fields and "Duration" in fields:
+        start = time.mktime(time.strptime(" ".join(fields["Scrub started"].split()), "%a %b %d %H:%M:%S %Y"))
+        h, m, s = (int(x) for x in fields["Duration"].split(":"))
+        finished = int(start + h * 3600 + m * 60 + s)
+    return {"state": state, "finished_at": finished, "errors": errors}
+
+
+def wifi():
+    dev = os.environ.get("HANOIP_WIFI_DEV", "wlan0")
+    up = ssid = None
+    for line in (run("nmcli", "-t", "-f", "DEVICE,STATE", "device", "status") or "").splitlines():
+        name, _, state = line.partition(":")
+        if name == dev:
+            up = state.startswith("connected")
+    # --rescan no: read the list the radio already has, do not start a scan.
+    for line in (run("nmcli", "-t", "-f", "ACTIVE,SSID", "device", "wifi", "list", "--rescan", "no") or "").splitlines():
+        if line.startswith("yes:"):
+            ssid = line[4:].replace("\\:", ":") or None
+    return {"up": up, "ssid": ssid}
+
+
+@safe
+def tailscale_up():
+    out = run("tailscale", "status", "--json")
+    return None if out is None else json.loads(out).get("BackendState") == "Running"
+
+
+@safe
+def samba_active():
+    state = (run("systemctl", "is-active", "smb", rc_any=True) or "").strip()
+    ss = run("ss", "-H", "-ltn")
+    if not state or ss is None:
+        return None
+    ports = {int(line.split()[3].rsplit(":", 1)[1]) for line in ss.splitlines() if len(line.split()) >= 4}
+    return state == "active" and bool(ports & {139, 445})
+
+
+def unit_state(unit):
+    state = (run("systemctl", "is-active", unit, rc_any=True) or "").strip()
+    return state or None
+
+
+@safe
+def containers():
+    if shutil.which("crun") is None:
+        return None
+    items = json.loads(run("crun", "list", "-f", "json"))
+    return {"running": sum(1 for c in items if c.get("status") == "running"), "names": [c["id"] for c in items]}
+
+
+def watchdog():
+    d = os.environ.get("HANOIP_WATCHDOG_DIR", f"{SYS}/class/watchdog/watchdog0")
+    timeout = num((text(f"{d}/timeout") or "").strip())
+    left = num((text(f"{d}/timeleft") or "").strip())
+    ago = None if timeout is None or left is None or timeout - left < 0 else timeout - left
+    count = num((text(os.environ.get("HANOIP_WATCHDOG_STATE", "/var/lib/hanoip/watchdog/count")) or "").strip())
+    return {"last_feed_s_ago": ago, "resets": count}
+
+
+def version():
+    pkgrel = (text(f"{SHARE}/pkgrel") or "").strip()
+    return {"kernel": os.uname().release, "pkgrel": pkgrel or None}
+
+
+@safe
+def status_text():
+    out = run(os.environ.get("HANOIP_STATUS_CMD", "/usr/bin/hanoip-status"))
+    return (out.rstrip("\n") or None) if out is not None else None
+
+
+def collect():
+    nas_doc = nas()
+    mounted = bool(nas_doc and nas_doc["mounted"])
+    return {
+        "at": int(time.time()),
+        "status_text": status_text(),
+        "system": {"uptime_s": uptime_s(), "reboots": reboots(), "oom_kills": oom_kills(), "ram": ram(),
+                   "zram": zram()},
+        "boot": {"slot": boot_slot(), "slot_successful": slot_successful()},
+        "storage": {"nas": nas_doc, "scrub": scrub() if mounted else None},
+        "network": {"wifi": wifi(), "tailscale": {"up": tailscale_up()},
+                    "samba_tailnet": {"active": samba_active()}},
+        "services": {"sshd": unit_state("sshd"), "samba": unit_state("smb"), "bot": unit_state("hanoip-bot"),
+                     "containers": containers()},
+        "watchdog": watchdog(),
+        "version": version(),
+    }
+
+
+CACHE_LOCK = threading.Lock()
+cache = {"at": None, "body": None}
+
+
+def document():
+    with CACHE_LOCK:
+        if cache["at"] is None or time.monotonic() - cache["at"] >= TTL:
+            cache["body"] = json.dumps(collect()).encode()
+            cache["at"] = time.monotonic()
+        return cache["body"]
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    server_version = "hanoip-dashboard"
+    sys_version = ""
+
+    def do_GET(self):
+        if self.path == "/api/status":
+            self._send(200, "application/json", document())
+            return
+        page = read(PAGE) if self.path == "/" else None
+        if page is not None:
+            self._send(200, "text/html; charset=utf-8", page)
+        else:
+            self._send(404, "text/plain", b"not found\n")
+
+    def _refuse(self):
+        self._send(405, "text/plain", b"method not allowed\n")
+
+    do_HEAD = do_POST = do_PUT = do_PATCH = do_DELETE = _refuse
+
+    def _send(self, code, ctype, body):
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, fmt, *args):
+        pass
+
+
+def tailscale_ip():
+    out = (run("tailscale", "ip", "-4") or "").split()
+    try:
+        return str(ipaddress.IPv4Address(out[0])) if out else None
+    except ValueError:
+        return None
+
+
+def main(argv):
+    if argv == ["--data"]:
+        sys.stdout.write(json.dumps(collect()) + "\n")
+        return 0
+    if argv:
+        print("usage: hanoip-dashboard [--data]", file=sys.stderr)
+        return 2
+    bind = os.environ.get("HANOIP_DASHBOARD_BIND") or tailscale_ip()
+    if not bind:
+        print("hanoip-dashboard: no Tailscale IPv4 address yet, not serving", file=sys.stderr)
+        return 1
+    port = int(os.environ.get("HANOIP_DASHBOARD_PORT", "8080"))
+    server = http.server.ThreadingHTTPServer((bind, port), Handler)
+    print(f"hanoip-dashboard: listening on {bind}:{port}", file=sys.stderr, flush=True)
+    server.serve_forever()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
