@@ -456,3 +456,22 @@ them and the `.efi` to `/var/tmp/hanoip-update/` on the phone, `/usr/lib/systemd
 **Not done, and waiting for the owner:** writing `boot_a` with the new U-Boot (the backups are verified in
 `$HANOIP_BACKUP_DIR/2026-11-11-before-uboot/`), and the tests that need a broken boot on purpose (sshd down, watchdog,
 Wi-Fi loss). The 24-72 hour run is the owner's.
+
+## Update 26111201: the redesigned dashboard on the phone (2026-11-12)
+
+- **Build.** `scripts/pmb build --force device-motorola-hanoip` gave `pkgrel 54`; `scripts/duranium-image
+  --image-version=26111201`. Inside the image: `pkgrel` 54, the page with the 1 s period, the server with `slow_at`, no
+  root line in the tmpfiles.
+- **Delivery over the tailnet, without the cable.** The link went through a DERP relay (no direct connection, 90 to
+  240 ms): the 700 MB file stopped at 27 MB and its hash differed. A loop that appends from the size the phone already
+  has finished it; the three hashes were equal before `systemd-sysupdate update`. On a relayed link, copy with a
+  resume and compare the hashes; on the cable or the same LAN the copy is direct.
+- **Boot.** After `reboot`: `IMAGE_VERSION=26111201`, the ABL slot `_b` marked successful, sshd and
+  `hanoip-dashboard` active, nothing failed. `26111103` stays installed as the fallback.
+- **Dashboard.** From the tailnet, `/api/status` answered in 0.25 to 0.4 s through the relay, with `at` advancing each
+  second and the CPU, power and network figures changing between answers; `slow_at`, the ping and the slot stayed from
+  the slow part. The first request after the start waited for the first slow collection (over 6 s), and its CPU and
+  network rates were null, as designed. The page served has the 1 s period.
+
+**Not checked:** the page on a real phone screen and in another browser, the load of an hour of open page on the
+phone, ten reboots of this image.
