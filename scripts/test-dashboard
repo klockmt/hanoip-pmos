@@ -2,7 +2,8 @@
 # Checks hanoip-dashboard without the phone: the JSON contract (names, types and the values read from fake /proc, /sys,
 # journal, nmcli, tailscale, systemctl, ss, btrfs and hanoip-status), the metrics parsed from the status text (4.14,
 # mainline with n/a, nulls, garbage), the null of every unreadable field, the two routes
-# and the refused methods, the 4 s cache (one run for two tabs, none before a request) and the address it binds to.
+# and the refused methods, the 4 s slow TTL (one run for two tabs, none before a request) and the address it binds to.
+# Section 6 checks the live figures (the fast part, deltas, the 0.9 s cache, the background slow refresh).
 set -eu
 cd "$(dirname "$0")/.."
 script=$PWD/pmaports/device/testing/device-motorola-hanoip/hanoip-dashboard
@@ -102,7 +103,7 @@ collect() {
 
 # 1. Full document: names, types and the values the fakes give.
 collect > "$dir/full.json"
-check "$dir/full.json" "list(d) == ['at', 'status_text', 'metrics', 'system', 'boot', 'storage', 'network', 'services', 'watchdog', 'version']" "top-level fields"
+check "$dir/full.json" "list(d) == ['at', 'slow_at', 'status_text', 'metrics', 'system', 'boot', 'storage', 'network', 'services', 'watchdog', 'version']" "top-level fields"
 check "$dir/full.json" "d['status_text'] == 'Server - 0.9 ms\nCPU - 3 %'" "status_text is the hanoip-status output"
 check "$dir/full.json" "d['system'] == {'uptime_s': 12345, 'reboots': 2, 'oom_kills': 2, 'ram': {'used_pct': 25, 'used_gb': 1.91, 'total_gb': 7.63}, 'zram': {'size_gb': 5.2, 'used_gb': 0.0}}" "system"
 check "$dir/full.json" "d['boot'] == {'slot': 'b', 'slot_successful': True}" "boot"
@@ -175,11 +176,11 @@ metrics_of() {
 	status_cmd=
 }
 metrics_of "$dir/fx-414" "$dir/m414.json"
-check "$dir/m414.json" "d['metrics'] == {'cpu': {'used_pct': 7, 'mhz_min': 300, 'mhz_max': 2304, 'temp_c': 41.2}, 'gpu': {'used_pct': 12, 'mhz': 140, 'temp_c': 36.5, 'on': True}, 'ram_temp_c': 38.2, 'rom': {'used_pct': 1, 'used_gb': 0.9, 'total_gb': 94.1, 'temp_c': 34.7}, 'battery': {'pct': 81, 'volts': 4.33, 'cycles': 120, 'temp_c': 31.6, 'watts': 4.33, 'charging': True, 'bypass': False}, 'power': {'watts': 5.2, 'source': 'cable'}, 'body_temp_c': 34.4, 'net': {'iface': 'eth0', 'rx_kbit': 812, 'tx_kbit': 96}, 'ping': {'gateway_ms': 0.9, 'internet_host': '1.1.1.1', 'internet_ms': 4.5}}" "4.14 status fixture parsed"
+check "$dir/m414.json" "d['metrics'] == {'cpu': {'used_pct': None, 'mhz_min': 300, 'mhz_max': 2304, 'temp_c': 41.2}, 'gpu': {'used_pct': 12, 'mhz': 140, 'temp_c': 36.5, 'on': True}, 'ram_temp_c': 38.2, 'rom': {'used_pct': 1, 'used_gb': 0.9, 'total_gb': 94.1, 'temp_c': 34.7}, 'battery': {'pct': 81, 'volts': 4.33, 'cycles': 120, 'temp_c': 31.6, 'watts': 4.33, 'charging': True, 'bypass': False}, 'power': {'watts': 5.2, 'source': 'cable'}, 'body_temp_c': 34.4, 'net': {'iface': 'eth0', 'rx_kbit': None, 'tx_kbit': None}, 'ping': {'gateway_ms': 0.9, 'internet_host': '1.1.1.1', 'internet_ms': 4.5}}" "4.14 status fixture parsed"
 metrics_of "$dir/fx-ml" "$dir/mml.json"
-check "$dir/mml.json" "d['metrics'] == {'cpu': {'used_pct': 0, 'mhz_min': 1248, 'mhz_max': 1555, 'temp_c': 38.2}, 'gpu': {'used_pct': None, 'mhz': 0, 'temp_c': 37.5, 'on': False}, 'ram_temp_c': 37.5, 'rom': {'used_pct': 1, 'used_gb': 0.9, 'total_gb': 94.1, 'temp_c': None}, 'battery': {'pct': 77, 'volts': 4.16, 'cycles': None, 'temp_c': 31.2, 'watts': 0.0, 'charging': False, 'bypass': True}, 'power': {'watts': 1.69, 'source': 'cable'}, 'body_temp_c': 36.6, 'net': {'iface': 'wlan0', 'rx_kbit': 0, 'tx_kbit': 4}, 'ping': {'gateway_ms': 64.3, 'internet_host': '1.1.1.1', 'internet_ms': 38.8}}" "mainline status fixture parsed (n/a fields null)"
+check "$dir/mml.json" "d['metrics'] == {'cpu': {'used_pct': None, 'mhz_min': 1248, 'mhz_max': 1555, 'temp_c': 38.2}, 'gpu': {'used_pct': None, 'mhz': 0, 'temp_c': 37.5, 'on': False}, 'ram_temp_c': 37.5, 'rom': {'used_pct': 1, 'used_gb': 0.9, 'total_gb': 94.1, 'temp_c': None}, 'battery': {'pct': 77, 'volts': 4.16, 'cycles': None, 'temp_c': 31.2, 'watts': 0.0, 'charging': False, 'bypass': True}, 'power': {'watts': 1.69, 'source': 'cable'}, 'body_temp_c': 36.6, 'net': {'iface': 'wlan0', 'rx_kbit': None, 'tx_kbit': None}, 'ping': {'gateway_ms': 64.3, 'internet_host': '1.1.1.1', 'internet_ms': 38.8}}" "mainline status fixture parsed (n/a fields null)"
 metrics_of "$dir/fx-null" "$dir/mnull.json"
-check "$dir/mnull.json" "d['metrics'] == {'cpu': {'used_pct': None, 'mhz_min': 300, 'mhz_max': 300, 'temp_c': None}, 'gpu': {'used_pct': None, 'mhz': 0, 'temp_c': 36.2, 'on': None}, 'ram_temp_c': 37.5, 'rom': {'used_pct': 1, 'used_gb': 0.9, 'total_gb': 94.1, 'temp_c': None}, 'battery': {'pct': 77, 'volts': 4.16, 'cycles': None, 'temp_c': 31.2, 'watts': 0.0, 'charging': None, 'bypass': None}, 'power': {'watts': 1.69, 'source': None}, 'body_temp_c': None, 'net': {'iface': 'wlan0', 'rx_kbit': 0, 'tx_kbit': 4}, 'ping': {'gateway_ms': None, 'internet_host': 'down', 'internet_ms': None}}" "null fields stay null and the rest of each line is kept"
+check "$dir/mnull.json" "d['metrics'] == {'cpu': {'used_pct': None, 'mhz_min': 300, 'mhz_max': 300, 'temp_c': None}, 'gpu': {'used_pct': None, 'mhz': 0, 'temp_c': 36.2, 'on': None}, 'ram_temp_c': 37.5, 'rom': {'used_pct': 1, 'used_gb': 0.9, 'total_gb': 94.1, 'temp_c': None}, 'battery': {'pct': 77, 'volts': 4.16, 'cycles': None, 'temp_c': 31.2, 'watts': 0.0, 'charging': None, 'bypass': None}, 'power': {'watts': 1.69, 'source': None}, 'body_temp_c': None, 'net': {'iface': 'wlan0', 'rx_kbit': None, 'tx_kbit': None}, 'ping': {'gateway_ms': None, 'internet_host': 'down', 'internet_ms': None}}" "null fields stay null and the rest of each line is kept"
 metrics_of "$dir/fx-garbage" "$dir/mgarbage.json"
 check "$dir/mgarbage.json" "d['metrics'] == {'cpu': {'used_pct': None, 'mhz_min': None, 'mhz_max': None, 'temp_c': None}, 'gpu': {'used_pct': None, 'mhz': None, 'temp_c': None, 'on': None}, 'ram_temp_c': None, 'rom': {'used_pct': None, 'used_gb': None, 'total_gb': None, 'temp_c': None}, 'battery': {'pct': None, 'volts': None, 'cycles': None, 'temp_c': None, 'watts': None, 'charging': None, 'bypass': None}, 'power': {'watts': None, 'source': None}, 'body_temp_c': None, 'net': {'iface': None, 'rx_kbit': None, 'tx_kbit': None}, 'ping': {'gateway_ms': None, 'internet_host': None, 'internet_ms': None}}" "garbage text gives all nulls"
 echo "metrics: ok"
@@ -188,7 +189,7 @@ echo "metrics: ok"
 env PATH="$dir/empty" HANOIP_PROC_DIR="$dir/none" HANOIP_SYS_DIR="$dir/none" HANOIP_SHARE_DIR="$dir/none" \
 	HANOIP_DT_ABL_ARGS="$dir/none" HANOIP_NAS_DIR="$dir/none" HANOIP_STATUS_CMD="$dir/none" \
 	HANOIP_WATCHDOG_STATE="$dir/none" "$py" "$script" --data > "$dir/empty.json"
-check "$dir/empty.json" "d['status_text'] is None and d['metrics'] is None and d['at'] > 0 and d['version']['kernel'] == __import__('os').uname().release" "time and kernel only; no status text, no metrics"
+check "$dir/empty.json" "d['status_text'] is None and all(v is None for g in d['metrics'].values() for v in (g.values() if isinstance(g, dict) else [g])) and d['at'] > 0 and d['slow_at'] > 0 and d['version']['kernel'] == __import__('os').uname().release" "time and kernel only; no status text, every metric null"
 check "$dir/empty.json" "d['system'] == {'uptime_s': None, 'reboots': None, 'oom_kills': None, 'ram': {'used_pct': None, 'used_gb': None, 'total_gb': None}, 'zram': {'size_gb': None, 'used_gb': None}}" "unreadable system fields are null"
 check "$dir/empty.json" "d['boot'] == {'slot': None, 'slot_successful': None} and d['storage'] == {'nas': None, 'scrub': None}" "unreadable boot and storage are null"
 check "$dir/empty.json" "d['network'] == {'wifi': {'up': None, 'ssid': None}, 'tailscale': {'up': None}, 'samba_tailnet': {'active': None}}" "unreadable network is null"
@@ -201,7 +202,7 @@ rm -f "$dir/runs"
 port=18080
 env PATH="$bin:$PATH" HANOIP_PROC_DIR="$proc" HANOIP_SYS_DIR="$sys" HANOIP_SHARE_DIR="$share" \
 	HANOIP_DT_ABL_ARGS="$dir/abl-bootargs" HANOIP_NAS_DIR="$nas" HANOIP_STATUS_CMD="$bin/hanoip-status" \
-	HANOIP_WATCHDOG_STATE="$dir/no-count" HANOIP_DASHBOARD_BIND=127.0.0.1 HANOIP_DASHBOARD_PORT=$port \
+	HANOIP_WATCHDOG_STATE="$dir/no-count" HANOIP_DASHBOARD_BIND=127.0.0.1 HANOIP_DASHBOARD_PORT=$port HANOIP_DASHBOARD_TTL=4 \
 	HANOIP_DASHBOARD_PAGE="$dir/index.html" "$py" "$script" 2> "$dir/serve.log" &
 pid=$!
 i=0
@@ -218,7 +219,7 @@ req GET /api/status $port > "$dir/p2.raw" & b=$!
 wait "$a" "$b"
 tail -n +2 "$dir/p1.raw" > "$dir/p1"; tail -n +2 "$dir/p2.raw" > "$dir/p2"
 [ "$(wc -l < "$dir/runs")" -eq 1 ] || fail "two tabs made $(wc -l < "$dir/runs") runs, want 1"
-check "$dir/p1" "list(d) == ['at', 'status_text', 'metrics', 'system', 'boot', 'storage', 'network', 'services', 'watchdog', 'version']" "/api/status body"
+check "$dir/p1" "list(d) == ['at', 'slow_at', 'status_text', 'metrics', 'system', 'boot', 'storage', 'network', 'services', 'watchdog', 'version']" "/api/status body"
 cmp -s "$dir/p1" "$dir/p2" || fail "the two tabs did not get the same document"
 
 # The routes: exactly / and /api/status; the rest is 404, the other methods 405.
@@ -240,11 +241,40 @@ echo "routes: ok"
 [ "$(wc -l < "$dir/runs")" -eq 1 ] || fail "requests inside the TTL ran the status again"
 sleep 4.5
 req GET /api/status $port > /dev/null
+i=0; while [ "$(wc -l < "$dir/runs")" -lt 2 ] && [ $i -lt 50 ]; do i=$((i + 1)); sleep 0.1; done
 [ "$(wc -l < "$dir/runs")" -eq 2 ] || fail "no new run after the TTL"
 echo "cache: ok"
 kill "$pid" 2>/dev/null || true
 wait "$pid" 2>/dev/null || true
 pid=
+
+# 4b. A request does not wait for hanoip-status once there is a result: the status takes 2 s and the TTL is 1 s, so the
+# second request (1.5 s after the first) is stale and must come back at once, the refresh running behind it.
+slowst=$dir/slow-status
+printf '#!/bin/sh\nsleep 2\necho "Server - 0.9 ms"\n' > "$slowst"
+chmod +x "$slowst"
+port3=18083
+env PATH="$bin:$PATH" HANOIP_PROC_DIR="$proc" HANOIP_SYS_DIR="$sys" HANOIP_SHARE_DIR="$share" \
+	HANOIP_DT_ABL_ARGS="$dir/abl-bootargs" HANOIP_NAS_DIR="$nas" HANOIP_STATUS_CMD="$slowst" \
+	HANOIP_WATCHDOG_STATE="$dir/no-count" HANOIP_DASHBOARD_BIND=127.0.0.1 HANOIP_DASHBOARD_PORT=$port3 HANOIP_DASHBOARD_TTL=1 \
+	HANOIP_DASHBOARD_PAGE="$dir/index.html" "$py" "$script" 2> "$dir/slow.log" &
+pid=$!
+i=0
+until req GET / $port3 > /dev/null 2>&1; do
+	i=$((i + 1)); [ $i -lt 100 ] || fail "the slow-status server did not answer (see $dir/slow.log)"
+	sleep 0.1
+done
+req GET /api/status $port3 > /dev/null
+sleep 1.5
+s=$(date +%s%N)
+req GET /api/status $port3 > /dev/null
+e=$(date +%s%N)
+ms=$(( (e - s) / 1000000 ))
+[ "$ms" -lt 1000 ] || fail "a request waited $ms ms for hanoip-status after the first result"
+kill "$pid" 2>/dev/null || true
+wait "$pid" 2>/dev/null || true
+pid=
+echo "slow refresh: ok"
 
 # 5. The address: the Tailscale one from `tailscale ip -4`, and no server at all without it.
 env PATH="$bin:$PATH" HANOIP_PROC_DIR="$proc" HANOIP_SYS_DIR="$sys" HANOIP_SHARE_DIR="$share" \
@@ -273,5 +303,245 @@ apk=pmaports/device/testing/device-motorola-hanoip/APKBUILD
 prev=$(grep -B1 'device-motorola-hanoip/pkgrel"' "$apk" | head -1)
 case $prev in *'install -d "$pkgdir/usr/share/device-motorola-hanoip"'*) ;; *) fail "APKBUILD writes pkgrel without creating its directory" ;; esac
 echo "pkgrel dir: ok"
+
+# 6. The live figures. The fast part is read in Python from a fake /proc and /sys (a controlled clock gives the
+# deltas); the slow part runs in the background and is served stale; the fast numbers of each fake tree (the 4.14
+# and the mainline layout) are the numbers hanoip-status prints for the same tree.
+live="$dir/live.py"
+cat > "$live" <<'EOF'
+import importlib.machinery, importlib.util, json, os, subprocess, sys, time
+script, status_script, base = sys.argv[1:4]
+
+def fail(msg):
+    print("FAIL: " + msg, file=sys.stderr)
+    sys.exit(1)
+
+def load():
+    loader = importlib.machinery.SourceFileLoader("hanoip_dashboard_live", script)
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+def put(root, files):
+    for rel, content in files.items():
+        p = os.path.join(root, rel)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w") as f:
+            f.write(content)
+
+# Busy 400 of 950 jiffies between the two samples: 42 %.
+STAT_A = "cpu  1000 0 500 8000 100 0 0 0 0 0\ncpu0 1 0 1 1 0 0 0 0 0 0\n"
+STAT_B = "cpu  1300 0 600 8500 150 0 0 0 0 0\n"
+MEM = "MemTotal:        8000000 kB\nMemAvailable:    6000000 kB\n"
+ROUTE = "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT\n{i}\t00000000\t0100000A\t0003\t0\t0\t0\t00000000\t0\t0\t0\n"
+CPUFREQ = {"sys/devices/system/cpu/cpufreq/policy0/scaling_cur_freq": "300000\n",
+           "sys/devices/system/cpu/cpufreq/policy6/scaling_cur_freq": "2304000\n"}
+
+def zones(pairs):
+    out = {}
+    for n, (t, temp) in enumerate(pairs):
+        out["sys/class/thermal/thermal_zone%d/type" % n] = t + "\n"
+        out["sys/class/thermal/thermal_zone%d/temp" % n] = str(temp) + "\n"
+    return out
+
+def layout_414(iface):
+    files = dict(CPUFREQ)
+    files.update({
+        "proc/stat": STAT_A, "proc/meminfo": MEM, "proc/net/route": ROUTE.format(i=iface),
+        "sys/class/net/%s/statistics/rx_bytes" % iface: "1000000\n",
+        "sys/class/net/%s/statistics/tx_bytes" % iface: "200000\n",
+        "sys/class/kgsl/kgsl-3d0/gpu_busy_percentage": "12 %\n", "sys/class/kgsl/kgsl-3d0/gpuclk": "140000000\n",
+        "sys/class/kgsl/kgsl-3d0/device/power/runtime_status": "active\n",
+        "sys/class/power_supply/battery/capacity": "81\n", "sys/class/power_supply/battery/voltage_now": "4330000\n",
+        "sys/class/power_supply/battery/current_now": "-40000\n", "sys/class/power_supply/battery/cycle_count": "120\n",
+        "sys/class/power_supply/battery/temp": "316\n", "sys/class/power_supply/battery/status": "Not charging\n",
+        "sys/class/power_supply/battery/charging_enabled": "0\n", "sys/class/power_supply/battery/input_suspend": "0\n",
+        "sys/class/power_supply/usb/present": "1\n", "sys/class/power_supply/usb/input_current_now": "100000\n",
+        "sys/class/power_supply/usb/voltage_now": "9000000\n"})
+    files.update(zones([("cpu-0-0-usr", 37800), ("cpu-1-0-usr", 41200), ("gpuss-0-usr", 35000), ("gpuss-1-usr", 36500),
+                        ("ddr-usr", 38200), ("nvm-therm-adc", 34675), ("quiet_therm", 34400), ("battery", 31600)]))
+    return files
+
+def layout_mainline(iface):
+    files = dict(CPUFREQ)
+    files.update({
+        "proc/stat": STAT_A, "proc/meminfo": MEM, "proc/net/route": ROUTE.format(i=iface),
+        "sys/class/net/%s/statistics/rx_bytes" % iface: "1000000\n",
+        "sys/class/net/%s/statistics/tx_bytes" % iface: "200000\n",
+        "sys/class/devfreq/5000000.gpu/cur_freq": "140000000\n",
+        "sys/class/power_supply/qcom_qg/capacity": "69\n", "sys/class/power_supply/qcom_qg/voltage_now": "4114236\n",
+        "sys/class/power_supply/qcom_qg/current_now": "-40283\n", "sys/class/power_supply/qcom_qg/temp": "283\n",
+        "sys/class/power_supply/qcom_qg/status": "Not charging\n",
+        "sys/class/power_supply/hanoip-pm6150-monitor-charger/online": "1\n",
+        "sys/class/power_supply/hanoip-pm6150-monitor-charger/input_current_now": "492755\n",
+        "sys/class/power_supply/hanoip-pm6150-monitor-charger/voltage_now": "4998256\n"})
+    files.update(zones([("cpu0-thermal", 38800), ("cpu7-thermal", 42400), ("gpuss0-thermal", 36200),
+                        ("ddr-thermal", 36200), ("pm6150-thermal", 34375)]))
+    return files
+
+def second(iface):
+    # One second later: 1000 kbit/s received and 200 kbit/s sent on the default route, the CPU busy 400 of 950.
+    return {"proc/stat": STAT_B, "sys/class/net/%s/statistics/rx_bytes" % iface: "1125000\n",
+            "sys/class/net/%s/statistics/tx_bytes" % iface: "225000\n"}
+
+def fixture(name, layout, iface):
+    root = os.path.join(base, name)
+    put(root, layout(iface))
+    put(root + ".b", second(iface))
+    put(root, {"ml.state": "off\n"})
+    bindir = os.path.join(root, "bin")
+    # hanoip-status sleeps 1 s between its two samples: the fake sleep turns the tree into the second sample.
+    put(bindir, {"ip": "#!/bin/sh\necho 'default via 10.0.0.1 dev %s'\n" % iface,
+                 "ping": "#!/bin/sh\necho 'rtt min/avg/max/mdev = 0.800/0.887/1.000/0.050 ms'\n",
+                 "sleep": "#!/bin/sh\ncp -R '%s.b/.' '%s/'\n" % (root, root)})
+    for cmd in ("ip", "ping", "sleep"):
+        os.chmod(os.path.join(bindir, cmd), 0o755)
+    return root, bindir
+
+def env_for(root):
+    os.environ.update(HANOIP_PROC_DIR=root + "/proc", HANOIP_SYS_DIR=root + "/sys", HANOIP_SHARE_DIR=root + "/share",
+                      HANOIP_ML_STATE=root + "/ml.state")
+
+def pairs(m):
+    out = {}
+    for k, v in m.items():
+        if isinstance(v, dict):
+            for f, x in v.items():
+                out[k + "." + f] = x
+        else:
+            out[k] = v
+    return out
+
+# A. The defaults: a fast sample every 0.9 s, a slow refresh every 10 s.
+os.environ.pop("HANOIP_DASHBOARD_TTL", None)
+root, bindir = fixture("defaults", layout_414, "eth0")
+env_for(root)
+mod = load()
+if mod.SLOW_TTL != 10 or mod.FAST_TTL != 0.9:
+    fail("the TTLs are %s and %s, want 10 and 0.9" % (mod.SLOW_TTL, mod.FAST_TTL))
+
+# B. Both layouts: the first sample has no delta; the second gives the numbers hanoip-status prints for the same tree.
+for name, layout, iface in (("4.14", layout_414, "eth0"), ("mainline", layout_mainline, "wlan0")):
+    root, bindir = fixture(name, layout, iface)
+    env_for(root)
+    mod = load()
+    clock = [0.0]
+    mod.CLOCK = lambda: clock[0]
+    first = mod.fast_part()
+    if first["metrics"]["cpu"]["used_pct"] is not None or first["metrics"]["net"]["rx_kbit"] is not None:
+        fail(name + ": the first sample has a CPU or network rate")
+    hs = os.path.join(root, "hanoip-status")
+    with open(status_script) as f:
+        text = f.read()
+    with open(hs, "w") as f:
+        f.write(text.replace("/proc/", root + "/proc/"))
+    # Run the status from the first tree state, so the fake sleep makes the second state.
+    shell_env = dict(os.environ, PATH=bindir + ":" + os.environ["PATH"], HANOIP_SYS_DIR=root + "/sys",
+                     HANOIP_RESOLV_CONF=root + "/resolv.conf")
+    r = subprocess.run(["sh", hs], capture_output=True, text=True, timeout=30, env=shell_env)
+    status = r.stdout.rstrip("\n")
+    if not status.startswith("Server - "):
+        fail(name + ": hanoip-status did not run: " + r.stderr)
+    clock[0] = 1.0
+    fast = mod.fast_part()
+    ref = pairs(mod.metrics(status))
+    got = pairs(fast["metrics"])
+    for key, value in got.items():
+        if key.startswith(("rom.used", "rom.total", "ping.")):
+            continue
+        if value != ref[key]:
+            fail("%s: %s is %r, hanoip-status says %r" % (name, key, value, ref[key]))
+    want = {"cpu.used_pct": 42, "net.rx_kbit": 1000, "net.tx_kbit": 200, "net.iface": iface}
+    for key, value in want.items():
+        if got[key] != value:
+            fail("%s: %s is %r, want %r" % (name, key, got[key], value))
+    print("%s: %d fast fields equal hanoip-status" % (name, len(got)))
+
+# C. Deltas over a controlled clock: 2 s between the samples halves the rates; the CPU share is the same.
+root, bindir = fixture("delta", layout_414, "eth0")
+env_for(root)
+mod = load()
+clock = [0.0]
+mod.CLOCK = lambda: clock[0]
+mod.fast_part()
+put(root, second("eth0"))
+clock[0] = 2.0
+d = mod.fast_part()["metrics"]
+if d["cpu"]["used_pct"] != 42 or d["net"]["rx_kbit"] != 500 or d["net"]["tx_kbit"] != 100:
+    fail("two seconds apart: %r" % d)
+print("deltas over 2 s: ok")
+
+# D. The 0.9 s fast cache: a sample younger than 0.9 s is served again (two tabs cost one read); an older one is read again.
+cached = mod.fast_part()  # the last read was at 2.0 s (section C)
+put(root, layout_414("eth0"))  # a read inside the cache would show these files
+clock[0] = 2.5
+if mod.fast_part() is not cached:
+    fail("the fast part was read again inside its 0.9 s cache")
+clock[0] = 2.95
+if mod.fast_part() is cached:
+    fail("the fast part was not read again after 0.9 s")
+print("fast cache 0.9 s: ok")
+
+# E. The slow part: a fake status run that sleeps 2 s and counts its runs.
+runs = os.path.join(base, "slow-runs")
+slow = os.path.join(base, "slow.sh")
+with open(slow, "w") as f:
+    f.write("#!/bin/sh\necho x >> '%s'\nsleep 2\necho 'Server - 0.9 ms'\n" % runs)
+os.chmod(slow, 0o755)
+os.environ["HANOIP_STATUS_CMD"] = slow
+
+def count():
+    return len(open(runs).read().splitlines()) if os.path.exists(runs) else 0
+
+def wait_idle(m):
+    for _ in range(300):
+        with m.SLOW_LOCK:
+            if m.SLOW["busy"] is None:
+                return
+        time.sleep(0.05)
+    fail("the slow refresh did not end")
+
+mod = load()
+clock = [0.0]
+mod.CLOCK = lambda: clock[0]
+time.sleep(0.3)
+if count() != 0:
+    fail("a run happened with no request (no timer allowed)")
+t0 = time.perf_counter()
+first = mod.slow_part()
+if time.perf_counter() - t0 < 1.5 or first["status_text"] != "Server - 0.9 ms":
+    fail("the first request did not wait for the first slow result")
+if count() != 1:
+    fail("the first request made %d runs" % count())
+clock[0] = 9.9
+if mod.slow_part() is not first:
+    fail("the slow part ran again inside its 10 s TTL")
+time.sleep(0.3)
+if count() != 1:
+    fail("the slow part ran again inside its 10 s TTL (%d runs)" % count())
+clock[0] = 10.5
+t0 = time.perf_counter()
+stale = mod.slow_part()
+if time.perf_counter() - t0 > 1.0 or stale is not first:
+    fail("a request during a slow refresh waited for it, or did not get the previous data")
+mod.slow_part()
+wait_idle(mod)
+if count() != 2:
+    fail("two requests during one refresh made %d runs, want 2" % count())
+print("slow part: first request waits; 10 s TTL; stale data at once; one refresh at a time: ok")
+time.sleep(2.5)
+if count() != 2:
+    fail("the slow part ran with no request")
+print("slow part: no run without a request: ok")
+
+# F. The document: at is the fast part's time, slow_at the slow part's.
+body = json.loads(mod.document())
+if not isinstance(body["slow_at"], int) or not isinstance(body["at"], int):
+    fail("slow_at or at is not a time: %r %r" % (body["slow_at"], body["at"]))
+print("document: at and slow_at: ok")
+EOF
+"$py" "$live" "$script" "$PWD/pmaports/device/testing/device-motorola-hanoip/hanoip-status" "$dir/live"
+echo "live: all checks pass"
 
 echo "dashboard: all checks pass"
