@@ -1,6 +1,7 @@
 #!/bin/sh
 # Checks hanoip-dashboard without the phone: the JSON contract (names, types and the values read from fake /proc, /sys,
-# journal, nmcli, tailscale, systemctl, ss, btrfs and hanoip-status), the null of every unreadable field, the two routes
+# journal, nmcli, tailscale, systemctl, ss, btrfs and hanoip-status), the metrics parsed from the status text (4.14,
+# mainline with n/a, nulls, garbage), the null of every unreadable field, the two routes
 # and the refused methods, the 4 s cache (one run for two tabs, none before a request) and the address it binds to.
 set -eu
 cd "$(dirname "$0")/.."
@@ -90,15 +91,18 @@ echo "slot marked successful" > "$dir/health"
 printf 'page\n' > "$dir/index.html"
 
 # Every data run gets the fakes above, and nothing else from this machine.
+printf '#!/bin/sh\ncat "$TEST_DIR/status-fixture"\n' > "$bin/hanoip-status-fixture"
+chmod +x "$bin/hanoip-status-fixture"
+# status_cmd (empty: the two-line fake) picks the hanoip-status the run reads.
 collect() {
 	env PATH="$bin:$PATH" HANOIP_PROC_DIR="$proc" HANOIP_SYS_DIR="$sys" HANOIP_SHARE_DIR="$share" \
-		HANOIP_DT_ABL_ARGS="$dir/abl-bootargs" HANOIP_NAS_DIR="$nas" HANOIP_STATUS_CMD="$bin/hanoip-status" \
+		HANOIP_DT_ABL_ARGS="$dir/abl-bootargs" HANOIP_NAS_DIR="$nas" HANOIP_STATUS_CMD="${status_cmd:-$bin/hanoip-status}" \
 		HANOIP_WATCHDOG_STATE="$dir/no-count" "$py" "$script" --data
 }
 
 # 1. Full document: names, types and the values the fakes give.
 collect > "$dir/full.json"
-check "$dir/full.json" "list(d) == ['at', 'status_text', 'system', 'boot', 'storage', 'network', 'services', 'watchdog', 'version']" "top-level fields"
+check "$dir/full.json" "list(d) == ['at', 'status_text', 'metrics', 'system', 'boot', 'storage', 'network', 'services', 'watchdog', 'version']" "top-level fields"
 check "$dir/full.json" "d['status_text'] == 'Server - 0.9 ms\nCPU - 3 %'" "status_text is the hanoip-status output"
 check "$dir/full.json" "d['system'] == {'uptime_s': 12345, 'reboots': 2, 'oom_kills': 2, 'ram': {'used_pct': 25, 'used_gb': 1.91, 'total_gb': 7.63}, 'zram': {'size_gb': 5.2, 'used_gb': 0.0}}" "system"
 check "$dir/full.json" "d['boot'] == {'slot': 'b', 'slot_successful': True}" "boot"
@@ -124,11 +128,67 @@ check "$dir/scrub.json" "d['storage']['scrub']['finished_at'] - __import__('time
 echo "storage: ok"
 : > "$proc/mounts"
 
+# 2b. The metrics: the status text read field by field. Fixtures: the 4.14 charging on the cable; the mainline as
+# hanoip-status prints it on the phone (n/a for the GPU busy figure, the ROM sensor and the cycles); a line set with
+# a null in each place; text that is not the status at all.
+cat > "$dir/fx-414" <<'EOF'
+Server - 0.9 ms | 1.1.1.1  - 4.5 ms
+eth0 rx 812 kbit/s, tx 96 kbit/s
+CPU - 7 % | 300-2304 MHz | 41.2 °C
+GPU - 12 % | 140 MHz | 36.5 °C | on
+RAM - 21 % | 0.7/3.5 GB | 38.2 °C
+ROM - 1 % | 0.9/94.1 GB | 34.7 °C
+Battery - 81 % | 4.33 V | 120 cycles | 31.6 °C
+4.33 W | charging
+Energy drain - 5.20 W • cable
+Body - 34.4 °C
+EOF
+cat > "$dir/fx-ml" <<'EOF'
+Server - 64.3 ms | 1.1.1.1  - 38.8 ms
+wlan0 rx 0 kbit/s, tx 4 kbit/s
+CPU - 0 % | 1248-1555 MHz | 38.2 °C
+GPU - n/a | 0 MHz | 37.5 °C | off
+RAM - 21 % | 0.7/3.5 GB | 37.5 °C
+ROM - 1 % | 0.9/94.1 GB | n/a °C
+Battery - 77 % | 4.16 V | n/a cycles | 31.2 °C
+0.00 W | not charging • bypass
+Energy drain - 1.69 W • cable
+Body - 36.6 °C
+EOF
+cat > "$dir/fx-null" <<'EOF'
+Server - no reply | down  - no reply
+wlan0 rx 0 kbit/s, tx 4 kbit/s
+CPU - n/a | 300 MHz | n/a °C
+GPU - n/a | 0 MHz | 36.2 °C | maybe
+RAM - 21 % | 0.7/3.5 GB | 37.5 °C
+ROM - 1 % | 0.9/94.1 GB | n/a °C
+Battery - 77 % | 4.16 V | n/a cycles | 31.2 °C
+0.00 W | sideways
+Energy drain - 1.69 W • mains
+Body - n/a °C
+EOF
+printf 'hello\nthis is not the status\n' > "$dir/fx-garbage"
+# metrics_of <fixture> <json>: one run of the document with that status text.
+metrics_of() {
+	cp "$1" "$dir/status-fixture"
+	status_cmd=$bin/hanoip-status-fixture collect > "$2"
+	status_cmd=
+}
+metrics_of "$dir/fx-414" "$dir/m414.json"
+check "$dir/m414.json" "d['metrics'] == {'cpu': {'used_pct': 7, 'mhz_min': 300, 'mhz_max': 2304, 'temp_c': 41.2}, 'gpu': {'used_pct': 12, 'mhz': 140, 'temp_c': 36.5, 'on': True}, 'ram_temp_c': 38.2, 'rom': {'used_pct': 1, 'used_gb': 0.9, 'total_gb': 94.1, 'temp_c': 34.7}, 'battery': {'pct': 81, 'volts': 4.33, 'cycles': 120, 'temp_c': 31.6, 'watts': 4.33, 'charging': True, 'bypass': False}, 'power': {'watts': 5.2, 'source': 'cable'}, 'body_temp_c': 34.4, 'net': {'iface': 'eth0', 'rx_kbit': 812, 'tx_kbit': 96}, 'ping': {'gateway_ms': 0.9, 'internet_host': '1.1.1.1', 'internet_ms': 4.5}}" "4.14 status fixture parsed"
+metrics_of "$dir/fx-ml" "$dir/mml.json"
+check "$dir/mml.json" "d['metrics'] == {'cpu': {'used_pct': 0, 'mhz_min': 1248, 'mhz_max': 1555, 'temp_c': 38.2}, 'gpu': {'used_pct': None, 'mhz': 0, 'temp_c': 37.5, 'on': False}, 'ram_temp_c': 37.5, 'rom': {'used_pct': 1, 'used_gb': 0.9, 'total_gb': 94.1, 'temp_c': None}, 'battery': {'pct': 77, 'volts': 4.16, 'cycles': None, 'temp_c': 31.2, 'watts': 0.0, 'charging': False, 'bypass': True}, 'power': {'watts': 1.69, 'source': 'cable'}, 'body_temp_c': 36.6, 'net': {'iface': 'wlan0', 'rx_kbit': 0, 'tx_kbit': 4}, 'ping': {'gateway_ms': 64.3, 'internet_host': '1.1.1.1', 'internet_ms': 38.8}}" "mainline status fixture parsed (n/a fields null)"
+metrics_of "$dir/fx-null" "$dir/mnull.json"
+check "$dir/mnull.json" "d['metrics'] == {'cpu': {'used_pct': None, 'mhz_min': 300, 'mhz_max': 300, 'temp_c': None}, 'gpu': {'used_pct': None, 'mhz': 0, 'temp_c': 36.2, 'on': None}, 'ram_temp_c': 37.5, 'rom': {'used_pct': 1, 'used_gb': 0.9, 'total_gb': 94.1, 'temp_c': None}, 'battery': {'pct': 77, 'volts': 4.16, 'cycles': None, 'temp_c': 31.2, 'watts': 0.0, 'charging': None, 'bypass': None}, 'power': {'watts': 1.69, 'source': None}, 'body_temp_c': None, 'net': {'iface': 'wlan0', 'rx_kbit': 0, 'tx_kbit': 4}, 'ping': {'gateway_ms': None, 'internet_host': 'down', 'internet_ms': None}}" "null fields stay null and the rest of each line is kept"
+metrics_of "$dir/fx-garbage" "$dir/mgarbage.json"
+check "$dir/mgarbage.json" "d['metrics'] == {'cpu': {'used_pct': None, 'mhz_min': None, 'mhz_max': None, 'temp_c': None}, 'gpu': {'used_pct': None, 'mhz': None, 'temp_c': None, 'on': None}, 'ram_temp_c': None, 'rom': {'used_pct': None, 'used_gb': None, 'total_gb': None, 'temp_c': None}, 'battery': {'pct': None, 'volts': None, 'cycles': None, 'temp_c': None, 'watts': None, 'charging': None, 'bypass': None}, 'power': {'watts': None, 'source': None}, 'body_temp_c': None, 'net': {'iface': None, 'rx_kbit': None, 'tx_kbit': None}, 'ping': {'gateway_ms': None, 'internet_host': None, 'internet_ms': None}}" "garbage text gives all nulls"
+echo "metrics: ok"
+
 # 3. Nothing readable: every field the contract allows to be null is null; only the time and the kernel are not.
 env PATH="$dir/empty" HANOIP_PROC_DIR="$dir/none" HANOIP_SYS_DIR="$dir/none" HANOIP_SHARE_DIR="$dir/none" \
 	HANOIP_DT_ABL_ARGS="$dir/none" HANOIP_NAS_DIR="$dir/none" HANOIP_STATUS_CMD="$dir/none" \
 	HANOIP_WATCHDOG_STATE="$dir/none" "$py" "$script" --data > "$dir/empty.json"
-check "$dir/empty.json" "d['status_text'] is None and d['at'] > 0 and d['version']['kernel'] == __import__('os').uname().release" "time and kernel only"
+check "$dir/empty.json" "d['status_text'] is None and d['metrics'] is None and d['at'] > 0 and d['version']['kernel'] == __import__('os').uname().release" "time and kernel only; no status text, no metrics"
 check "$dir/empty.json" "d['system'] == {'uptime_s': None, 'reboots': None, 'oom_kills': None, 'ram': {'used_pct': None, 'used_gb': None, 'total_gb': None}, 'zram': {'size_gb': None, 'used_gb': None}}" "unreadable system fields are null"
 check "$dir/empty.json" "d['boot'] == {'slot': None, 'slot_successful': None} and d['storage'] == {'nas': None, 'scrub': None}" "unreadable boot and storage are null"
 check "$dir/empty.json" "d['network'] == {'wifi': {'up': None, 'ssid': None}, 'tailscale': {'up': None}, 'samba_tailnet': {'active': None}}" "unreadable network is null"
@@ -158,7 +218,7 @@ req GET /api/status $port > "$dir/p2.raw" & b=$!
 wait "$a" "$b"
 tail -n +2 "$dir/p1.raw" > "$dir/p1"; tail -n +2 "$dir/p2.raw" > "$dir/p2"
 [ "$(wc -l < "$dir/runs")" -eq 1 ] || fail "two tabs made $(wc -l < "$dir/runs") runs, want 1"
-check "$dir/p1" "list(d) == ['at', 'status_text', 'system', 'boot', 'storage', 'network', 'services', 'watchdog', 'version']" "/api/status body"
+check "$dir/p1" "list(d) == ['at', 'status_text', 'metrics', 'system', 'boot', 'storage', 'network', 'services', 'watchdog', 'version']" "/api/status body"
 cmp -s "$dir/p1" "$dir/p2" || fail "the two tabs did not get the same document"
 
 # The routes: exactly / and /api/status; the rest is 404, the other methods 405.
