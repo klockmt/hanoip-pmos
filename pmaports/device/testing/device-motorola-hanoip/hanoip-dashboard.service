@@ -1,0 +1,23 @@
+[Unit]
+Description=Status dashboard of the phone, on the tailnet only (port 8080, see /usr/bin/hanoip-dashboard)
+Documentation=man:systemd.service(5)
+After=tailscaled.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/hanoip-dashboard
+# Not root: a dynamic user. It reads the journal through the groups that may (journalctl -b, the hanoip-health lines).
+# The tailscale socket is open to every local user, so `tailscale` works without root.
+DynamicUser=yes
+SupplementaryGroups=systemd-journal adm
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
