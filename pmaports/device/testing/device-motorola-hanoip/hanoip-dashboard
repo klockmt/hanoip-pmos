@@ -248,12 +248,81 @@ def status_text():
     return (out.rstrip("\n") or None) if out is not None else None
 
 
+def figure(s, unit):
+    """A number with its unit as hanoip-status prints it ("77 %", "31.2 °C"); None for n/a, no reply or anything else."""
+    m = re.fullmatch(r"(\d+(?:\.\d+)?) " + re.escape(unit), s)
+    if m is None:
+        return None
+    return float(m.group(1)) if "." in m.group(1) else int(m.group(1))
+
+
+def row(lines, label, n):
+    """The n " | " parts of the line that starts with label; "" for each when it is missing or has another count."""
+    line = next((x for x in lines if x.startswith(label)), None)
+    parts = None if line is None else line[len(label):].split(" | ")
+    return parts if parts is not None and len(parts) == n else [""] * n
+
+
+def find(lines, pattern):
+    """The match of the first line that the whole pattern covers, or None."""
+    for line in lines:
+        m = re.fullmatch(pattern, line)
+        if m:
+            return m
+    return None
+
+
+def grp(m, i):
+    return m.group(i) if m else ""
+
+
+def metrics(status):
+    """The figures of the status text for the charts, read from the same lines as hanoip-status prints them. Each
+    field is null when its own figure does not parse; the rest of its line is kept."""
+    if status is None:
+        return None
+    lines = status.splitlines()
+    cpu, gpu, ram = row(lines, "CPU - ", 3), row(lines, "GPU - ", 4), row(lines, "RAM - ", 3)
+    rom, bat = row(lines, "ROM - ", 3), row(lines, "Battery - ", 4)
+    srv, body = row(lines, "Server - ", 2), row(lines, "Body - ", 1)
+    freq = re.fullmatch(r"(\d+)(?:-(\d+))? MHz", cpu[1])
+    gb = re.fullmatch(r"(\d+(?:\.\d+)?)/(\d+(?:\.\d+)?) GB", rom[1])
+    host = re.fullmatch(r"(\S+)  - (.+)", srv[1])
+    net = find(lines, r"(\S+) rx (\d+) kbit/s, tx (\d+) kbit/s")
+    power = find(lines, r"(\S+ W) \| (.+)")
+    drain = find(lines, r"Energy drain - (\S+ W) • (\S+)")
+    st, _, extra = grp(power, 2).partition(" • ")
+    charging = {"charging": True, "not charging": False}.get(st) if power else None
+    bypass = {"": False, "bypass": True}.get(extra) if charging is not None else None
+    return {
+        "cpu": {"used_pct": figure(cpu[0], "%"), "mhz_min": int(freq.group(1)) if freq else None,
+                "mhz_max": int(freq.group(2) or freq.group(1)) if freq else None, "temp_c": figure(cpu[2], "°C")},
+        "gpu": {"used_pct": figure(gpu[0], "%"), "mhz": figure(gpu[1], "MHz"), "temp_c": figure(gpu[2], "°C"),
+                "on": {"on": True, "off": False}.get(gpu[3])},
+        "ram_temp_c": figure(ram[2], "°C"),
+        "rom": {"used_pct": figure(rom[0], "%"), "used_gb": float(gb.group(1)) if gb else None,
+                "total_gb": float(gb.group(2)) if gb else None, "temp_c": figure(rom[2], "°C")},
+        "battery": {"pct": figure(bat[0], "%"), "volts": figure(bat[1], "V"), "cycles": figure(bat[2], "cycles"),
+                    "temp_c": figure(bat[3], "°C"), "watts": figure(grp(power, 1), "W"), "charging": charging,
+                    "bypass": bypass},
+        "power": {"watts": figure(grp(drain, 1), "W"),
+                  "source": grp(drain, 2) if grp(drain, 2) in ("cable", "battery") else None},
+        "body_temp_c": figure(body[0], "°C"),
+        "net": {"iface": grp(net, 1) or None, "rx_kbit": int(net.group(2)) if net else None,
+                "tx_kbit": int(net.group(3)) if net else None},
+        "ping": {"gateway_ms": figure(srv[0], "ms"), "internet_host": host.group(1) if host else None,
+                 "internet_ms": figure(host.group(2), "ms") if host else None},
+    }
+
+
 def collect():
     nas_doc = nas()
     mounted = bool(nas_doc and nas_doc["mounted"])
+    status = status_text()
     return {
         "at": int(time.time()),
-        "status_text": status_text(),
+        "status_text": status,
+        "metrics": metrics(status),
         "system": {"uptime_s": uptime_s(), "reboots": reboots(), "oom_kills": oom_kills(), "ram": ram(),
                    "zram": zram()},
         "boot": {"slot": boot_slot(), "slot_successful": slot_successful()},
