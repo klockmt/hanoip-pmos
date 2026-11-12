@@ -647,9 +647,10 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 			el.textContent = text;
 			return;
 		}
-		var t0 = performance.now();
+		var t0 = null;
 		var step = function (now) {
-			var t = Math.min(1, (now - t0) / 500), e = 1 - Math.pow(1 - t, 3);
+			if (t0 === null) t0 = now;
+			var t = Math.max(0, Math.min(1, (now - t0) / 500)), e = 1 - Math.pow(1 - t, 3);
 			el._cur = from + (v - from) * e;
 			el.textContent = fmt(el._cur);
 			if (t < 1) ANIM[key] = requestAnimationFrame(step);
@@ -762,7 +763,7 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 			ch === false ? (src === 'cable' ? 'Na tomada, sem carregar' : src === 'battery' ? 'Usando a bateria' : NA) : NA);
 		put('bat.volts', fV(get(d, 'metrics.battery.volts')));
 		var cyc = get(d, 'metrics.battery.cycles');
-		put('bat.cycles', isNum(cyc) ? fCount(cyc) : 'n/a · sem contador no kernel');
+		put('bat.cycles', isNum(cyc) ? fCount(cyc) : 'n/a (sem contador)');
 		put('bat.temp', fC(get(d, 'metrics.battery.temp_c')));
 		count('pow.val', get(d, 'metrics.power.watts'), fW);
 		put('pow.src', src === 'cable' ? 'da tomada' : src === 'battery' ? 'da bateria' : NA);
@@ -775,14 +776,14 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 		put('cpu.freq', isNum(lo) && isNum(hi) ? F0.format(lo) + ' a ' + F0.format(hi) + ' MHz' : NA);
 		var gon = get(d, 'metrics.gpu.on');
 		put('gpu.state', gon === false ? 'desligada' :
-			gon === true ? 'ligada · ' + (isNum(get(d, 'metrics.gpu.used_pct')) ? fPct(get(d, 'metrics.gpu.used_pct')) : 'uso n/a, sem medida no kernel') +
+			gon === true ? 'ligada · ' + (isNum(get(d, 'metrics.gpu.used_pct')) ? fPct(get(d, 'metrics.gpu.used_pct')) : 'uso n/a (sem medida)') +
 				' · ' + fMhz(get(d, 'metrics.gpu.mhz')) : NA);
 
 		put('t.cpu', fC(get(d, 'metrics.cpu.temp_c')));
 		put('t.gpu', fC(get(d, 'metrics.gpu.temp_c')));
 		put('t.ram', fC(get(d, 'metrics.ram_temp_c')));
 		var rt = get(d, 'metrics.rom.temp_c');
-		put('t.rom', isNum(rt) ? fC(rt) : 'n/a · sem sensor');
+		put('t.rom', isNum(rt) ? fC(rt) : 'n/a (sem sensor)');
 		put('t.bat', fC(get(d, 'metrics.battery.temp_c')));
 		put('t.body', fC(get(d, 'metrics.body_temp_c')));
 
