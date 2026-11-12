@@ -101,4 +101,8 @@ initd=pmaports/device/testing/device-motorola-hanoip/hanoip-bot.initd
 pre() { HANOIP_BOT_ENV=$1 sh -c '. "$1"; eerror() { :; }; start_pre' sh "$initd" 2>/dev/null; }
 ! pre "$tmp/none" || fail "the service starts without telegram.env"
 pre "$tmp/telegram.env" || fail "the service refuses to start with telegram.env"
+# The systemd unit (Duranium and the mainline root) needs the same guard: Restart=always would panic every 5 s with no env file.
+unit=pmaports/device/testing/device-motorola-hanoip/hanoip-bot.service
+grep -qx 'ConditionPathExists=/etc/hanoip/telegram.env' "$unit" || fail "$unit starts without telegram.env"
+cmp -s "$unit" kernel/mainline/root-overlay/etc/systemd/system/hanoip-bot.service || fail "the unit differs from the root overlay's copy"
 echo "bot: all checks pass"

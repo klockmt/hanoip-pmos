@@ -1,0 +1,139 @@
+From ae06d60e7f4a9c48c466d235cb5f32ac05341b8a Mon Sep 17 00:00:00 2001
+From: hanoip <h@l>
+Date: Tue, 27 Oct 2026 16:34:44 -0300
+Subject: [PATCH 183/194] power: supply: qcom_qg: filter the current and fix
+ the charge scale
+
+The charge counter started from the charger status plus current_now, and
+current_now is the LAST ADC sample, not an average. While the true current
+hovered around zero (measured mean -44 mA, screen on over a 500 mA port) single
+samples read between -223 mA and +297 mA. Keeping only the positive samples
+rectified that noise into invented charge.
+
+Underneath that there was a worse arithmetic bug: the charge increment was
+computed with div_s64(), whose divisor is s32, while the real divisor is
+3600 * capacity in uAh. For this 4939 mAh pack that is 17780400000, truncated
+silently to 600530816, so every sample counted 27 times the charge it should.
+
+Together they took the reported capacity from 95% to 100% in minutes with the
+pack still absorbing 250 mA.
+
+Filter the SIGNED current with a short EMA, count only what is clearly going in
+(above 50 mA), use div64_s64 for the 64-bit divisor, release at most 1% per
+step, and stop the charging rise at 99%: 100% is only honest when the charger
+itself reports termination, which the FULL path already handles.
+---
+ drivers/power/supply/qcom_qg.c | 58 ++++++++++++++++++++++++++++++----
+ 1 file changed, 52 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/power/supply/qcom_qg.c b/drivers/power/supply/qcom_qg.c
+index 07c15ce17..73f6930fd 100644
+--- a/drivers/power/supply/qcom_qg.c
++++ b/drivers/power/supply/qcom_qg.c
+@@ -62,7 +62,25 @@
+ 
+ /* Coulomb counter: ignore gaps longer than this and cap the wind-up. */
+ #define QG_COUL_MAX_DT_S		600
+-#define QG_COUL_MAX_MPCT		2000	/* libera no maximo 2% por vez */
++#define QG_COUL_MAX_MPCT		1000	/* libera no maximo 1% por vez */
++
++/*
++ * current_now is the LAST ADC sample, not an average, and it is noisy. While
++ * the true current hovered around zero (measured mean -44 mA) single samples
++ * read anywhere between -223 mA and +297 mA. Counting only the positive ones
++ * rectified that noise and invented +2% of charge while the battery was in
++ * fact draining. Filter the SIGNED value first, then count only what is
++ * clearly going in.
++ */
++#define QG_COUL_FILTER			8	/* ~8 amostras de constante de tempo */
++#define QG_COUL_MIN_UA			50000	/* abaixo disto nao e carga */
++
++/*
++ * While charging, stop one percent short: 100% is only honest when the charger
++ * itself declared the charge terminated. Sitting at 99% forever is a much
++ * smaller error than announcing a full pack that still absorbs 250 mA.
++ */
++#define QG_SOC_CHG_MAX			99
+ 
+ #ifdef CONFIG_DEBUG_FS
+ #include <linux/debugfs.h>
+@@ -89,6 +107,8 @@ struct qcom_qg_chip {
+ 	 */
+ 	s64 coul_mpercent;
+ 	unsigned long coul_jiffies;
++	s64 coul_filt_ua;		/* corrente filtrada (sinal preservado) */
++	bool coul_filt_valid;
+ 	int last_current_ua;
+ 
+ 	/* debugfs may not be mounted yet when the driver probes */
+@@ -228,11 +248,30 @@ static void qcom_qg_coul_update(struct qcom_qg_chip *chip, int current_ua,
+ 	 * battery is actually delivering current (screen on with a 500 mA
+ 	 * port), and taking the magnitude there would raise the percentage
+ 	 * while the battery drains.
++	 *
++	 * Gate on the FILTERED current, never on a single sample: the register
++	 * is one noisy ADC conversion and keeping only its positive samples
++	 * rectifies the noise into fake charge.
+ 	 */
+-	if (current_ua <= 0)
++	if (!chip->coul_filt_valid) {
++		chip->coul_filt_ua = current_ua;
++		chip->coul_filt_valid = true;
++	} else {
++		chip->coul_filt_ua += (current_ua - chip->coul_filt_ua) /
++				      QG_COUL_FILTER;
++	}
++
++	if (chip->coul_filt_ua < QG_COUL_MIN_UA)
+ 		return;
+ 
+-	add = div_s64((s64)current_ua * dt * 100000, 3600LL * full);
++	/*
++	 * div64_s64, not div_s64: the divisor is 3600 * capacity in uAh, around
++	 * 1.8e10 for this pack, which does not fit the s32 divisor of div_s64.
++	 * It was silently truncated to 600530816, making every sample count 27
++	 * times the charge it should and pushing the reported capacity from 95%
++	 * to 100% in minutes.
++	 */
++	add = div64_s64(chip->coul_filt_ua * dt * 100000, 3600LL * full);
+ 
+ 	chip->coul_mpercent += add;
+ 	if (chip->coul_mpercent > QG_COUL_MAX_MPCT)
+@@ -258,8 +297,10 @@ static int qcom_qg_smooth_capacity(struct qcom_qg_chip *chip, int soc,
+ 
+ 	if (charging)
+ 		qcom_qg_coul_update(chip, current_ua, now);
+-	else
++	else {
+ 		chip->coul_jiffies = 0;
++		chip->coul_filt_valid = false;
++	}
+ 
+ 	/*
+ 	 * While charging, follow ONLY the charge that really went in. The
+@@ -271,8 +312,9 @@ static int qcom_qg_smooth_capacity(struct qcom_qg_chip *chip, int soc,
+ 	 */
+ 	if (charging) {
+ 		allowed = chip->coul_mpercent / 1000;
+-		if (allowed > 0 && chip->msoc < 100) {
+-			rise = min_t(unsigned int, allowed, 100 - chip->msoc);
++		if (allowed > 0 && chip->msoc < QG_SOC_CHG_MAX) {
++			rise = min_t(unsigned int, allowed,
++				     QG_SOC_CHG_MAX - chip->msoc);
+ 			chip->msoc += rise;
+ 			chip->coul_mpercent -= (s64)rise * 1000;
+ 			chip->msoc_jiffies = now;
+@@ -577,6 +619,10 @@ static int qcom_qg_state_show(struct seq_file *s, void *unused)
+ 	seq_printf(s, "orcamento coulomb      = %lld mili-%%  (=%lld%%)\n",
+ 		   chip->coul_mpercent, chip->coul_mpercent / 1000);
+ 	seq_printf(s, "ultima corrente usada  = %d uA\n", chip->last_current_ua);
++	seq_printf(s, "corrente filtrada      = %lld uA (%s)\n",
++		   chip->coul_filt_ua,
++		   chip->coul_filt_ua < QG_COUL_MIN_UA ? "nao conta"
++						       : "contando");
+ 	return 0;
+ }
+ DEFINE_SHOW_ATTRIBUTE(qcom_qg_state);
+-- 
+2.43.0
+

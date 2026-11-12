@@ -1,0 +1,17 @@
+diff --git a/arch/arm/mach-snapdragon/board.c b/arch/arm/mach-snapdragon/board.c
+--- a/arch/arm/mach-snapdragon/board.c
++++ b/arch/arm/mach-snapdragon/board.c
+@@ -856,7 +856,12 @@
+ 	printf("QCOM: USB powered down before kernel handoff\n");
+ }
+ 
+-void board_preboot_os(void)
++/*
++ * hanoip-pmos: both handoffs call this, bootm (announce_and_cleanup()) and EFI's ExitBootServices, where
++ * board_preboot_os() runs for bootm only: after bootefi the kernel would find the UFS and USB PHYs still
++ * powered, which it cannot recover from.
++ */
++void board_quiesce_devices(void)
+ {
+ 	/*
+ 	 * hanoip-pmos: the watchdog is left running. The kernel's qcom_wdt finds it

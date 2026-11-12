@@ -1,0 +1,14 @@
+[Unit]
+Description=Reboot to the server 15 minutes after a test boot unless /run/hanoip-ml-keep exists
+Documentation=man:systemd.service(5)
+DefaultDependencies=no
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/hanoip-deadman
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

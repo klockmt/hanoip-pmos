@@ -1,0 +1,29 @@
+#!/bin/sh
+# Duranium on the hanoip: the USB NCM gadget the PC reaches the phone through, and the server's address on it.
+# Same IDs as stage 1 of the Alpine root (docs/MAINLINE.md), so the PC's setup keeps working. The DHCP server for the PC
+# is pmOS's unudhcpd@usb0. Every path can be moved with HANOIP_CONFIGFS / HANOIP_UDC_DIR / HANOIP_NETDIR (the test does).
+set -eu
+cfg=${HANOIP_CONFIGFS:-/sys/kernel/config}/usb_gadget/hanoip
+udcdir=${HANOIP_UDC_DIR:-/sys/class/udc}
+wait=${HANOIP_WAIT:-60}
+i=0
+while [ -z "$(ls "$udcdir" 2>/dev/null)" ]; do
+	[ $i -lt "$wait" ] || { echo "hanoip-usb-gadget: no UDC after ${wait}s" >&2; exit 1; }
+	sleep 1; i=$((i + 1))
+done
+mkdir -p "$cfg/strings/0x409" "$cfg/configs/c.1/strings/0x409" "$cfg/functions/ncm.usb0"
+echo 0x18d1 > "$cfg/idVendor"
+echo 0xd001 > "$cfg/idProduct"
+echo hanoip-duranium > "$cfg/strings/0x409/serialnumber"
+echo "hanoip duranium" > "$cfg/strings/0x409/product"
+echo ncm > "$cfg/configs/c.1/strings/0x409/configuration"
+ln -sf "$cfg/functions/ncm.usb0" "$cfg/configs/c.1/ncm.usb0"
+ls "$udcdir" | head -1 > "$cfg/UDC"
+i=0
+while [ ! -e "${HANOIP_NETDIR:-/sys/class/net}/usb0" ]; do
+	[ $i -lt 30 ] || { echo "hanoip-usb-gadget: usb0 did not appear" >&2; exit 1; }
+	sleep 1; i=$((i + 1))
+done
+ip addr add 172.16.42.1/24 dev usb0 2>/dev/null || true
+ip link set usb0 up
+logger -t hanoip-usb-gadget "USB NCM up on 172.16.42.1/24" || true

@@ -1,0 +1,41 @@
+diff --git a/arch/arm/mach-snapdragon/abl_identity.c b/arch/arm/mach-snapdragon/abl_identity.c
+--- a/arch/arm/mach-snapdragon/abl_identity.c
++++ b/arch/arm/mach-snapdragon/abl_identity.c
+@@ -12,6 +12,7 @@
+ 
+ #define pr_fmt(fmt) "abl_identity: " fmt
+ 
++#include <env.h>
+ #include <fdt_support.h>
+ #include <hexdump.h>
+ #include <init.h>
+@@ -128,3 +129,29 @@
+ 	log_info("ABL identity copied to the Linux devicetree\n");
+ 	return 0;
+ }
++
++void qcom_late_init(void);
++
++/*
++ * hanoip-pmos: the slot the ABL started this U-Boot from (androidboot.slot_suffix) as $ml_slot, so the same
++ * U-Boot in boot_a and in boot_b boots different things. Only that argument is read: the ABL's command line
++ * also holds the serial number and the MAC addresses. Without it $ml_slot keeps the environment's default.
++ */
++void qcom_late_init(void)
++{
++	const void *abl = (const void *)get_prev_bl_fdt_addr();
++	const char *cmdline, *value;
++	int chosen, len;
++
++	if (!abl || fdt_check_header(abl))
++		return;
++
++	chosen = fdt_path_offset(abl, "/chosen");
++	cmdline = chosen < 0 ? NULL : fdt_getprop(abl, chosen, "bootargs", &len);
++	if (!cmdline || len <= 1)
++		return;
++
++	len = abl_cmdline_value(cmdline, "androidboot.slot_suffix=", &value);
++	if (len == 2 && value[0] == '_' && (value[1] == 'a' || value[1] == 'b'))
++		env_set("ml_slot", value[1] == 'a' ? "_a" : "_b");
++}

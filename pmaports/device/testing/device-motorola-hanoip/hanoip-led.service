@@ -1,0 +1,12 @@
+[Unit]
+Description=Front LED as a power indicator (solid on the cable, a short flash on the battery)
+Documentation=man:systemd.service(5)
+
+[Service]
+ExecStart=/usr/bin/hanoip-led
+ExecStopPost=-/bin/sh -c 'echo none > /sys/class/leds/white:status/trigger; echo 0 > /sys/class/leds/white:status/brightness'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

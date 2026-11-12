@@ -1,0 +1,162 @@
+#!/bin/sh
+# Checks the mainline root's safety rules without the phone: scripts/mainline-make-root writes only super's approved
+# region, and kernel/mainline/root-overlay never writes the modem's partitions, starts the modem in order and keeps
+# the other disks read-only.
+set -eu
+cd "$(dirname "$0")/.."
+fail() { echo "FAIL: $*" >&2; exit 1; }
+mk=scripts/mainline-make-root
+ov=kernel/mainline/root-overlay
+init=kernel/mainline/super-root-init
+
+# The region is the same in the writer and in stage 1, and the writer only reaches it through a bounded loop.
+for v in OFF SIZE; do
+	a=$(sed -n "s/^$v=\([0-9]*\).*/\1/p" "$mk" | head -1)
+	b=$(sed -n "s/^$v=\([0-9]*\).*/\1/p" "$init" | head -1)
+	[ -n "$a" ] && [ "$a" = "$b" ] || fail "$v differs between $mk ($a) and $init ($b)"
+done
+grep -qF 'losetup -f --show -o $OFF --sizelimit $SIZE $DEV' "$mk" || fail "$mk does not bound its loop to the region"
+grep -qF '[ "$before" = "$after" ] || fail "super changed outside the region"' "$mk" || fail "$mk does not compare super outside the region"
+grep -qF 'blkid -p $LOOP >/dev/null 2>&1 && fail' "$mk" || fail "$mk would format a region that holds another filesystem"
+# An unclean mainline shutdown leaves inodes in the orphan file, and the 4.14 kernel then refuses to mount the region
+# read-write ("unsupported optional features (10000)", 2026-11-08): e2fsck clears them before the mount.
+e=$(grep -n '^e2fsck -p $LOOP ' "$mk" | cut -d: -f1)
+m=$(grep -n '^mount -t ext4 -o noatime $LOOP $MNT' "$mk" | cut -d: -f1)
+[ -n "$e" ] && [ -n "$m" ] && [ "$e" -lt "$m" ] || fail "$mk mounts the region without running e2fsck first"
+
+# The modem's EFS is read from its partitions and served from RAM, read-only: rmtfs never gets the partitions (-P).
+m=$ov/etc/init.d/hanoip-ml-modem
+grep -q -- '--exec /usr/bin/rmtfs -- -o /run/efs -r$' "$m" || fail "rmtfs is not started on the RAM copy, read-only"
+if grep -v '^[[:space:]]*#' "$m" | grep -q 'rmtfs.* -P'; then fail "rmtfs is given the real partitions"; fi
+grep -qF 'src=/dev/disk/by-partlabel/${p%%:*}' "$m" && grep -qF 'dd if="$src" of="/run/efs/${p##*:}"' "$m" ||
+	fail "the EFS is not copied from its partitions to /run/efs"
+grep -qF 'for s in fsg_b fsg_a;' "$m" || fail "no fsg_a/fsg_b fallback (mainline has no fsg link, 2026-11-07)"
+# SMEM item 134 before the remoteprocs: without it the modem crashes 1.5 s after it is up.
+order=$(sed -n 's/.*for m in \(.*\); do/\1/p' "$m" | head -1)
+case $order in hanoip_mmi_unit_info*qcom_q6v5_pas*) ;; *) fail "hanoip_mmi_unit_info is not loaded before qcom_q6v5_pas ($order)" ;; esac
+for mod in qcom_q6v5_pas ath10k_snoc ipa qcom_pd_mapper; do
+	grep -qx "blacklist $mod" "$ov/etc/modprobe.d/hanoip-ml.conf" || fail "udev could load $mod before rmtfs runs"
+done
+grep -qx 'unmanaged-devices=interface-name:usb0' "$ov/etc/NetworkManager/conf.d/hanoip-ml.conf" || fail "NetworkManager would take usb0"
+# The modem does not start by itself on mainline (2026-11-07): the service starts it, after turning its recovery off.
+grep -qF '[ "$(cat "$r/name")" = modem ] && [ "$(cat "$r/state")" = offline ] && echo start > "$r/state"' "$m" ||
+	fail "nothing starts the modem"
+# The clock: no RTC (it read 1974), chrony up before the Wi-Fi had no source, and Tailscale's TLS failed (2026-11-07).
+d=$ov/etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony
+[ -x "$d" ] || fail "$d is not executable (NetworkManager runs only a dispatcher it may execute)"
+# This root runs OpenRC: run the dispatcher with stand-ins and nothing else on PATH (never the PC's own systemctl).
+t=$(mktemp -d)
+trap 'rm -rf "$t"' EXIT
+for c in rc-service chronyc sleep; do printf '#!/bin/sh\necho "%s $*" >> "%s/calls"\n' "$c" "$t" > "$t/$c"; chmod +x "$t/$c"; done
+PATH=$t /bin/sh "$d" wlan0 down
+[ ! -e "$t/calls" ] || fail "the chrony dispatcher acts on a connection going down"
+PATH=$t /bin/sh "$d" wlan0 up
+i=0; while ! grep -qx 'chronyc makestep' "$t/calls" 2>/dev/null && [ $i -lt 50 ]; do i=$((i + 1)); /bin/sleep 0.1; done
+grep -qx 'rc-service chronyd restart' "$t/calls" 2>/dev/null ||
+	fail "nothing restarts chronyd under OpenRC when the network comes up"
+grep -qx 'chronyc makestep' "$t/calls" || fail "the chrony dispatcher does not step the clock once chronyd has a source"
+grep -qF 'rc-update del hwclock boot' "$mk" && grep -q 'swclock; do chroot $MNT rc-update add $s boot' "$mk" ||
+	fail "the root still sets the clock from the RTC instead of swclock"
+# The PMIC arbiter does not let Linux write the RTC: with chrony's rtcsync the kernel retried it about 30 times a
+# second, a "disallowed SPMI write" each, which pushed the whole boot out of the kernel log (2026-11-08).
+grep -qF "sed -i '/^rtcsync/d' \$MNT/etc/chrony/chrony.conf" "$mk" || fail "chrony's rtcsync would make the kernel retry the RTC write"
+# scripts/reboot-bootloader runs hanoip-reboot-bootloader: without it a mainline boot had no way back to the ABL.
+grep -qx 'install -m755 /usr/bin/hanoip-reboot-bootloader $MNT/usr/bin/hanoip-reboot-bootloader' "$mk" ||
+	fail "the root has no hanoip-reboot-bootloader"
+
+# The guards of the root: other disks read-only, the dead man, the battery floor.
+g=$ov/etc/local.d/05-hanoip-ml-guard.start
+grep -qF 'case $n in loop7|"$s"|"$disk") continue ;; esac' "$g" || fail "the guard skips more than loop7, super and its disk"
+grep -qF 'case " $rw " in *" $n "*) continue ;; esac' "$g" && grep -qF '[ -e "/sys/block/$x" ] && rw="$rw $x"' "$g" ||
+	fail "the guard does not lend qbootctl only the whole disks named in /run/hanoip-ml-rw-disk"
+grep -q 'blockdev --setro' "$g" || fail "the guard does not lock the other disks"
+grep -qF 'sleep 900; [ -e /run/hanoip-ml-keep ]' "$ov/etc/local.d/20-hanoip-deadman.start" || fail "no 15-minute dead man"
+grep -qF '"$c" -lt 50' "$ov/etc/local.d/30-hanoip-battery.start" || fail "no battery floor"
+
+# Slot a as a second working slot (approved by the user on 2026-11-08, AGENTS.md): after a complete boot from slot a,
+# and only then, qbootctl -m a marks every partition of slot a and writes back the GPT of each disk that holds one
+# (LUN 4, and LUN 2 with xbl_a), lent to it whole. A boot from the PC (the ABL says _b, the server's slot) marks
+# nothing, and the dead man spares a slot-a boot.
+abl=$ov/usr/bin/hanoip-ml-abl-slot
+sm=$ov/etc/local.d/98-hanoip-ml-slot.start
+[ -x "$abl" ] && [ -x "$sm" ] || fail "no hanoip-ml-abl-slot or 98-hanoip-ml-slot.start in the overlay"
+grep -qF '[ "$(hanoip-ml-abl-slot)" = _a ] && exit 0' "$ov/etc/local.d/20-hanoip-deadman.start" ||
+	fail "the dead man would reboot a boot from slot a every 15 minutes"
+sed -n '/^PKGS="/,/"$/p' "$mk" | grep -qw qbootctl || fail "the root has no qbootctl"
+sed -n '/^chmod 755 \$MNT\/etc\/local.d/,/[^\\]$/p' "$mk" | grep -qF '$MNT/usr/bin/hanoip-ml-abl-slot' ||
+	fail "$mk does not make hanoip-ml-abl-slot executable"
+t=$(mktemp -d)
+# The ABL's command line, as U-Boot leaves it in the DT; the real one also holds the serial and the MACs.
+printf 'androidboot.mode=normal androidboot.slot_suffix=_a androidboot.dualsim=true\0' > "$t/args-a"
+printf 'androidboot.mode=normal androidboot.slot_suffix=_b\0' > "$t/args-b"
+[ "$(HANOIP_ML_ABL_ARGS=$t/args-a sh "$abl")" = _a ] && [ "$(HANOIP_ML_ABL_ARGS=$t/args-b sh "$abl")" = _b ] &&
+	[ -z "$(HANOIP_ML_ABL_ARGS=$t/missing sh "$abl")" ] || fail "hanoip-ml-abl-slot does not print just the ABL's slot suffix"
+# 98-hanoip-ml-slot.start against fakes: boot_a is sde22 on sde, xbl_a is sdc1 on sdc, foo_a has no foo_b (so qbootctl
+# leaves it alone); every command the script runs is logged with the disks lent at that moment.
+mkdir -p "$t/bin" "$t/run" "$t/pl" "$t/sysdev/soc/sde/sde22" "$t/sysdev/soc/sdc/sdc1" "$t/sysdev/soc/sdz/sdz9" "$t/sysclass"
+for x in sde/sde22 sdc/sdc1 sdz/sdz9; do ln -s "$t/sysdev/soc/$x" "$t/sysclass/${x#*/}"; done
+ln -s sde22 "$t/pl/boot_a"; ln -s sdf22 "$t/pl/boot_b"; ln -s sdc1 "$t/pl/xbl_a"; ln -s sdd1 "$t/pl/xbl_b"; ln -s sdz9 "$t/pl/foo_a"
+for c in blockdev qbootctl rc-service logger sleep; do
+	printf '#!/bin/sh\necho "%s $* rw=$(echo $(cat %s/run/hanoip-ml-rw-disk 2>/dev/null))" >> %s/log\n[ "%s" != rc-service ] || [ -z "$SSHD_DOWN" ]\n' \
+		"$c" "$t" "$t" "$c" > "$t/bin/$c"
+	chmod +x "$t/bin/$c"
+done
+cp "$abl" "$t/bin/hanoip-ml-abl-slot"
+mark() { rm -f "$t/log"; env PATH="$t/bin:$PATH" HANOIP_ML_ABL_ARGS="$t/args-$1" HANOIP_ML_RUN="$t/run" HANOIP_ML_BYPARTLABEL="$t/pl" \
+	HANOIP_ML_SYSBLOCK="$t/sysclass" SSHD_DOWN="${2:-}" sh "$sm" >/dev/null 2>&1; cat "$t/log" 2>/dev/null; }
+r=$(mark a)
+for l in 'blockdev --setrw /dev/sdc rw=sdc sde' 'blockdev --setrw /dev/sde rw=sdc sde' 'qbootctl -m a rw=sdc sde' \
+	'blockdev --setro /dev/sdc rw=sdc sde' 'blockdev --setro /dev/sde rw=sdc sde'; do
+	printf '%s\n' "$r" | grep -qx "$l" || fail "a slot-a boot did not run '$l': $r"
+done
+printf '%s\n' "$r" | grep -q 'sdz' && fail "a disk with no _b partition was lent: $r"
+[ "$(printf '%s\n' "$r" | grep -E '^(blockdev --set(rw|ro)|qbootctl) ' | cut -d' ' -f1,2 | tr '\n' ' ')" = \
+	"blockdev --setrw blockdev --setrw qbootctl -m blockdev --setro blockdev --setro " ] ||
+	fail "qbootctl does not run between --setrw and --setro: $r"
+[ ! -e "$t/run/hanoip-ml-rw-disk" ] || fail "the disks stay lent to qbootctl after the run"
+mark b | grep -qE 'qbootctl|blockdev' && fail "a boot from the PC (slot b) marked or unlocked something"
+mark a down | grep -qE 'qbootctl|blockdev' && fail "slot a was marked while sshd was not running"
+rm -rf "$t"
+
+# The boot deadline (2026-11-08: a root that stalled before local.d sat 10 minutes with no usb0 and no Wi-Fi while
+# the daemon kept feeding the watchdog). Stage 1 starts it on the new root just before switch_root; local.d's last
+# script writes the marker.
+up=$ov/etc/local.d/99-hanoip-ml-up.start
+[ -x "$up" ] && grep -qx 'touch /run/hanoip-ml-up' "$up" || fail "nothing tells stage 1's deadline that the root came up"
+a=$(grep -n '^start_deadline /newroot 300$' "$init" | cut -d: -f1)
+b=$(grep -n '^exec switch_root ' "$init" | cut -d: -f1)
+[ -n "$a" ] && [ -n "$b" ] && [ "$a" -lt "$b" ] || fail "stage 1 does not start a 5-minute boot deadline on the new root before switch_root"
+# Run the function itself the way switch_root leaves it: the FIFO deleted, the new root moved, /run a new tmpfs.
+if unshare -rm true 2>/dev/null; then
+	dl=$(sed -n '/^start_deadline() {/,/^}/p' "$init")
+	[ -n "$dl" ] || fail "no start_deadline() in $init"
+	for mark in 1 0; do
+		res=$(unshare -rm sh -c '
+			set -eu
+			mount -t tmpfs none /tmp
+			b=/tmp/b; mkdir -p $b/new $b/moved
+			mount -t tmpfs none $b/new
+			mkdir -p $b/new/run $b/new/proc $b/new/dev $b/new/var/log
+			echo "6,1,1,-;test-kmsg-line" > $b/new/dev/kmsg
+			eval "$1"
+			start_deadline $b/new 1
+			rm -f /tmp/deadline
+			mount --move $b/new $b/moved
+			mount -t tmpfs none $b/moved/run
+			mkdir -p $b/moved/run/openrc/starting && touch $b/moved/run/openrc/starting/fakesvc
+			[ "$2" = 1 ] && touch $b/moved/run/hanoip-ml-up
+			wait
+			l=$b/moved/var/log/hanoip-ml-deadline.log
+			s=$(cat $b/moved/proc/sysrq-trigger 2>/dev/null | tr -d "\n")
+			grep -q "starting/fakesvc" $l 2>/dev/null && grep -q "test-kmsg-line" $l && s="$s+log"
+			echo "$s"' sh "$dl" "$mark")
+		case $mark:$res in
+			1:) ;;
+			0:sub+log) ;;
+			*) fail "boot deadline with marker=$mark: sysrq and log '$res' (want nothing with the marker, sub+log without)" ;;
+		esac
+	done
+else
+	echo "skip  the boot-deadline run (no user namespaces here)"
+fi
+echo "ok    test-mainline-root"

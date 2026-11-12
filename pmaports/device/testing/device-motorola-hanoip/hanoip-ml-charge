@@ -1,0 +1,33 @@
+#!/bin/sh
+# Charge limit of the mainline root (docs/MAINLINE.md). The kernel's qcom_smbx (kernel/mainline/patches) leaves charging off and lets it be
+# switched with 0/1 in /sys/kernel/debug/hanoip-charge; float voltage, JEITA and termination stay with the PMIC. This
+# charges under LOW % and stops at HIGH %, and never charges over 4.30 V or with the battery over 40 C. Like the 4.14
+# charge limit, it holds the battery near 80 % on the cable. Charging is switched off when the script stops.
+# HANOIP_ML_ONCE=1 runs one pass (scripts/test-mainline-charge); the paths can be moved for the test.
+LOW=${HANOIP_ML_CHARGE_LOW:-75}
+HIGH=${HANOIP_ML_CHARGE_HIGH:-80}
+VMAX=4300000   # uV
+TMAX=400       # 0.1 C
+q=${HANOIP_ML_QG:-/sys/class/power_supply/qcom_qg}
+ctl=${HANOIP_ML_CHARGE_CTL:-/sys/kernel/debug/hanoip-charge}
+statef=${HANOIP_ML_STATE:-/run/hanoip-ml-charge.state}
+state=$(cat "$statef" 2>/dev/null || echo off)
+[ -n "${HANOIP_ML_ONCE:-}" ] || trap 'echo 0 > "$ctl"; echo off > "$statef"; exit 0' INT TERM EXIT
+while :; do
+	c=$(cat "$q/capacity" 2>/dev/null); v=$(cat "$q/voltage_now" 2>/dev/null); t=$(cat "$q/temp" 2>/dev/null)
+	if [ -z "$c" ] || [ -z "$v" ] || [ -z "$t" ]; then
+		want=off   # no gauge reading: do not charge blind
+	elif [ "$t" -ge $TMAX ] || [ "$v" -ge $VMAX ] || [ "$c" -ge "$HIGH" ]; then
+		want=off
+	elif [ "$c" -lt "$LOW" ]; then
+		want=on
+	else
+		want=$state
+	fi
+	if [ "$want" = on ]; then echo 1 > "$ctl"; else echo 0 > "$ctl"; fi
+	[ "$want" = "$state" ] || logger -t hanoip-ml-charge "charging $want at $c % $v uV $t (0.1 C)"
+	state=$want
+	echo "$state" > "$statef"
+	[ -z "${HANOIP_ML_ONCE:-}" ] || exit 0
+	sleep 60
+done

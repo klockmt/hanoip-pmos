@@ -1,0 +1,15 @@
+[Unit]
+Description=Stage 1 boot deadline marker
+Documentation=man:systemd.service(5)
+DefaultDependencies=no
+After=multi-user.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/touch /run/hanoip-ml-up
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

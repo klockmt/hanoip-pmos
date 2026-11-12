@@ -1,9 +1,9 @@
 # Moto G60 (hanoip) on postmarketOS: where it stands
 
-State on 2026-11-02. The goal is to run postmarketOS on the Moto G60 (hanoip) as a headless server and to publish everything
+State on 2026-11-11. The goal is to run postmarketOS on the Moto G60 (hanoip) as a headless server and to publish everything
 on GitHub with reproducible instructions and a way to update the kernel. How the phone is run: [`HOMELAB.md`](HOMELAB.md).
 What broke and where it is kept from breaking again: [`PITFALLS.md`](PITFALLS.md). The kernel plan: section 5 below; the
-parked mainline attempt: [`MAINLINE.md`](MAINLINE.md). Open work: the GitHub issues, roadmap #20.
+mainline work: [`MAINLINE.md`](MAINLINE.md). Open work: the GitHub issues, roadmap #20.
 
 | Area | State | Since | Evidence |
 |---|---|---|---|
@@ -24,7 +24,8 @@ parked mainline attempt: [`MAINLINE.md`](MAINLINE.md). Open work: the GitHub iss
 | USB host through a hub | Ethernet, a UAS disk at 24.6 MB/s and PD charging in bypass work (issue #3) | 2026-10-30 | NOTES |
 | Not supported | WireGuard (not in 4.14; Tailscale instead), a hardware watchdog (no device node), `CFS_BANDWIDTH` (needs `!SCHED_WALT`), swarm/overlay networks | | NOTES |
 | Package update flashes `boot` and `vendor_boot` | boot-deploy's images from the repo's deviceinfo boot; the 2026-10-30 hang was `console=tty0` first in the command line, now `console=ttyMSM0,115200n8` first; a package update flashed both partitions and booted (issue #21, v0.1.13) | 2026-11-02 | `scripts/test-deviceinfo`; NOTES |
-| Mainline kernel | parked (2026-11-02, section 5). No boot yet: the ABL only runs header-v3 images, so the early tests were invalid (issue #6) | | [`MAINLINE.md`](MAINLINE.md) |
+| Duranium (Nura's systemd image) on `userdata`, slot a | The running system: image `26111101` with device package `pkgrel 52`, kernel 7.3.0, delivered as an A/B update by `systemd-sysupdate` from the previous image. `running` with nothing failed; sshd is up 12.7 s into the boot and SSH over the tailnet answers 59 s after `reboot`; `hanoip-health` marks the slot the ABL booted. Running: Wi-Fi, Tailscale, nftables, AdGuard Home on loopback, the charge limit, the heat protection, the LED, the bot (`/status` answered on Telegram), zram, `hanoip-status`. The login user administers with `sudo`, root login is refused, and from the LAN no TCP port answers. Tried on the phone: ten reboots in a row (nine `running`, one `degraded` by a Bluetooth unit that no longer runs), an update, the automatic rollback from a UKI broken on purpose (back in 117 s), a kernel panic (back in 197 s). The NAS disk mounts by hand and Samba and Syncthing start (445 answers over the tailnet only, Syncthing scanned its folder). **Not checked yet:** a Samba login and a Syncthing sync from a client, the disk mounted by itself (at boot, or when it arrives later), the hub after a reboot (the port comes up in the device role; setting the role switch to host by hand brings the hub back at 12 Mbit/s only), the new U-Boot (in `boot_b`, never booted; `boot_a` has the previous one), slot b as Duranium, a boot with sshd down, Wi-Fi loss, a 24 h run | 2026-11-11 | [`DURANIUM.md`](DURANIUM.md), section "Where it stands"; `scripts/test-duranium-boot` |
+| Mainline kernel | the goal again (section 5). Linux 7.3 (our tree, `kernel/mainline`, with the hardware watchdog on) boots RAM-only through our U-Boot to our test initramfs: USB network and serial, 8 CPUs with cpufreq, battery read in hold on the cable, UFS read-only with reads matching the backup, and an unfed `qcom_wdt` resets the phone back to the server by itself. A root in super's free region (Alpine edge + pmOS repo, OpenRC) boots by itself to Wi-Fi through the modem, Tailscale (SSH over the tailnet in 133 s), nftables, chrony and a 75-80 % charge limit, with every other disk read-only; U-Boot in `boot_a` reads the kernel from UFS and boots that root with no PC (from slot a itself, SSH in 113 s; slot a then marks itself successful, so both slots work; slot b, the server, is active again), and a boot that stalls reboots by itself after 5 minutes; the server's own services are still missing (issue #6) | 2026-11-08 | [`MAINLINE.md`](MAINLINE.md), sections 7 to 7d |
 
 ## 1. Device
 | Item | Value |
@@ -67,17 +68,25 @@ parked mainline attempt: [`MAINLINE.md`](MAINLINE.md). Open work: the GitHub iss
 - **Wi-Fi:** see `userspace/modem/README.md`.
 
 
-## 5. Kernel plan (2026-11-02)
+## 5. Kernel plan (2026-11-07)
 
-The phone stays on the downstream 4.14 kernel, and that kernel becomes ours. Nothing of this is done yet.
+Mainline is the goal again: first make it boot on this phone, then make it the server. Until then the downstream 4.14
+server keeps running on slot `b`, frozen as release v0.2.2.
 
-- **Our own kernel.** Fork the tree we build today (cool585's `android_kernel_motorola_sm6150`, commit `b92cb6cd`) into a
-  repository of our own, so the phone no longer depends on cool585's Cybertron releases. `scripts/build-kernel` and the
-  `linux-motorola-hanoip` APKBUILD then point at the fork.
-- **Our own patches.** `kernel/downstream-patches/0001-0010` become the first commits of the fork; new fixes go there, each
-  with its test, as now.
-- **Hardened for a server.** Turn off what a headless server does not use and turn on the hardening the 4.14 tree offers
-  (candidates to check: stack protector, hardened usercopy, `FORTIFY_SOURCE`, freelist hardening, module signature
-  enforcement, `kptr_restrict`/`dmesg_restrict`). Check each option against the running config first and enforce it in
-  `scripts/test-kernel-config`.
-- **Mainline is parked**, far in the background. [`MAINLINE.md`](MAINLINE.md) stays as the record of what was tried.
+- **Start from what boots.** Linux 7.3 from kernel.org (the release tarball, checked against `sha256sums.asc`) plus the patches in `kernel/mainline/patches` runs
+  on this phone RAM-only: the ABL `fastboot boot`s our U-Boot, which `fastboot boot`s the kernel with the DTB built
+  into U-Boot (`MAINLINE.md`, section 7).
+- **RAM-only until approved.** Every test is a `fastboot boot`; a test initramfs locks every disk read-only and never mounts
+  `userdata`, which holds the server. Nothing is flashed until the user approves it.
+- **Then the server pieces**, each with its test: the charge limit (the PM6150 charger is not upstream yet), a hardware
+  watchdog, Wi-Fi and the modem, the USB network, Tailscale and the firewall. Packaging can move to systemd.
+- **Next: Nura's Duranium as the server** (immutable, A/B updates with rollback; decided by the user on 2026-11-08,
+  in all of `userdata`, in place of the 4.14). Our U-Boot already has what it needs (EFI, `blkmap`), and its LUKS2
+  unlocks by itself with a blank passphrase (`MAINLINE.md`, section 7e). In order, each with its test: a pmaports
+  package of our 7.3 kernel; a mainline device package that boots through EFI; a firmware package built only
+  locally (the vendor blobs are not ours to publish); systemd units for the modem start, the charge limit and the
+  guard; a `duranium-build` image (console) set up without the on-screen first-boot wizard; U-Boot's EFI boot of
+  `userdata` through `blkmap`. Slot b then holds our U-Boot and the Alpine root in super as the rescue system.
+  Last, after a verified backup of the 4.14 root and a new confirmation from the user: `userdata` is written.
+  The server's services move with it. The steps in detail: [`DURANIUM.md`](DURANIUM.md).
+- The 2026-11-02 plan (our own hardened 4.14 kernel) is on hold; the 4.14 still gets fixes while it is the server.

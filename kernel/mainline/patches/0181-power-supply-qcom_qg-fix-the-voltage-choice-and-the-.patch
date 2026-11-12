@@ -1,0 +1,154 @@
+From ea78ccaac88b010f4c8fe04d9d193101e915fddd Mon Sep 17 00:00:00 2001
+From: hanoip <h@l>
+Date: Tue, 27 Oct 2026 16:01:13 -0300
+Subject: [PATCH 181/194] power: supply: qcom_qg: fix the voltage choice and
+ the coulomb sign
+
+Audit of the whole capacity path, with the numbers checked against the OCV table:
+
+- the plausibility fallback was dead code: voltage_now was tested before being
+  set and then overwritten by a second read of the averaged register, with no
+  validation afterwards. A 0 V sample looks up as 0% and, while discharging,
+  the snap rule took the reported value there (this is the '0% should be
+  ignored' seen in UPower);
+- the coulomb budget took abs(current), so a charger that reports 'charging'
+  while the battery delivers current (screen on, 500 mA port) added charge that
+  never went in;
+- ocv2cap() can fail; treat it like an unusable sample instead of clamping to 0;
+- cap the snap so a single absurd sample can never move the value more than 30
+  points.
+
+The voltage is now chosen once (averaged, then last ADC, then SDAM OCV) before
+the estimate, and never re-read.
+---
+ drivers/power/supply/qcom_qg.c | 76 ++++++++++++++++++++--------------
+ 1 file changed, 44 insertions(+), 32 deletions(-)
+
+diff --git a/drivers/power/supply/qcom_qg.c b/drivers/power/supply/qcom_qg.c
+index 3fad7c4e4..1507ab49b 100644
+--- a/drivers/power/supply/qcom_qg.c
++++ b/drivers/power/supply/qcom_qg.c
+@@ -49,7 +49,8 @@
+  * example a bad first sample right after probe). Adopt the estimate at once
+  * instead of walking 1% per two minutes towards it.
+  */
+-#define QG_SOC_SNAP			10
++#define QG_SOC_SNAP			10	/* adota na hora acima disto ... */
++#define QG_SOC_SNAP_MAX			30	/* ... mas nunca um salto maior */
+ 
+ /*
+  * The gauge ADC returns implausible values right after boot (measured 6.38 V
+@@ -222,8 +223,16 @@ static void qcom_qg_coul_update(struct qcom_qg_chip *chip, int current_ua,
+ 	if (qcom_qg_batt_full_uah(chip, &full) || full <= 0)
+ 		return;
+ 
+-	/* |I| * dt in uA*s -> milli-percent of the full capacity */
+-	add = div_s64((s64)abs(current_ua) * dt * 100000, 3600LL * full);
++	/*
++	 * Only count charge going IN. The status can say "charging" while the
++	 * battery is actually delivering current (screen on with a 500 mA
++	 * port), and taking the magnitude there would raise the percentage
++	 * while the battery drains.
++	 */
++	if (current_ua <= 0)
++		return;
++
++	add = div_s64((s64)current_ua * dt * 100000, 3600LL * full);
+ 
+ 	chip->coul_mpercent += add;
+ 	if (chip->coul_mpercent > QG_COUL_MAX_MPCT)
+@@ -259,7 +268,8 @@ static int qcom_qg_smooth_capacity(struct qcom_qg_chip *chip, int soc,
+ 	 * charging: there the raw estimate is inflated by polarisation, and
+ 	 * adopting it would jump the percentage upwards.
+ 	 */
+-	if (!charging && abs(delta) > QG_SOC_SNAP) {
++	if (!charging && abs(delta) > QG_SOC_SNAP &&
++	    abs(delta) <= QG_SOC_SNAP_MAX) {
+ 		chip->msoc = soc;
+ 		chip->msoc_jiffies = now;
+ 		return soc;
+@@ -351,19 +361,29 @@ static int qcom_qg_get_capacity(struct qcom_qg_chip *chip,
+ 	 * first plausible source instead of giving up: averaged sample, then
+ 	 * the last ADC sample, then the OCV kept in the SDAM.
+ 	 */
+-	if (!qcom_qg_voltage_ok(voltage_now)) {
+-		int last_adc = 0, ocv = 0;
+-
+-		qcom_qg_get_voltage(chip, QG_LAST_ADC_V_DATA0_REG, &last_adc);
+-		if (qcom_qg_voltage_ok(last_adc)) {
+-			voltage_now = last_adc;
+-		} else if (!qcom_qg_get_sdam_ocv(chip, &ocv) &&
+-			   qcom_qg_voltage_ok(ocv)) {
+-			voltage_now = ocv;
++	/*
++	 * Choose the voltage ONCE, before estimating, and never read it again
++	 * below: the averaged register returns 0 now and then, and the ADC is
++	 * unreliable right after boot. A 0 V sample looks up as 0% and, while
++	 * discharging, the snap rule would take the reported value there.
++	 */
++	{
++		int v_avg = 0, v_adc = 0, v_ocv = 0;
++
++		qcom_qg_get_voltage(chip, QG_S2_NORMAL_AVG_V_DATA0_REG, &v_avg);
++		qcom_qg_get_voltage(chip, QG_LAST_ADC_V_DATA0_REG, &v_adc);
++		qcom_qg_get_sdam_ocv(chip, &v_ocv);
++
++		if (qcom_qg_voltage_ok(v_avg)) {
++			voltage_now = v_avg;
++		} else if (qcom_qg_voltage_ok(v_adc)) {
++			voltage_now = v_adc;
++		} else if (qcom_qg_voltage_ok(v_ocv)) {
++			voltage_now = v_ocv;
+ 		} else {
+ 			dev_dbg(chip->dev,
+-				"no plausible battery voltage (avg %d), keeping the last capacity\n",
+-				voltage_now);
++				"no plausible battery voltage (avg %d adc %d ocv %d)\n",
++				v_avg, v_adc, v_ocv);
+ 			guard(mutex)(&chip->lock);
+ 			if (chip->msoc >= 0) {
+ 				*val = chip->msoc;
+@@ -374,16 +394,6 @@ static int qcom_qg_get_capacity(struct qcom_qg_chip *chip,
+ 	}
+ 
+ 	if (info->ocv_table[0]) {
+-		/*
+-		 * Use the hardware averaged samples: the "last ADC" values move
+-		 * by tens of mV between two reads, which is pure noise for a
+-		 * voltage -> state of charge lookup.
+-		 */
+-		ret = qcom_qg_get_voltage(chip, QG_S2_NORMAL_AVG_V_DATA0_REG,
+-					  &voltage_now);
+-		if (ret)
+-			return ret;
+-
+ 		ret = iio_read_channel_processed(chip->batt_therm_chan, &temp);
+ 		if (ret < 0)
+ 			return ret;
+@@ -397,14 +407,16 @@ static int qcom_qg_get_capacity(struct qcom_qg_chip *chip,
+ 		/* millidegC to degC as used by ocv-capacity-celsius */
+ 		soc = power_supply_batinfo_ocv2cap(info, voltage_now - ir_drop,
+ 						   temp / 1000);
+-	} else {
+-		ret = qcom_qg_get_voltage(chip,
+-					QG_S2_NORMAL_AVG_V_DATA0_REG, &voltage_now);
+-		if (ret) {
+-			dev_err(chip->dev, "Failed to get current voltage: %d\n", ret);
+-			return ret;
++		if (soc < 0) {
++			dev_dbg(chip->dev, "ocv2cap failed: %d\n", soc);
++			guard(mutex)(&chip->lock);
++			if (chip->msoc >= 0) {
++				*val = chip->msoc;
++				return 0;
++			}
++			return -EAGAIN;
+ 		}
+-
++	} else {
+ 		if (voltage_now <= voltage_min)
+ 			soc = 0;
+ 		else if (voltage_now >= voltage_max)
+-- 
+2.43.0
+

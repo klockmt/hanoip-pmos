@@ -1,0 +1,131 @@
+From 985edb5446749c71fb09c0ef8aad557daa5614a1 Mon Sep 17 00:00:00 2001
+From: Jens Reidel <adrian@mainlining.org>
+Date: Sun, 26 Oct 2025 16:43:53 +0100
+Subject: [PATCH 095/194] arm64: dts: qcom: sm7150-xiaomi-davinci: Split up DTS
+
+Signed-off-by: Jens Reidel <adrian@mainlining.org>
+---
+ arch/arm64/boot/dts/qcom/Makefile             |  3 ++-
+ .../qcom/sm7150-xiaomi-davinci-samsung.dts    | 21 +++++++++++++++
+ .../qcom/sm7150-xiaomi-davinci-visionox.dts   | 26 +++++++++++++++++++
+ ...davinci.dts => sm7150-xiaomi-davinci.dtsi} | 11 +-------
+ 4 files changed, 50 insertions(+), 11 deletions(-)
+ create mode 100644 arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci-samsung.dts
+ create mode 100644 arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci-visionox.dts
+ rename arch/arm64/boot/dts/qcom/{sm7150-xiaomi-davinci.dts => sm7150-xiaomi-davinci.dtsi} (98%)
+
+diff --git a/arch/arm64/boot/dts/qcom/Makefile b/arch/arm64/boot/dts/qcom/Makefile
+index 8d132701e..1a0ba42c0 100644
+--- a/arch/arm64/boot/dts/qcom/Makefile
++++ b/arch/arm64/boot/dts/qcom/Makefile
+@@ -352,7 +352,8 @@ dtb-$(CONFIG_ARCH_QCOM)	+= sm6375-sony-xperia-murray-pdx225.dtb
+ dtb-$(CONFIG_ARCH_QCOM)	+= sm7125-xiaomi-curtana.dtb
+ dtb-$(CONFIG_ARCH_QCOM)	+= sm7125-xiaomi-joyeuse.dtb
+ dtb-$(CONFIG_ARCH_QCOM)	+= sm7150-google-sunfish.dtb
+-dtb-$(CONFIG_ARCH_QCOM)	+= sm7150-xiaomi-davinci.dtb
++dtb-$(CONFIG_ARCH_QCOM)	+= sm7150-xiaomi-davinci-samsung.dtb
++dtb-$(CONFIG_ARCH_QCOM)	+= sm7150-xiaomi-davinci-visionox.dtb
+ dtb-$(CONFIG_ARCH_QCOM)	+= sm7150-xiaomi-surya-huaxing.dtb
+ dtb-$(CONFIG_ARCH_QCOM)	+= sm7150-xiaomi-surya-tianma.dtb
+ dtb-$(CONFIG_ARCH_QCOM)	+= sm7150-xiaomi-sweet.dtb
+diff --git a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci-samsung.dts b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci-samsung.dts
+new file mode 100644
+index 000000000..2ba70428a
+--- /dev/null
++++ b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci-samsung.dts
+@@ -0,0 +1,21 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * Copyright (c) 2025, Jens Reidel <adrian@mainlining.org>
++ */
++
++/dts-v1/;
++
++#include "sm7150-xiaomi-davinci.dtsi"
++
++/ {
++	/*
++	 * Xiaomi Mi 9T
++	 * Xiaomi Redmi K20
++	 */
++	model = "Xiaomi Mi 9T (Samsung)";
++	compatible = "xiaomi,davinci-samsung", "xiaomi,davinci", "qcom,sm7150";
++};
++
++&panel {
++	compatible = "samsung,ams639rq08";
++};
+diff --git a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci-visionox.dts b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci-visionox.dts
+new file mode 100644
+index 000000000..e749e730f
+--- /dev/null
++++ b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci-visionox.dts
+@@ -0,0 +1,26 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * Copyright (c) 2025, Jens Reidel <adrian@mainlining.org>
++ */
++
++/dts-v1/;
++
++#include "sm7150-xiaomi-davinci.dtsi"
++
++/ {
++	/*
++	 * Xiaomi Mi 9T
++	 * Xiaomi Redmi K20
++	 */
++	model = "Xiaomi Mi 9T (Visionox)";
++	compatible = "xiaomi,davinci-visionox", "xiaomi,davinci", "qcom,sm7150";
++};
++
++&panel {
++	compatible = "visionox,g1639fp106";
++};
++
++&touchscreen {
++	touchscreen-inverted-x;
++	touchscreen-inverted-y;
++};
+diff --git a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dts b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi
+similarity index 98%
+rename from arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dts
+rename to arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi
+index 17258df85..ee7ee17c0 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dts
++++ b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi
+@@ -31,13 +31,6 @@ &tz_mem {
+ };
+ 
+ / {
+-	/*
+-	 * Xiaomi Mi 9T
+-	 * Xiaomi Redmi K20
+-	 */
+-	model = "Xiaomi Mi 9T";
+-	compatible = "xiaomi,davinci", "qcom,sm7150";
+-
+ 	qcom,board-id = <40 0>;
+ 
+ 	vreg_ibb: regulator-ibb {
+@@ -328,8 +321,6 @@ &nxp {
+ };
+ 
+ &panel {
+-	compatible = "samsung,ams639rq08"; // or visionox,g1639fp106
+-
+ 	vsn-supply = <&vreg_ibb>;
+ 	vsp-supply = <&vreg_lab>;
+ };
+@@ -366,7 +357,7 @@ led-2 {
+ 
+ &pm6150l_gpios {
+ 	gpio-line-names = "NC", /* GPIO_1 */
+-			  "KYPD_VOLP_N",
++			  "KEY_VOLP_N",
+ 			  "CAMW_LDO_EN",
+ 			  "NC",
+ 			  "NC",
+-- 
+2.43.0
+

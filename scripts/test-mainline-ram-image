@@ -1,0 +1,73 @@
+#!/bin/sh
+# Checks the mainline boot images (no phone needed): the safety rules of kernel/mainline/ram-test-init and
+# super-root-init, and that scripts/mainline-ram-image packs fake inputs into a header-v2 image whose DTB sits where
+# U-Boot looks for it.
+set -eu
+cd "$(dirname "$0")/.."
+init=kernel/mainline/ram-test-init
+fail() { echo "FAIL: $*" >&2; exit 1; }
+code=$(grep -v '^[[:space:]]*#' "$init")
+
+# Every disk read-only before anything else: the first lock_all call comes before the USB gadget, and a loop keeps
+# locking the UFS LUNs that probe late. userdata is the server and super holds the Android volumes.
+first_lock=$(echo "$code" | grep -n '^lock_all$' | head -1 | cut -d: -f1)
+gadget=$(echo "$code" | grep -n 'usb_gadget' | head -1 | cut -d: -f1)
+[ -n "$first_lock" ] && [ -n "$gadget" ] && [ "$first_lock" -lt "$gadget" ] || fail "lock_all does not run before the USB gadget"
+echo "$code" | grep -q 'blockdev --setro' || fail "lock_all does not set the disks read-only"
+echo "$code" | grep -q 'while :; do lock_all; sleep 1; done' || fail "no loop locks the disks that show up later"
+# Nothing from a disk is ever mounted, looped or switched to.
+if echo "$code" | grep -qE 'mount[^-]*/dev/(sd|mmc|disk|loop)|losetup|switch_root|pivot_root'; then fail "the init touches a disk"; fi
+# The dead man reboots the phone back to the server if nobody logs in.
+echo "$code" | grep -q 'sleep 600; \[ -e /tmp/keep \] || {.*reboot -f' || fail "no 10-minute dead man"
+# The shell listens on the USB address only.
+echo "$code" | grep -q 'nc -lk -s 172.16.42.1 -p 2323 -e /bin/sh' || fail "the nc shell is not bound to 172.16.42.1"
+grep -q 'panic=5 oops=panic' scripts/mainline-ram-image || fail "the image command line lacks panic=5 oops=panic"
+
+# super-root-init: only the approved region of super is ever opened, through the bounded loop, and only if it holds
+# ext4 "hanoip_ml"; everything but super and its disk stays read-only (AGENTS.md).
+s1=kernel/mainline/super-root-init
+code1=$(grep -v '^[[:space:]]*#' "$s1")
+echo "$code1" | grep -q '^OFF=1174405120\b' || fail "the region offset is not 1120 MiB"
+echo "$code1" | grep -q '^SIZE=2516582400\b' || fail "the region size is not 2400 MiB"
+echo "$code1" | grep -q 'bounded-loop /dev/loop7 "/dev/$s" $OFF $SIZE' || fail "super is not opened through the bounded loop"
+echo "$code1" | grep -q 'loop/sizelimit)" = $SIZE' || fail "the loop size limit is not checked"
+if echo "$code1" | grep -q 'losetup'; then fail "super-root-init uses losetup (no size limit)"; fi
+# One command per line, so a second mount after a ";" is looked at on its own.
+other=$(echo "$code1" | tr ';&|' '\n\n\n' | grep -E '(^|[[:space:]])mount ' | grep -v -e 'mount -t proc proc /proc' \
+	-e 'mount -t sysfs sysfs /sys' -e 'mount -t devtmpfs devtmpfs /dev' -e 'mount -t devpts devpts /dev/pts' \
+	-e 'mount -t configfs none /sys/kernel/config' -e 'mount --move /$m /newroot/$m' \
+	-e 'mount -t ext4 -o rw,noatime /dev/loop7 /newroot' || true)
+[ -z "$other" ] || fail "super-root-init mounts something other than the bounded loop: $other"
+lbl=$(echo "$code1" | grep -n 'blkid /dev/loop7' | cut -d: -f1)
+mnt=$(echo "$code1" | grep -n 'mount -t ext4' | cut -d: -f1)
+[ -n "$lbl" ] && [ -n "$mnt" ] && [ "$lbl" -lt "$mnt" ] || fail "the label is not checked before the mount"
+echo "$code1" | grep -q 'blockdev --setro' || fail "super-root-init does not lock the other disks"
+# The loop that keeps locking may start only once super is known: started while the UFS LUNs probed, it locked super
+# and its disk before their names showed up, and the root failed to mount with I/O errors (2026-11-07).
+[ "$(echo "$code1" | grep -c 'while :; do lock_all; sleep 1; done')" = 1 ] &&
+	echo "$code1" | grep 'while :; do lock_all; sleep 1; done' | grep -q '^start_guard()' ||
+	fail "the locking loop is started outside start_guard"
+main=$(echo "$code1" | awk '/^rescue\(\) \{/ { skip = 1 } !skip { print } skip && /^}/ { skip = 0 }')
+sd=$(echo "$main" | grep -n '^s=$(super_dev)$' | head -1 | cut -d: -f1)
+g=$(echo "$main" | grep -n '^start_guard$' | head -1 | cut -d: -f1)
+rw=$(echo "$main" | grep -n 'blockdev --setrw "/dev/$s"' | head -1 | cut -d: -f1)
+bl=$(echo "$main" | grep -n '^bounded-loop ' | head -1 | cut -d: -f1)
+[ -n "$sd" ] && [ -n "$g" ] && [ "$g" -gt "$sd" ] || fail "the locking loop starts before super is known"
+[ -n "$rw" ] && [ -n "$bl" ] && [ "$rw" -lt "$bl" ] || fail "super is not made writable before the bounded loop"
+echo "$code1" | grep -q 'watchdog -T 30 -t 5 /dev/watchdog' || fail "super-root-init does not feed the hardware watchdog"
+echo "$code1" | grep -q 'sleep 600; \[ -e /tmp/keep \] || {.*reboot -f' || fail "the rescue path has no dead man"
+
+if ! command -v mkbootimg >/dev/null 2>&1 || ! command -v cpio >/dev/null 2>&1 || ! command -v "${CROSS_COMPILE:-aarch64-linux-gnu-}gcc" >/dev/null 2>&1; then
+	echo "ok    test-mainline-ram-image (packing skipped: no mkbootimg, cpio or aarch64 gcc)"
+	exit 0
+fi
+dir=$(mktemp -d)
+trap 'rm -rf "$dir"' EXIT
+mkdir -p "$dir/out" "$dir/mods/7.3.0-test/kernel"
+head -c 4096 /dev/urandom | gzip -n > "$dir/out/Image.gz"
+{ printf '\320\015\376\355'; head -c 2044 /dev/zero; } > "$dir/out/kernel.dtb"
+tar -C "$dir/mods" -czf "$dir/out/modules-7.3.0-test.tar.gz" 7.3.0-test
+printf '#!/bin/sh\n' > "$dir/busybox"
+HANOIP_MAINLINE_DIR=$dir BUSYBOX=$dir/busybox scripts/mainline-ram-image "$dir/test.img" >/dev/null || fail "packing fake inputs failed"
+[ -s "$dir/test.img" ] || fail "no image written"
+echo "ok    test-mainline-ram-image"

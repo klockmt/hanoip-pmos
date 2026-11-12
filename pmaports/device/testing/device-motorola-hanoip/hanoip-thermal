@@ -8,7 +8,10 @@
 # The HANOIP_* variables override the limits and paths, for tests (scripts/test-thermal).
 # shortcut: the cap is a percentage of the top frequency and the kernel rounds it to a table entry; upgrade to
 # a table of frequencies if a coarse step ever matters.
-bat=${HANOIP_BATTERY_DIR:-/sys/class/power_supply/battery}
+# The 4.14 names the gauge "battery", the mainline one "qcom_qg"; both give temp in tenths of a degree.
+psu=${HANOIP_PSU_DIR:-/sys/class/power_supply}
+bat=${HANOIP_BATTERY_DIR:-$psu/battery}
+[ -n "${HANOIP_BATTERY_DIR:-}" ] || [ -r "$bat/temp" ] || bat=$psu/qcom_qg
 cpu=${HANOIP_CPU_DIR:-/sys/devices/system/cpu}
 flag=${HANOIP_THERMAL_FLAG:-/run/hanoip-thermal.hot}
 state=${HANOIP_THERMAL_STATE:-/run/hanoip-thermal.state}

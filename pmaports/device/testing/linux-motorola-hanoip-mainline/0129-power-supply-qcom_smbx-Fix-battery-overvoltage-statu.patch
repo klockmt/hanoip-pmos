@@ -1,0 +1,43 @@
+From a63125968fbe22cf848d4e3990e9fb97bf8802b2 Mon Sep 17 00:00:00 2001
+From: Nikodem Okrajni <nikodem.okrajni@gmail.com>
+Date: Sat, 24 Oct 2026 21:10:07 +0200
+Subject: [PATCH 129/194] power: supply: qcom_smbx: Fix battery overvoltage
+ status
+
+smbx_ov_status() tests the register offset instead of the value it
+just read, so the result depends only on the offset and is always 0
+for both generations: BATTERY_CHARGER_STATUS_2 (0x07) & BIT(5) on SMB2
+and BATTERY_CHARGER_STATUS_7 (0x0d) & BIT(1) on SMB5. Battery
+overvoltage is never reported.
+
+Testing the value alone is not enough on SMB5. There the BAT_OV bit is
+BIT(1) of BATTERY_CHARGER_STATUS_2, as in downstream smb5-reg.h
+(CHARGER_ERROR_STATUS_BAT_OV_BIT) and smb5-lib.c. BIT(1) of
+BATTERY_CHARGER_STATUS_7 is BAT_TEMP_STATUS_TOO_HOT_AFP_BIT, so reading
+STATUS_7 would report a temperature fault as overvoltage.
+
+Test the value read, and read STATUS_2 on SMB5.
+
+Fixes: d3f6a47f4af3 ("FROMLIST v1 power: supply: qcom_smbx: add smb5 support")
+Link: https://github.com/sm7150-mainline/linux/issues/63
+Assisted-by: Claude:claude-opus-5-5
+---
+ drivers/power/supply/qcom_smbx.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/power/supply/qcom_smbx.c b/drivers/power/supply/qcom_smbx.c
+index 973ae476b..bbd07a176 100644
+--- a/drivers/power/supply/qcom_smbx.c
++++ b/drivers/power/supply/qcom_smbx.c
+@@ -365,7 +365,7 @@ static int smbx_ov_status(struct smb_chip *chip)
+ 		mask = SMB2_CHARGER_ERROR_STATUS_BAT_OV_BIT;
+ 		break;
+ 	case SMB5:
+-		reg = BATTERY_CHARGER_STATUS_7;
++		reg = BATTERY_CHARGER_STATUS_2;
+ 		mask = SMB5_CHARGER_ERROR_STATUS_BAT_OV_BIT;
+ 		break;
+ 	}
+-- 
+2.43.0
+

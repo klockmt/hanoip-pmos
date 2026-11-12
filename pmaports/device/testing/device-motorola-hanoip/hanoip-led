@@ -5,15 +5,19 @@
 # a trigger that never fires (kbd-scrolllock) plus a direct brightness write, and only the flash uses the timer.
 # The state is the USB supply, not battery/status: the charge limit keeps that at "Not charging" with the cable in.
 # The HANOIP_* variables override the paths and timings, for tests (scripts/test-led).
+# The 4.14 names the LED "charging" and has a timer trigger; the mainline one is "white:status" with a oneshot trigger
+# instead (each write to "shot" is one flash, ignored while the last one still runs) and a PM6150 charger supply.
 led=${HANOIP_LED_DIR:-/sys/class/leds/charging}
+[ -n "${HANOIP_LED_DIR:-}" ] || [ -d "$led" ] || led=/sys/class/leds/white:status
 ps=${HANOIP_PSU_DIR:-/sys/class/power_supply}
 on_ms=${HANOIP_LED_ON_MS:-500}
 gap_ms=${HANOIP_LED_GAP_MS:-3000}
 interval=${HANOIP_LED_INTERVAL:-2}
 
-mode=
+mode= trig=
 while :; do
-	if [ "$(cat "$ps/pc_port/online" 2>/dev/null)" = 1 ] || [ "$(cat "$ps/usb/online" 2>/dev/null)" = 1 ]; then
+	if [ "$(cat "$ps/pc_port/online" 2>/dev/null)" = 1 ] || [ "$(cat "$ps/usb/online" 2>/dev/null)" = 1 ] ||
+		[ "$(cat "$ps/hanoip-pm6150-monitor-charger/online" 2>/dev/null)" = 1 ]; then
 		new=solid
 	else
 		new=blink
@@ -24,10 +28,12 @@ while :; do
 			echo kbd-scrolllock > "$led/trigger"
 			cat "$led/max_brightness" > "$led/brightness" 2>/dev/null || echo 255 > "$led/brightness"
 		else
-			echo timer > "$led/trigger"
+			if grep -qw oneshot "$led/trigger" 2>/dev/null && ! grep -qw timer "$led/trigger"; then trig=oneshot; else trig=timer; fi
+			echo "$trig" > "$led/trigger"
 			echo "$on_ms" > "$led/delay_on"
 			echo "$gap_ms" > "$led/delay_off"
 		fi
 	fi
+	[ "$mode" != blink ] || [ "$trig" != oneshot ] || echo 1 > "$led/shot"
 	sleep "$interval"
 done

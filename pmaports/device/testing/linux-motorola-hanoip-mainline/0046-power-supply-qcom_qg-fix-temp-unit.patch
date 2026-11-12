@@ -1,0 +1,26 @@
+From 373456948d87f9a7b86294bd4219abd4733119b7 Mon Sep 17 00:00:00 2001
+From: Luca Weiss <luca.weiss@fairphone.com>
+Date: Fri, 20 Dec 2024 14:45:18 +0100
+Subject: [PATCH 046/194] power: supply: qcom_qg: fix temp unit
+
+It's 1/10th degree celsius (see sysfs docs) and not 1/1000th degree
+celsius (see vadc driver)
+---
+ drivers/power/supply/qcom_qg.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/power/supply/qcom_qg.c b/drivers/power/supply/qcom_qg.c
+index 5f79b0efc..db502b487 100644
+--- a/drivers/power/supply/qcom_qg.c
++++ b/drivers/power/supply/qcom_qg.c
+@@ -186,6 +186,7 @@ static int qcom_qg_get_property(struct power_supply *psy,
+ 					(chip->batt_therm_chan, &val->intval);
+ 		if (ret < 0)
+ 			return ret;
++		val->intval /= 100; /* 1/1000 °C (millidegC) to 1/10 °C */
+ 		break;
+ 	default:
+ 		dev_err(chip->dev, "invalid property: %d\n", psp);
+-- 
+2.43.0
+

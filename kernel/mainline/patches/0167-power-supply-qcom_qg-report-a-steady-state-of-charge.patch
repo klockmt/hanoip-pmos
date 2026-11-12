@@ -1,0 +1,124 @@
+From 653c97d20dc988d4d06caecd23f2f9b41cd79c10 Mon Sep 17 00:00:00 2001
+From: hanoip <h@l>
+Date: Tue, 27 Oct 2026 11:41:36 -0300
+Subject: [PATCH 167/194] power: supply: qcom_qg: report a steady state of
+ charge
+
+The estimate is derived from a voltage, and the reported value followed it
+with a 1% per 20 s walker that also only moved in one direction depending on
+the charging state. On the hanoip the percentage therefore drifted
+continuously (93%, 92%, 91% in 26 s with 0 mA of current) and jumped when
+apps caused load transients.
+
+Use the hardware averaged voltage and current samples instead of the last ADC
+ones, ignore estimates inside a 2% deadband, never report a drop while
+charging, and slow the walker down to 1% per 2 minutes.
+---
+ drivers/power/supply/qcom_qg.c | 50 ++++++++++++++++++++++++++--------
+ 1 file changed, 38 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/power/supply/qcom_qg.c b/drivers/power/supply/qcom_qg.c
+index 4d93d6f44..938085fa6 100644
+--- a/drivers/power/supply/qcom_qg.c
++++ b/drivers/power/supply/qcom_qg.c
+@@ -35,8 +35,14 @@
+ /* Larger IR drops come from glitched current readings, not the battery */
+ #define QG_MAX_IR_DROP_UV		300000
+ 
+-/* Fastest change of the reported capacity, 1% per step */
+-#define QG_MSOC_STEP_MS			20000
++/*
++ * Deadband for the reported capacity: an estimate closer than this to the
++ * reported value is ADC/load noise and is ignored.
++ */
++#define QG_SOC_HYSTERESIS		2
++
++/* Fastest drift of the reported capacity: 1% per QG_SOC_STEP_MS. */
++#define QG_SOC_STEP_MS			120000
+ 
+ struct qcom_qg_chip {
+ 	struct device *dev;
+@@ -128,15 +134,17 @@ static int qcom_qg_get_status(struct qcom_qg_chip *chip,
+ }
+ 
+ /*
+- * Voltage based estimates jump with the load, e.g. by ~15% when a charger is
+- * plugged in. Let the reported capacity follow them by at most 1% per
+- * QG_MSOC_STEP_MS, and only in the direction the battery current flows.
++ * Voltage based estimates are noisy: they jump with the load (tens of mV on a
++ * phone), with the ADC (~25 mV is 2% here) and when a charger is plugged in.
++ * Report only changes that are clearly outside the noise, and drift towards
++ * them slowly, so the percentage does not flicker.
+  */
+ static int qcom_qg_smooth_capacity(struct qcom_qg_chip *chip, int soc,
+ 				   bool charging)
+ {
+ 	unsigned long now = jiffies;
+ 	unsigned int steps;
++	int delta;
+ 
+ 	guard(mutex)(&chip->lock);
+ 
+@@ -146,14 +154,24 @@ static int qcom_qg_smooth_capacity(struct qcom_qg_chip *chip, int soc,
+ 		return soc;
+ 	}
+ 
+-	steps = (now - chip->msoc_jiffies) / msecs_to_jiffies(QG_MSOC_STEP_MS);
++	delta = soc - chip->msoc;
++
++	/* Inside the deadband: keep what we are showing. */
++	if (abs(delta) <= QG_SOC_HYSTERESIS)
++		return chip->msoc;
++
++	/* While charging the battery only gains charge, never report a drop. */
++	if (charging && delta < 0)
++		return chip->msoc;
++
++	steps = (now - chip->msoc_jiffies) / msecs_to_jiffies(QG_SOC_STEP_MS);
+ 	if (!steps)
+ 		return chip->msoc;
+ 
+-	if (charging && soc > chip->msoc)
+-		chip->msoc += min_t(unsigned int, soc - chip->msoc, steps);
+-	else if (!charging && soc < chip->msoc)
+-		chip->msoc -= min_t(unsigned int, chip->msoc - soc, steps);
++	if (delta > 0)
++		chip->msoc += min_t(unsigned int, delta, steps);
++	else
++		chip->msoc += max_t(int, delta, -(int)steps);
+ 	chip->msoc_jiffies = now;
+ 
+ 	return chip->msoc;
+@@ -172,12 +190,18 @@ static int qcom_qg_get_capacity(struct qcom_qg_chip *chip,
+ 	int voltage_min = chip->batt_info->voltage_min_design_uv;
+ 	int voltage_max = chip->batt_info->voltage_max_design_uv;
+ 
+-	ret = qcom_qg_get_current(chip, QG_LAST_ADC_I_DATA0_REG, &current_now);
++	ret = qcom_qg_get_current(chip, QG_S2_NORMAL_AVG_I_DATA0_REG,
++				  &current_now);
+ 	if (ret)
+ 		return ret;
+ 
+ 	if (info->ocv_table[0]) {
+-		ret = qcom_qg_get_voltage(chip, QG_LAST_ADC_V_DATA0_REG,
++		/*
++		 * Use the hardware averaged samples: the "last ADC" values move
++		 * by tens of mV between two reads, which is pure noise for a
++		 * voltage -> state of charge lookup.
++		 */
++		ret = qcom_qg_get_voltage(chip, QG_S2_NORMAL_AVG_V_DATA0_REG,
+ 					  &voltage_now);
+ 		if (ret)
+ 			return ret;
+@@ -220,6 +244,8 @@ static int qcom_qg_get_capacity(struct qcom_qg_chip *chip,
+ 	if (status == POWER_SUPPLY_STATUS_FULL)
+ 		soc = 100;
+ 
++	soc = clamp(soc, 0, 100);
++
+ 	*val = qcom_qg_smooth_capacity(chip, soc, current_now > 0 ||
+ 					status == POWER_SUPPLY_STATUS_FULL);
+ 
+-- 
+2.43.0
+

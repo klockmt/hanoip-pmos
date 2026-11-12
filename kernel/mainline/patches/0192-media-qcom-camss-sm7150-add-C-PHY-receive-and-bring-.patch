@@ -1,0 +1,400 @@
+From 0f576f158d788ae21cd239eaf013a1a883b1228b Mon Sep 17 00:00:00 2001
+From: hanoip <hanoip@localhost>
+Date: Thu, 29 Oct 2026 18:20:56 +0000
+Subject: [PATCH 192/194] media: qcom: camss: sm7150: add C-PHY receive and
+ bring-up diagnostics
+
+The hanoip rear main sensor (S5KHM2) is wired as C-PHY, three trios.
+Accept V4L2_MBUS_CSI2_CPHY endpoints, program the SM7150 CSIPHY v1.2
+trio settings from the vendor csiphy_3ph_v1_2_reg table (COMMON_CTRL5
+bit 2n+1 per trio) and set PHY_TYPE_SEL in the gen2 CSID. The vendor
+data-rate delta table only differs above 5.7 Gbps per trio and is not
+needed for the 30 fps modes.
+
+Bring-up module parameters, all no-ops unless written: cphy_settle_cnt
+and dphy_settle override the computed settle count, lane_map rewrites
+the data lane positions of one CSIPHY, and phy_status dumps the common
+status registers of CSIPHYs whose lanes are enabled.
+---
+ .../platform/qcom/camss/camss-csid-gen2.c     |   2 +
+ .../media/platform/qcom/camss/camss-csid.c    |   3 +
+ .../media/platform/qcom/camss/camss-csid.h    |   1 +
+ .../qcom/camss/camss-csiphy-3ph-1-0.c         | 120 ++++++++++++++++++
+ .../media/platform/qcom/camss/camss-csiphy.c  |  61 ++++++++-
+ .../media/platform/qcom/camss/camss-csiphy.h  |   5 +
+ drivers/media/platform/qcom/camss/camss.c     |   9 +-
+ 7 files changed, 195 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/media/platform/qcom/camss/camss-csid-gen2.c b/drivers/media/platform/qcom/camss/camss-csid-gen2.c
+index 8b7ec3ffd..52e13737b 100644
+--- a/drivers/media/platform/qcom/camss/camss-csid-gen2.c
++++ b/drivers/media/platform/qcom/camss/camss-csid-gen2.c
+@@ -183,6 +183,8 @@ static void __csid_configure_rx(struct csid_device *csid,
+ 	val = (lane_cnt - 1) << CSI2_RX_CFG0_NUM_ACTIVE_LANES;
+ 	val |= phy->lane_assign << CSI2_RX_CFG0_DL0_INPUT_SEL;
+ 	val |= phy->csiphy_id << CSI2_RX_CFG0_PHY_NUM_SEL;
++	if (phy->cphy)
++		val |= 1 << CSI2_RX_CFG0_PHY_TYPE_SEL;
+ 	writel_relaxed(val, csid->base + CSID_CSI2_RX_CFG0);
+ 
+ 	val = 1 << CSI2_RX_CFG1_PACKET_ECC_CORRECTION_EN;
+diff --git a/drivers/media/platform/qcom/camss/camss-csid.c b/drivers/media/platform/qcom/camss/camss-csid.c
+index 50937d6cd..44a3a23ad 100644
+--- a/drivers/media/platform/qcom/camss/camss-csid.c
++++ b/drivers/media/platform/qcom/camss/camss-csid.c
+@@ -1285,6 +1285,7 @@ static int csid_link_setup(struct media_entity *entity,
+ 			csid->phy.lane_cnt = tpg->res->lane_cnt;
+ 			csid->phy.csiphy_id = tpg->id;
+ 			csid->phy.lane_assign = csid_get_lane_assign(NULL, csid->phy.lane_cnt);
++			csid->phy.cphy = false;
+ 			csid->tpg_linked = true;
+ 		} else {
+ 			csiphy = v4l2_get_subdevdata(sd);
+@@ -1296,8 +1297,10 @@ static int csid_link_setup(struct media_entity *entity,
+ 
+ 			csid->phy.csiphy_id = csiphy->id;
+ 
++			csiphy_apply_lane_map(csiphy);
+ 			lane_cfg = &csiphy->cfg.csi2->lane_cfg;
+ 			csid->phy.lane_cnt = lane_cfg->num_data;
++			csid->phy.cphy = lane_cfg->cphy;
+ 			csid->phy.lane_assign = csid_get_lane_assign(lane_cfg, lane_cfg->num_data);
+ 			csid->tpg_linked = false;
+ 		}
+diff --git a/drivers/media/platform/qcom/camss/camss-csid.h b/drivers/media/platform/qcom/camss/camss-csid.h
+index 5296b10f6..2f08dfc76 100644
+--- a/drivers/media/platform/qcom/camss/camss-csid.h
++++ b/drivers/media/platform/qcom/camss/camss-csid.h
+@@ -68,6 +68,7 @@ struct csid_phy_config {
+ 	u8 csiphy_id;
+ 	u8 lane_cnt;
+ 	u32 lane_assign;
++	bool cphy;
+ 	u32 en_vc;
+ 	u8 need_vc_update;
+ };
+diff --git a/drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c b/drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c
+index a1faa4298..19286c167 100644
+--- a/drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c
++++ b/drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c
+@@ -14,6 +14,7 @@
+ 
+ #include <linux/delay.h>
+ #include <linux/interrupt.h>
++#include <linux/moduleparam.h>
+ #include <linux/io.h>
+ 
+ #define CSIPHY_3PH_LNn_CFG1(n)			(0x000 + 0x100 * (n))
+@@ -1125,6 +1126,10 @@ static irqreturn_t csiphy_isr(int irq, void *dev)
+  * Return settle count value or 0 if the CSI2 link frequency
+  * is not available
+  */
++static int dphy_settle = -1;
++module_param(dphy_settle, int, 0644);
++MODULE_PARM_DESC(dphy_settle, "debug: D-PHY settle count override (-1 = computed)");
++
+ static u8 csiphy_settle_cnt_calc(s64 link_freq, u32 timer_clk_rate)
+ {
+ 	u32 ui; /* ps */
+@@ -1236,11 +1241,110 @@ static void csiphy_gen2_config_lanes(struct csiphy_device *csiphy,
+ 	}
+ }
+ 
++/*
++ * SM7150 (CSIPHY v1.2) C-PHY trio settings, trio 0, from the vendor
++ * cam_csiphy_1_2_hwreg.h (csiphy_3ph_v1_2_reg). Trio n adds 0x200 * n to the
++ * 0x1xx lane block and 0x100 * n to the 0x9xx block. The vendor data-rate
++ * delta table only changes these values above 5.7 Gbps per trio.
++ */
++static const struct csiphy_lane_regs cphy_trio_regs_sm7150[] = {
++	{ 0x015c, 0x46, 0, CSIPHY_DEFAULT_PARAMS },
++	{ 0x0990, 0x08, 0, CSIPHY_DEFAULT_PARAMS },
++	{ 0x0994, 0x08, 0, CSIPHY_DEFAULT_PARAMS },
++	{ 0x0998, 0x1a, 0, CSIPHY_DEFAULT_PARAMS },
++	{ 0x098c, 0xaf, 0, CSIPHY_DEFAULT_PARAMS },
++	{ 0x0168, 0xa0, 0, CSIPHY_DEFAULT_PARAMS },
++	{ 0x016c, 0x25, 0, CSIPHY_DEFAULT_PARAMS },
++	{ 0x0104, 0x06, 0, CSIPHY_DEFAULT_PARAMS },
++	{ 0x010c, 0x00, 0, CSIPHY_SETTLE_CNT_LOWER_BYTE },
++	{ 0x0108, 0x00, 0, CSIPHY_SETTLE_CNT_HIGHER_BYTE },
++	{ 0x0114, 0x20, 0, CSIPHY_DEFAULT_PARAMS },
++	{ 0x0150, 0x00, 0, CSIPHY_DEFAULT_PARAMS },
++	{ 0x0188, 0x00, 0, CSIPHY_DEFAULT_PARAMS },
++	{ 0x018c, 0x7f, 0, CSIPHY_DEFAULT_PARAMS },
++	{ 0x0190, 0x7f, 0, CSIPHY_DEFAULT_PARAMS },
++	{ 0x0118, 0x3e, 0, CSIPHY_DEFAULT_PARAMS },
++	{ 0x011c, 0x41, 0, CSIPHY_DEFAULT_PARAMS },
++	{ 0x0120, 0x41, 0, CSIPHY_DEFAULT_PARAMS },
++	{ 0x0124, 0x7f, 0, CSIPHY_DEFAULT_PARAMS },
++	{ 0x0128, 0x00, 0, CSIPHY_DEFAULT_PARAMS },
++	{ 0x012c, 0x00, 0, CSIPHY_DEFAULT_PARAMS },
++	{ 0x0144, 0x22, 0, CSIPHY_DEFAULT_PARAMS },
++	{ 0x0160, 0x02, 0, CSIPHY_DEFAULT_PARAMS },
++	{ 0x01cc, 0x41, 0, CSIPHY_DEFAULT_PARAMS },
++	{ 0x0164, 0x33, 0, CSIPHY_DEFAULT_PARAMS },
++	{ 0x01dc, 0x50, 0, CSIPHY_DEFAULT_PARAMS },
++	{ 0x0984, 0xa0, 0, CSIPHY_DEFAULT_PARAMS },
++	{ 0x09b0, 0x01, 0, CSIPHY_DEFAULT_PARAMS },
++	{ 0x09b4, 0x02, 0, CSIPHY_DEFAULT_PARAMS },
++};
++
++static int cphy_settle_cnt = -1;
++module_param(cphy_settle_cnt, int, 0644);
++MODULE_PARM_DESC(cphy_settle_cnt, "SM7150 C-PHY settle count override (-1 = computed)");
++
++static void csiphy_cphy_lanes_enable_sm7150(struct csiphy_device *csiphy,
++					    struct csiphy_lanes_cfg *c,
++					    u8 settle_cnt)
++{
++	struct csiphy_device_regs *regs = csiphy->regs;
++	u32 lane_enable = 0;
++	int i, j;
++
++	if (cphy_settle_cnt >= 0)
++		settle_cnt = cphy_settle_cnt;
++
++	/* Vendor: trio n is enabled by bit 2n + 1 of COMMON_CTRL5. */
++	for (i = 0; i < c->num_data; i++)
++		lane_enable |= BIT(c->data[i].pos * 2 + 1);
++
++	writel_relaxed(lane_enable, csiphy->base +
++		       CSIPHY_3PH_CMN_CSI_COMMON_CTRLn(regs->offset, 5));
++	writel_relaxed(0x01, csiphy->base +
++		       CSIPHY_3PH_CMN_CSI_COMMON_CTRLn(regs->offset, 6));
++	writel_relaxed(0x52, csiphy->base +
++		       CSIPHY_3PH_CMN_CSI_COMMON_CTRLn(regs->offset, 7));
++	writel(0x03, csiphy->base +
++	       CSIPHY_3PH_CMN_CSI_COMMON_CTRLn(regs->offset, 0));
++	usleep_range(1000, 1100);
++	writel(0x0e, csiphy->base +
++	       CSIPHY_3PH_CMN_CSI_COMMON_CTRLn(regs->offset, 0));
++
++	for (i = 0; i < c->num_data; i++) {
++		u32 pos = c->data[i].pos;
++
++		for (j = 0; j < ARRAY_SIZE(cphy_trio_regs_sm7150); j++) {
++			const struct csiphy_lane_regs *r = &cphy_trio_regs_sm7150[j];
++			u32 addr = r->reg_addr;
++			u32 val = r->reg_data;
++
++			addr += addr >= 0x900 ? 0x100 * pos : 0x200 * pos;
++			if (r->csiphy_param_type == CSIPHY_SETTLE_CNT_LOWER_BYTE)
++				val = settle_cnt & 0xff;
++			else if (r->csiphy_param_type == CSIPHY_SETTLE_CNT_HIGHER_BYTE)
++				val = 0;
++			writel_relaxed(val, csiphy->base + addr);
++		}
++	}
++	writel(0x0e, csiphy->base +
++	       CSIPHY_3PH_CMN_CSI_COMMON_CTRLn(regs->offset, 0));
++	dev_info(csiphy->camss->dev,
++		 "CSIPHY%u C-PHY: %d trios, lane_enable 0x%02x, settle %u\n",
++		 csiphy->id, c->num_data, lane_enable, settle_cnt);
++}
++
+ static u8 csiphy_get_lane_mask(struct csiphy_lanes_cfg *lane_cfg)
+ {
+ 	u8 lane_mask;
+ 	int i;
+ 
++	if (lane_cfg->cphy) {
++		lane_mask = 0;
++		for (i = 0; i < lane_cfg->num_data; i++)
++			lane_mask |= 1 << lane_cfg->data[i].pos;
++		return lane_mask;
++	}
++
+ 	lane_mask = CSIPHY_3PH_CMN_CSI_COMMON_CTRL5_CLK_ENABLE;
+ 
+ 	for (i = 0; i < lane_cfg->num_data; i++)
+@@ -1285,6 +1389,21 @@ static void csiphy_lanes_enable(struct csiphy_device *csiphy,
+ 	int i;
+ 
+ 	settle_cnt = csiphy_settle_cnt_calc(link_freq, csiphy->timer_clk_rate);
++	if (dphy_settle >= 0)
++		settle_cnt = dphy_settle;
++	dev_info(csiphy->camss->dev,
++		 "CSIPHY%u: %d lanes, mask 0x%02x, link %lld, timer %u, settle %u\n",
++		 csiphy->id, c->num_data, lane_mask, link_freq,
++		 csiphy->timer_clk_rate, settle_cnt);
++
++	if (c->cphy) {
++		if (csiphy->camss->res->version != CAMSS_7150) {
++			dev_err(csiphy->camss->dev, "C-PHY not supported here\n");
++			return;
++		}
++		csiphy_cphy_lanes_enable_sm7150(csiphy, c, settle_cnt);
++		goto irq_mask;
++	}
+ 
+ 	val = CSIPHY_3PH_CMN_CSI_COMMON_CTRL5_CLK_ENABLE;
+ 	for (i = 0; i < c->num_data; i++)
+@@ -1310,6 +1429,7 @@ static void csiphy_lanes_enable(struct csiphy_device *csiphy,
+ 	else
+ 		csiphy_gen1_config_lanes(csiphy, cfg, settle_cnt);
+ 
++irq_mask:
+ 	/* IRQ_MASK registers - disable all interrupts */
+ 	for (i = 11; i < 22; i++) {
+ 		writel_relaxed(0, csiphy->base +
+diff --git a/drivers/media/platform/qcom/camss/camss-csiphy.c b/drivers/media/platform/qcom/camss/camss-csiphy.c
+index 21f29a578..4f542d099 100644
+--- a/drivers/media/platform/qcom/camss/camss-csiphy.c
++++ b/drivers/media/platform/qcom/camss/camss-csiphy.c
+@@ -131,6 +131,58 @@ static u8 csiphy_get_bpp(const struct csiphy_format_info *formats,
+ 	return formats[0].bpp;
+ }
+ 
++/*
++ * Bring-up diagnostics (hanoip, 29/10). lane_map "N:a,b,c" rewrites the
++ * physical data lane positions of CSIPHY N; it is applied when a CSIPHY ->
++ * CSID link is enabled and when the stream starts, so permutations can be
++ * tried without reloading. Reading phy_status dumps the common status
++ * registers of every CSIPHY whose lanes are enabled (never an unclocked one).
++ */
++static char lane_map[64];
++module_param_string(lane_map, lane_map, sizeof(lane_map), 0644);
++MODULE_PARM_DESC(lane_map, "debug: \"N:a,b,c\" data lane positions for CSIPHY N");
++
++static struct csiphy_device *csiphy_devs[8];
++
++void csiphy_apply_lane_map(struct csiphy_device *csiphy)
++{
++	struct csiphy_lanes_cfg *c;
++	unsigned int id, pos[4];
++	int n, i;
++
++	if (!lane_map[0] || !csiphy->cfg.csi2)
++		return;
++	n = sscanf(lane_map, "%u:%u,%u,%u,%u", &id, &pos[0], &pos[1], &pos[2], &pos[3]);
++	c = &csiphy->cfg.csi2->lane_cfg;
++	if (n < 2 || id != csiphy->id || n - 1 != c->num_data)
++		return;
++	for (i = 0; i < c->num_data; i++)
++		c->data[i].pos = pos[i];
++	dev_info(csiphy->camss->dev, "CSIPHY%u lane_map %s\n", csiphy->id, lane_map);
++}
++
++static int phy_status_get(char *buf, const struct kernel_param *kp)
++{
++	int len = 0, i, n;
++
++	for (i = 0; i < ARRAY_SIZE(csiphy_devs); i++) {
++		struct csiphy_device *p = csiphy_devs[i];
++
++		if (!p || !p->lanes_on)
++			continue;
++		len += sysfs_emit_at(buf, len, "csiphy%u:", p->id);
++		for (n = 0; n < 15; n++)
++			len += sysfs_emit_at(buf, len, " %02x",
++				readl(p->base + p->regs->offset +
++				      p->regs->common_status_offset + 4 * n) & 0xff);
++		len += sysfs_emit_at(buf, len, "\n");
++	}
++	return len;
++}
++
++static const struct kernel_param_ops phy_status_ops = { .get = phy_status_get };
++module_param_cb(phy_status, &phy_status_ops, NULL, 0444);
++
+ /*
+  * csiphy_set_clock_rates - Calculate and set clock rates on CSIPHY module
+  * @csiphy: CSIPHY device
+@@ -275,12 +327,15 @@ static int csiphy_stream_on(struct csiphy_device *csiphy)
+ {
+ 	struct csiphy_config *cfg = &csiphy->cfg;
+ 	s64 link_freq;
+-	u8 lane_mask = csiphy->res->hw_ops->get_lane_mask(&cfg->csi2->lane_cfg);
++	u8 lane_mask;
+ 	u8 bpp = csiphy_get_bpp(csiphy->res->formats->formats, csiphy->res->formats->nformats,
+ 				csiphy->fmt[MSM_CSIPHY_PAD_SINK].code);
+ 	u8 num_lanes = csiphy->cfg.csi2->lane_cfg.num_data;
+ 	u8 val;
+ 
++	csiphy_apply_lane_map(csiphy);
++	lane_mask = csiphy->res->hw_ops->get_lane_mask(&cfg->csi2->lane_cfg);
++
+ 	link_freq = camss_get_link_freq(&csiphy->subdev.entity, bpp, num_lanes);
+ 
+ 	if (link_freq < 0) {
+@@ -305,6 +360,7 @@ static int csiphy_stream_on(struct csiphy_device *csiphy)
+ 	}
+ 
+ 	csiphy->res->hw_ops->lanes_enable(csiphy, cfg, link_freq, lane_mask);
++	csiphy->lanes_on = true;
+ 
+ 	return 0;
+ }
+@@ -317,6 +373,7 @@ static int csiphy_stream_on(struct csiphy_device *csiphy)
+  */
+ static void csiphy_stream_off(struct csiphy_device *csiphy)
+ {
++	csiphy->lanes_on = false;
+ 	csiphy->res->hw_ops->lanes_disable(csiphy, &csiphy->cfg);
+ }
+ 
+@@ -599,6 +656,8 @@ int msm_csiphy_subdev_init(struct camss *camss,
+ 
+ 	csiphy->camss = camss;
+ 	csiphy->id = id;
++	if (id < ARRAY_SIZE(csiphy_devs))
++		csiphy_devs[id] = csiphy;
+ 	csiphy->cfg.combo_mode = 0;
+ 	csiphy->res = &res->csiphy;
+ 
+diff --git a/drivers/media/platform/qcom/camss/camss-csiphy.h b/drivers/media/platform/qcom/camss/camss-csiphy.h
+index 9d9657b82..eddf9a071 100644
+--- a/drivers/media/platform/qcom/camss/camss-csiphy.h
++++ b/drivers/media/platform/qcom/camss/camss-csiphy.h
+@@ -33,11 +33,13 @@ struct csiphy_lane {
+  * @num_data: number of data lanes
+  * @data:     data lanes configuration
+  * @clk:      clock lane configuration (only for D-PHY)
++ * @cphy:     C-PHY link; num_data and data[] then describe trios
+  */
+ struct csiphy_lanes_cfg {
+ 	int num_data;
+ 	struct csiphy_lane *data;
+ 	struct csiphy_lane clk;
++	bool cphy;
+ };
+ 
+ struct csiphy_csi2_cfg {
+@@ -114,8 +116,11 @@ struct csiphy_device {
+ 	struct v4l2_mbus_framefmt fmt[MSM_CSIPHY_PADS_NUM];
+ 	const struct csiphy_subdev_resources *res;
+ 	struct csiphy_device_regs *regs;
++	bool lanes_on;		/* diag: lanes enabled, registers clocked */
+ };
+ 
++void csiphy_apply_lane_map(struct csiphy_device *csiphy);
++
+ struct camss_subdev_resources;
+ 
+ int msm_csiphy_subdev_init(struct camss *camss,
+diff --git a/drivers/media/platform/qcom/camss/camss.c b/drivers/media/platform/qcom/camss/camss.c
+index 01cad78f9..ca9d283cc 100644
+--- a/drivers/media/platform/qcom/camss/camss.c
++++ b/drivers/media/platform/qcom/camss/camss.c
+@@ -4975,14 +4975,13 @@ static int camss_parse_endpoint_node(struct device *dev,
+ 	if (ret)
+ 		return ret;
+ 
+-	/*
+-	 * Most SoCs support both D-PHY and C-PHY standards, but currently only
+-	 * D-PHY is supported in the driver.
+-	 */
+-	if (vep.bus_type != V4L2_MBUS_CSI2_DPHY) {
++	/* C-PHY is only implemented for the SM7150 CSIPHY (v1.2 tables). */
++	if (vep.bus_type != V4L2_MBUS_CSI2_DPHY &&
++	    vep.bus_type != V4L2_MBUS_CSI2_CPHY) {
+ 		dev_err(dev, "Unsupported bus type %d\n", vep.bus_type);
+ 		return -EINVAL;
+ 	}
++	lncfg->cphy = vep.bus_type == V4L2_MBUS_CSI2_CPHY;
+ 
+ 	csd->interface.csiphy_id = vep.base.port;
+ 
+-- 
+2.43.0
+

@@ -1,0 +1,16 @@
+[Unit]
+Description=USB NCM gadget and DHCP for the PC
+Documentation=man:systemd.service(5)
+DefaultDependencies=no
+After=network.target
+Before=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/hanoip-usb-net
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=network-online.target

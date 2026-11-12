@@ -1,0 +1,11 @@
+[Unit]
+Description=Backlight off (the phone is a headless server; the 4.14 kept the screen off too)
+After=systemd-backlight@backlight:backlight.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'for b in /sys/class/backlight/*; do echo 0 > "$$b/brightness"; done'
+
+[Install]
+WantedBy=multi-user.target

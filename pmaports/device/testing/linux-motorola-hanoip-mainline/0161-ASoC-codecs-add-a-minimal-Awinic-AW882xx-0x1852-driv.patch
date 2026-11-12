@@ -1,0 +1,374 @@
+From 19fcde77eaf4ddc8721dc29b3643231a1b274d82 Mon Sep 17 00:00:00 2001
+From: hanoip <hanoip@localhost>
+Date: Mon, 26 Oct 2026 02:10:28 +0000
+Subject: [PATCH 161/194] ASoC: codecs: add a minimal Awinic AW882xx (0x1852)
+ driver
+
+The Motorola Moto G60 speaker amplifier. Loads the vendor register image
+with the amplifier kept powered down and muted, programs the I2S format,
+then powers up and checks I2S clock and PLL lock before unmuting.
+Output starts attenuated (attenuation_db) because the vendor speaker
+protection runs on the ADSP and is not implemented.
+---
+ sound/soc/codecs/Kconfig   |   8 +
+ sound/soc/codecs/Makefile  |   2 +
+ sound/soc/codecs/aw882xx.c | 308 +++++++++++++++++++++++++++++++++++++
+ 3 files changed, 318 insertions(+)
+ create mode 100644 sound/soc/codecs/aw882xx.c
+
+diff --git a/sound/soc/codecs/Kconfig b/sound/soc/codecs/Kconfig
+index 6661953bb..a85978834 100644
+--- a/sound/soc/codecs/Kconfig
++++ b/sound/soc/codecs/Kconfig
+@@ -693,6 +693,14 @@ config SND_SOC_AW88166
+ 	  digital Smart K audio amplifier with sound quality
+ 	  enhancement algorithms and speaker protection.
+ 
++config SND_SOC_AW882XX
++	tristate "Awinic AW882xx (0x1852) speaker amplifier"
++	depends on I2C
++	select REGMAP_I2C
++	help
++	  Minimal driver for the Awinic AW882xx speaker amplifier found
++	  on the Motorola Moto G60 (hanoip).
++
+ config SND_SOC_AW88261
+ 	tristate "Soc Audio for awinic aw88261"
+ 	depends on I2C
+diff --git a/sound/soc/codecs/Makefile b/sound/soc/codecs/Makefile
+index fdfc21fd5..52c1031a0 100644
+--- a/sound/soc/codecs/Makefile
++++ b/sound/soc/codecs/Makefile
+@@ -54,6 +54,7 @@ snd-soc-aw88395-lib-y := aw88395/aw88395_lib.o \
+ snd-soc-aw88395-y := aw88395/aw88395.o
+ snd-soc-aw88166-y := aw88166.o
+ snd-soc-aw88261-y := aw88261.o
++snd-soc-aw882xx-y := aw882xx.o
+ snd-soc-aw88399-y := aw88399.o
+ snd-soc-aw88399-lib-y := aw88399-lib.o
+ snd-soc-bd28623-y := bd28623.o
+@@ -499,6 +500,7 @@ obj-$(CONFIG_SND_SOC_AW88395_LIB) += snd-soc-aw88395-lib.o
+ obj-$(CONFIG_SND_SOC_AW88395)	+=snd-soc-aw88395.o
+ obj-$(CONFIG_SND_SOC_AW88166)	+=snd-soc-aw88166.o
+ obj-$(CONFIG_SND_SOC_AW88261)	+=snd-soc-aw88261.o
++obj-$(CONFIG_SND_SOC_AW882XX)	+=snd-soc-aw882xx.o
+ obj-$(CONFIG_SND_SOC_AW88399)	+= snd-soc-aw88399.o
+ obj-$(CONFIG_SND_SOC_AW88399_LIB) += snd-soc-aw88399-lib.o
+ obj-$(CONFIG_SND_SOC_BD28623)	+= snd-soc-bd28623.o
+diff --git a/sound/soc/codecs/aw882xx.c b/sound/soc/codecs/aw882xx.c
+new file mode 100644
+index 000000000..9255b58ed
+--- /dev/null
++++ b/sound/soc/codecs/aw882xx.c
+@@ -0,0 +1,308 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Awinic AW882xx (chip ID 0x1852) speaker amplifier, minimal driver.
++ *
++ * Register layout and power sequence follow Awinic's GPL aw882xx driver
++ * (v0.1.15, as shipped in Motorola kernels). This driver only does what
++ * playback needs: it loads the vendor register image, programs the I2S
++ * format and walks the PWDN -> clock/PLL check -> unmute sequence. The
++ * vendor speaker protection, which runs on the ADSP, is not implemented,
++ * so the output starts attenuated (see the "attenuation_db" parameter).
++ */
++#include <linux/bitfield.h>
++#include <linux/delay.h>
++#include <linux/firmware.h>
++#include <linux/gpio/consumer.h>
++#include <linux/i2c.h>
++#include <linux/module.h>
++#include <linux/regmap.h>
++#include <sound/pcm_params.h>
++#include <sound/soc.h>
++
++#define AW882XX_ID			0x00
++#define  AW882XX_CHIP_ID		0x1852
++#define AW882XX_SYSST			0x01
++#define  AW882XX_SYSST_PLLS		BIT(0)
++#define  AW882XX_SYSST_CLKS		BIT(4)
++#define AW882XX_SYSCTRL			0x04
++#define  AW882XX_SYSCTRL_PWDN		BIT(0)
++#define AW882XX_SYSCTRL2		0x05
++#define  AW882XX_SYSCTRL2_HMUTE		BIT(4)
++#define AW882XX_I2SCTRL			0x06
++#define  AW882XX_I2SCTRL_SR		GENMASK(3, 0)
++#define  AW882XX_I2SCTRL_FS		GENMASK(7, 6)
++#define AW882XX_HAGCCFG4		0x0c
++#define  AW882XX_HAGCCFG4_VOL		GENMASK(15, 8)
++#define AW882XX_PLLCTRL1		0x66
++#define  AW882XX_PLLCTRL1_CCO_MUX	BIT(14)
++#define AW882XX_MAX_REG			0x7f
++
++#define AW882XX_FW_NAME			"aw882xx_spk_reg.bin"
++#define AW882XX_SYSST_TRIES		10
++
++static unsigned int attenuation_db = 18;
++module_param(attenuation_db, uint, 0644);
++MODULE_PARM_DESC(attenuation_db, "Output attenuation in dB applied at start (0-90)");
++
++struct aw882xx {
++	struct device *dev;
++	struct regmap *regmap;
++	struct gpio_desc *reset;
++	const struct firmware *fw;
++	unsigned int rate;
++	unsigned int width;
++};
++
++static const struct regmap_config aw882xx_regmap = {
++	.reg_bits = 8,
++	.val_bits = 16,
++	.max_register = AW882XX_MAX_REG,
++	.val_format_endian = REGMAP_ENDIAN_BIG,
++	.cache_type = REGCACHE_NONE,
++};
++
++/* Vendor attenuation encoding: 6 dB steps in the high nibble, 0.5 dB below. */
++static unsigned int aw882xx_vol_code(unsigned int db)
++{
++	db = min(db, 90U);
++	return ((db / 6) << 4) | ((db % 6) * 2);
++}
++
++static int aw882xx_load_fw(struct aw882xx *aw)
++{
++	const u8 *d = aw->fw->data;
++	size_t i;
++	int ret;
++
++	if (aw->fw->size % 4)
++		return -EINVAL;
++
++	for (i = 0; i < aw->fw->size; i += 4) {
++		unsigned int reg = d[i] | d[i + 1] << 8;
++		unsigned int val = d[i + 2] | d[i + 3] << 8;
++
++		if (reg > AW882XX_MAX_REG)
++			return -EINVAL;
++		/* Keep the amplifier powered down and muted until playback. */
++		if (reg == AW882XX_SYSCTRL)
++			val |= AW882XX_SYSCTRL_PWDN;
++		else if (reg == AW882XX_SYSCTRL2)
++			val |= AW882XX_SYSCTRL2_HMUTE;
++		else if (reg == AW882XX_HAGCCFG4)
++			val = (val & ~AW882XX_HAGCCFG4_VOL) |
++			      FIELD_PREP(AW882XX_HAGCCFG4_VOL,
++					 aw882xx_vol_code(attenuation_db));
++		ret = regmap_write(aw->regmap, reg, val);
++		if (ret)
++			return ret;
++	}
++	return 0;
++}
++
++static void aw882xx_power_off(struct aw882xx *aw)
++{
++	regmap_set_bits(aw->regmap, AW882XX_SYSCTRL2, AW882XX_SYSCTRL2_HMUTE);
++	regmap_set_bits(aw->regmap, AW882XX_SYSCTRL, AW882XX_SYSCTRL_PWDN);
++}
++
++static int aw882xx_power_on(struct aw882xx *aw)
++{
++	unsigned int sr, fs, st = 0;
++	int i, ret;
++
++	ret = aw882xx_load_fw(aw);
++	if (ret) {
++		dev_err(aw->dev, "loading %s failed: %d\n", AW882XX_FW_NAME, ret);
++		aw882xx_power_off(aw);
++		return ret;
++	}
++
++	switch (aw->rate) {
++	case 8000: sr = 0; break;
++	case 16000: sr = 3; break;
++	case 32000: sr = 6; break;
++	case 44100: sr = 7; break;
++	case 96000: sr = 9; break;
++	default: sr = 8; break;		/* 48 kHz */
++	}
++	switch (aw->width) {
++	case 20: fs = 1; break;
++	case 24: fs = 2; break;
++	case 32: fs = 3; break;
++	default: fs = 0; break;		/* 16 bits */
++	}
++	regmap_update_bits(aw->regmap, AW882XX_PLLCTRL1, AW882XX_PLLCTRL1_CCO_MUX,
++			   aw->rate == 8000 || aw->rate == 16000 || aw->rate == 32000 ?
++			   0 : AW882XX_PLLCTRL1_CCO_MUX);
++	regmap_update_bits(aw->regmap, AW882XX_I2SCTRL,
++			   AW882XX_I2SCTRL_SR | AW882XX_I2SCTRL_FS,
++			   FIELD_PREP(AW882XX_I2SCTRL_SR, sr) |
++			   FIELD_PREP(AW882XX_I2SCTRL_FS, fs));
++
++	regmap_clear_bits(aw->regmap, AW882XX_SYSCTRL, AW882XX_SYSCTRL_PWDN);
++	for (i = 0; i < AW882XX_SYSST_TRIES; i++) {
++		regmap_read(aw->regmap, AW882XX_SYSST, &st);
++		if ((st & (AW882XX_SYSST_CLKS | AW882XX_SYSST_PLLS)) ==
++		    (AW882XX_SYSST_CLKS | AW882XX_SYSST_PLLS))
++			break;
++		usleep_range(2000, 3000);
++	}
++	if (i == AW882XX_SYSST_TRIES) {
++		dev_err(aw->dev, "no I2S clock or PLL lock (SYSST 0x%04x), staying off\n", st);
++		aw882xx_power_off(aw);
++		return -EIO;
++	}
++
++	regmap_clear_bits(aw->regmap, AW882XX_SYSCTRL2, AW882XX_SYSCTRL2_HMUTE);
++	dev_dbg(aw->dev, "playing, SYSST 0x%04x, attenuation %u dB\n", st, attenuation_db);
++	return 0;
++}
++
++static int aw882xx_set_fmt(struct snd_soc_dai *dai, unsigned int fmt)
++{
++	if ((fmt & SND_SOC_DAIFMT_FORMAT_MASK) != SND_SOC_DAIFMT_I2S ||
++	    (fmt & SND_SOC_DAIFMT_CLOCK_PROVIDER_MASK) != SND_SOC_DAIFMT_CBC_CFC)
++		return -EINVAL;
++	return 0;
++}
++
++static int aw882xx_hw_params(struct snd_pcm_substream *substream,
++			     struct snd_pcm_hw_params *params,
++			     struct snd_soc_dai *dai)
++{
++	struct aw882xx *aw = snd_soc_component_get_drvdata(dai->component);
++
++	aw->rate = params_rate(params);
++	aw->width = params_width(params);
++	return 0;
++}
++
++static int aw882xx_mute(struct snd_soc_dai *dai, int mute, int stream)
++{
++	struct aw882xx *aw = snd_soc_component_get_drvdata(dai->component);
++
++	if (stream != SNDRV_PCM_STREAM_PLAYBACK)
++		return 0;
++	if (mute) {
++		aw882xx_power_off(aw);
++		return 0;
++	}
++	return aw882xx_power_on(aw);
++}
++
++static const struct snd_soc_dai_ops aw882xx_dai_ops = {
++	.set_fmt = aw882xx_set_fmt,
++	.hw_params = aw882xx_hw_params,
++	.mute_stream = aw882xx_mute,
++	.no_capture_mute = 1,
++};
++
++static struct snd_soc_dai_driver aw882xx_dai = {
++	.name = "aw882xx-aif",
++	.playback = {
++		.stream_name = "Speaker Playback",
++		.channels_min = 1,
++		.channels_max = 2,
++		.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
++			 SNDRV_PCM_RATE_32000 | SNDRV_PCM_RATE_44100 |
++			 SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_96000,
++		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
++			   SNDRV_PCM_FMTBIT_S32_LE,
++	},
++	.ops = &aw882xx_dai_ops,
++};
++
++static const struct snd_soc_dapm_widget aw882xx_widgets[] = {
++	SND_SOC_DAPM_OUTPUT("SPK"),
++};
++
++static const struct snd_soc_dapm_route aw882xx_routes[] = {
++	{ "SPK", NULL, "Speaker Playback" },
++};
++
++static const struct snd_soc_component_driver aw882xx_component = {
++	.dapm_widgets = aw882xx_widgets,
++	.num_dapm_widgets = ARRAY_SIZE(aw882xx_widgets),
++	.dapm_routes = aw882xx_routes,
++	.num_dapm_routes = ARRAY_SIZE(aw882xx_routes),
++	.endianness = 1,
++};
++
++static int aw882xx_probe(struct i2c_client *i2c)
++{
++	struct device *dev = &i2c->dev;
++	struct aw882xx *aw;
++	unsigned int id;
++	int ret;
++
++	aw = devm_kzalloc(dev, sizeof(*aw), GFP_KERNEL);
++	if (!aw)
++		return -ENOMEM;
++	aw->dev = dev;
++	aw->rate = 48000;
++	aw->width = 16;
++	i2c_set_clientdata(i2c, aw);
++
++	aw->regmap = devm_regmap_init_i2c(i2c, &aw882xx_regmap);
++	if (IS_ERR(aw->regmap))
++		return PTR_ERR(aw->regmap);
++
++	aw->reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH);
++	if (IS_ERR(aw->reset))
++		return dev_err_probe(dev, PTR_ERR(aw->reset), "reset GPIO\n");
++	if (aw->reset) {
++		usleep_range(1000, 2000);
++		gpiod_set_value_cansleep(aw->reset, 0);
++		usleep_range(2000, 3000);
++	}
++
++	ret = regmap_read(aw->regmap, AW882XX_ID, &id);
++	if (ret)
++		return dev_err_probe(dev, ret, "reading chip ID\n");
++	if (id != AW882XX_CHIP_ID)
++		return dev_err_probe(dev, -ENODEV, "unexpected chip ID 0x%04x\n", id);
++
++	ret = request_firmware(&aw->fw, AW882XX_FW_NAME, dev);
++	if (ret)
++		return dev_err_probe(dev, ret, "missing %s\n", AW882XX_FW_NAME);
++
++	/* Start powered down and muted. */
++	aw882xx_power_off(aw);
++
++	ret = devm_snd_soc_register_component(dev, &aw882xx_component, &aw882xx_dai, 1);
++	if (ret) {
++		release_firmware(aw->fw);
++		return ret;
++	}
++	dev_info(dev, "AW882xx (0x%04x), %zu-byte register image, start attenuation %u dB\n",
++		 id, aw->fw->size, attenuation_db);
++	return 0;
++}
++
++static void aw882xx_remove(struct i2c_client *i2c)
++{
++	struct aw882xx *aw = i2c_get_clientdata(i2c);
++
++	aw882xx_power_off(aw);
++	release_firmware(aw->fw);
++}
++
++static const struct of_device_id aw882xx_of_match[] = {
++	{ .compatible = "awinic,aw882xx" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, aw882xx_of_match);
++
++static struct i2c_driver aw882xx_i2c_driver = {
++	.driver = {
++		.name = "aw882xx",
++		.of_match_table = aw882xx_of_match,
++	},
++	.probe = aw882xx_probe,
++	.remove = aw882xx_remove,
++};
++module_i2c_driver(aw882xx_i2c_driver);
++
++MODULE_DESCRIPTION("Awinic AW882xx speaker amplifier (minimal)");
++MODULE_LICENSE("GPL");
++MODULE_FIRMWARE(AW882XX_FW_NAME);
+-- 
+2.43.0
+

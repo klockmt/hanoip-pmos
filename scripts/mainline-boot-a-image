@@ -1,0 +1,23 @@
+#!/bin/sh
+# Packs the boot_a image of the persistent mainline boot (docs/MAINLINE.md): the U-Boot of scripts/build-mainline-uboot
+# at the start, where the ABL reads it, and the kernel image of `INIT=super-root scripts/mainline-ram-image` 16 MiB in,
+# where that U-Boot reads 32 MiB from (kernel/mainline/uboot/hanoip-server.env). Nothing touches the phone.
+# Usage: scripts/mainline-boot-a-image [out.img]   (default: $HANOIP_MAINLINE_DIR/out/boot_a-mainline.img)
+set -eu
+. "$(dirname "$0")/env.sh"
+k=${HANOIP_MAINLINE_DIR:-$HANOIP_SRC_DIR/hanoip-mainline-7.3}
+u=${HANOIP_UBOOT_ML_DIR:-$HANOIP_SRC_DIR/hanoip-uboot}
+uimg=${UBOOT_IMG:-$u/out/u-boot-hanoip-server.img}
+kimg=${KERNEL_IMG:-$k/out/boot-super-root.img}
+out=${1:-$k/out/boot_a-mainline.img}
+OFF=$((16 * 1048576))    # setexpr ml_blk $ml_start + 0x1000 (4096-byte blocks)
+MAX=$((32 * 1048576))    # scsi read ... 0x2000 blocks
+PART=$((64 * 1048576))   # boot_a
+for f in "$uimg" "$kimg"; do [ -s "$f" ] || { echo "missing $f" >&2; exit 1; }; done
+[ "$(head -c 8 "$uimg")" = ANDROID! ] && [ "$(head -c 8 "$kimg")" = ANDROID! ] || { echo "not Android boot images" >&2; exit 1; }
+[ "$(wc -c < "$uimg")" -le $OFF ] || { echo "U-Boot is over 16 MiB" >&2; exit 1; }
+[ "$(wc -c < "$kimg")" -le $MAX ] || { echo "the kernel image is over the 32 MiB U-Boot reads" >&2; exit 1; }
+{ cat "$uimg"; head -c $((OFF - $(wc -c < "$uimg"))) /dev/zero; cat "$kimg"; } > "$out.new"
+[ "$(wc -c < "$out.new")" -le $PART ] || { rm -f "$out.new"; echo "the image is over boot_a's 64 MiB" >&2; exit 1; }
+mv "$out.new" "$out"
+echo "$out ($(wc -c < "$out") bytes): U-Boot at 0, the kernel image at 16 MiB"

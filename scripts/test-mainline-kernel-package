@@ -1,0 +1,63 @@
+#!/bin/sh
+# Checks the pmaports package of the mainline kernel without the phone or a build: it builds the same source trees as
+# scripts/build-mainline-kernel (kernel.org's linux-7.3 plus every patch in kernel/mainline/patches, each tree checked
+# by its git hash), from copies identical to kernel/mainline, keeps the kernel release the modules are installed
+# under, keeps this PC's names out of the banner, and installs where Duranium's mkosi.prepare looks.
+set -eu
+cd "$(dirname "$0")/.."
+fail() { echo "FAIL: $*" >&2; exit 1; }
+d=pmaports/device/testing/linux-motorola-hanoip-mainline
+apk=$d/APKBUILD
+ml=kernel/mainline
+script=scripts/build-mainline-kernel
+[ -f "$apk" ] || fail "no $apk"
+# Code only: no comments, and no patch names from source= and sha512sums (some have "make" in them).
+code=$(grep -v -e '^[[:space:]]*#' -e '\.patch$' "$apk")
+
+# The same trees as the script whose build booted on the phone.
+for v in BASE_TREE:_base_tree TREE:_tree; do
+	a=$(sed -n "s/^${v%%:*}=\([0-9a-f]*\).*/\1/p" "$script")
+	b=$(sed -n "s/^${v##*:}=\"*\([0-9a-f]*\).*/\1/p" "$apk")
+	[ -n "$a" ] && [ "$a" = "$b" ] || fail "${v##*:} in $apk ($b) is not ${v%%:*} of $script ($a)"
+done
+
+# Sources: the kernel.org tarball the script downloads, and every patch, config and extra-module file of kernel/mainline.
+src=$(set +u; srcdir=; . "./$apk"; for s in $source; do echo "$s"; done)
+korg=$(sed -n 's/^KORG=\(.*\)/\1/p' "$script")
+remote=$(echo "$src" | grep '://' || true)
+[ "$remote" = "$korg/linux-7.3.tar.xz" ] || fail "the package downloads '$remote', not $korg/linux-7.3.tar.xz"
+want=$( (cd $ml/patches && ls *.patch); echo config-7.3-hanoip; echo server.config; (cd $ml/extra && ls) )
+got=$(echo "$src" | grep -v '://')
+[ "$(echo "$got" | LC_ALL=C sort)" = "$(echo "$want" | LC_ALL=C sort)" ] ||
+	fail "source= is not exactly the patches, configs and extra files of $ml"
+for n in $got; do
+	for o in $ml/patches/$n $ml/$n $ml/extra/$n; do [ -f "$o" ] && break; done
+	cmp -s "$o" "$d/$n" || fail "$d/$n is not identical to $o"
+done
+
+# The patches go in with git am, never with default_prepare's patch -p1, so the tree hash can be checked after them;
+# and the server's config options must survive olddefconfig, as in the script.
+echo "$code" | grep -q 'git .*am' || fail "prepare() does not git am the patches"
+if echo "$code" | grep -qw default_prepare; then fail "default_prepare would apply the patches with patch -p1"; fi
+echo "$code" | grep -qF 'did not survive olddefconfig' || fail "nothing checks that server.config survives olddefconfig"
+
+# One make helper for every call. Without LOCALVERSION= the git tree turns the release into 7.3.0-sm7150+ and the
+# modules land in a directory the kernel does not look in; without the build user and host the banner carries this
+# PC's names (the pmbootstrap chroot keeps the host name).
+calls=$(echo "$code" | grep -cw make)
+line=$(echo "$code" | grep -w make)
+[ "$calls" -eq 1 ] || fail "make is called in $calls places, not through one helper"
+for a in 'LOCALVERSION= ' KBUILD_BUILD_USER=hanoip KBUILD_BUILD_HOST=hanoip-build; do
+	case $line in *"$a"*) ;; *) fail "the make helper lacks $a" ;; esac
+done
+
+# Where Duranium's mkosi.prepare looks: the EFI kernel as /boot/vmlinuz, the DTB under /boot/dtbs, modules in /usr.
+for a in 'arch/arm64/boot/vmlinuz.efi "$pkgdir"/boot/vmlinuz' \
+	'"$pkgdir"/boot/dtbs/qcom/sm7150-motorola-hanoip.dtb' 'INSTALL_MOD_PATH="$pkgdir"/usr'; do
+	echo "$code" | grep -qF -- "$a" || fail "package() does not install $a"
+done
+# simplefb's linear-mapping shortcut for the framebuffer (patch 0121) is valid only where the kernel really mapped that RAM: a
+# boot through U-Boot's EFI reserves it, and the kernel then oopsed in fbcon at 0.46 s (2026-11-09, Duranium's first boot).
+grep -A1 '^+	if (info->fix.smem_start == 0x9c000000 &&$' "$ml/patches/0121-hanoip-simplefb.patch" | grep -q 'pfn_is_map_memory(' ||
+	fail "patch 0121 uses the linear mapping of the framebuffer without checking pfn_is_map_memory()"
+echo "mainline kernel package: ok"

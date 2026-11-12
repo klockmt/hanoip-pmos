@@ -1,0 +1,94 @@
+From 49f9157629ba2ea8b6b0b2c6748cebdb862e173a Mon Sep 17 00:00:00 2001
+From: hanoip <h@l>
+Date: Tue, 27 Oct 2026 14:02:42 -0300
+Subject: [PATCH 172/194] power: supply: qcom_smbx: allow forcing the input
+ current limit
+
+Some chargers keep their data lines for negotiation, so APSD reports them as a
+standard port (SDP) and the driver programs 500 mA even though the source can
+supply much more. Measured on the hanoip: a wall charger reported SDP, 497 mA
+were drawn and the input voltage was already sagging, i.e. the source had
+headroom.
+
+Expose /sys/kernel/debug/hanoip-icl (write-only, uA) to program
+USBIN_CURRENT_LIMIT_CFG directly, clamped to the same 1.5 A ceiling. It stays
+safe when the source cannot deliver: the PMIC AICL loop lowers the input
+current by itself when VBUS collapses.
+---
+ drivers/power/supply/qcom_smbx.c | 51 +++++++++++++++++++++++++++++++-
+ 1 file changed, 50 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/power/supply/qcom_smbx.c b/drivers/power/supply/qcom_smbx.c
+index ca55177d6..b08417d1f 100644
+--- a/drivers/power/supply/qcom_smbx.c
++++ b/drivers/power/supply/qcom_smbx.c
+@@ -1261,6 +1261,52 @@ static const struct file_operations hanoip_charge_fops = {
+ 	.write = hanoip_charge_write,
+ };
+ 
++/*
++ * Manual override of the input current limit.
++ *
++ * Some chargers keep the data lines for negotiation and are therefore
++ * reported as a standard port (SDP) even when they can supply far more than
++ * 500 mA (measured on this phone: a wall charger reported SDP and 497 mA were
++ * drawn with the voltage sagging, so the source had more to give).
++ *
++ * Writing a value in uA here programs USBIN_CURRENT_LIMIT_CFG directly,
++ * clamped to the same 1.5 A ceiling. This stays safe even if the source
++ * cannot deliver: the PMIC's AICL loop reduces the input current on its own
++ * when VBUS collapses.
++ */
++static ssize_t hanoip_icl_write(struct file *file, const char __user *ubuf,
++				size_t len, loff_t *ppos)
++{
++	struct smb_chip *chip = file->private_data;
++	char buf[16];
++	unsigned int ua;
++	int rc;
++
++	if (len == 0 || len >= sizeof(buf))
++		return -EINVAL;
++	if (copy_from_user(buf, ubuf, len))
++		return -EFAULT;
++	buf[len] = '\0';
++
++	rc = kstrtouint(buf, 10, &ua);
++	if (rc)
++		return rc;
++	if (ua < 100000 || ua > HANOIP_ICL_MAX_UA)
++		return -EINVAL;
++
++	rc = smb_set_current_limit(chip, ua);
++	if (rc)
++		return rc;
++
++	dev_info(chip->dev, "hanoip: limite de entrada forçado para %u uA\n", ua);
++	return len;
++}
++
++static const struct file_operations hanoip_icl_fops = {
++	.open = simple_open,
++	.write = hanoip_icl_write,
++};
++
+ #ifdef CONFIG_DEBUG_FS
+ /*
+  * Diagnostic, READ-ONLY view of the charger block.
+@@ -1413,9 +1459,12 @@ static int smb_probe(struct platform_device *pdev)
+ 
+ #ifdef CONFIG_DEBUG_FS
+ 	debugfs_create_file(chip->name, 0444, NULL, chip, &smb_regs_fops);
+-	if (chip->monitor_only)
++	if (chip->monitor_only) {
+ 		debugfs_create_file("hanoip-charge", 0200, NULL, chip,
+ 				    &hanoip_charge_fops);
++		debugfs_create_file("hanoip-icl", 0200, NULL, chip,
++				    &hanoip_icl_fops);
++	}
+ #endif
+ 
+ 	if (match_data->monitor_only) {
+-- 
+2.43.0
+

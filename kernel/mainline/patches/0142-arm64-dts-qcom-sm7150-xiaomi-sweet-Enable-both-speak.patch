@@ -1,0 +1,65 @@
+From d94e821469e930a04ba19dd73924245d54f52be3 Mon Sep 17 00:00:00 2001
+From: Aleks <aleks.spv@gmail.com>
+Date: Wed, 21 Oct 2026 10:28:07 +0600
+Subject: [PATCH 142/194] arm64: dts: qcom: sm7150-xiaomi-sweet: Enable both
+ speaker amplifiers
+
+Add the second AW88263S to the speaker DAI link, add DAPM widgets and
+routes for both amplifiers and drop awinic,sync-flag, which makes the
+driver soft-reset and reload the ACF on every stream start.
+
+Signed-off-by: Aleks <aleks.spv@gmail.com>
+---
+ arch/arm64/boot/dts/qcom/sm7150-xiaomi-sweet.dts | 12 ++++++++----
+ 1 file changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-sweet.dts b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-sweet.dts
+index 74a1be6a7..ac6a37df5 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-sweet.dts
++++ b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-sweet.dts
+@@ -75,10 +75,16 @@ rmtfs_mem: rmtfs@fde01000 {
+ 	};
+ 
+ 	sound {
+-		compatible = "qcom,sm8250-sndcard";
++		compatible = "xiaomi,sweet-sndcard";
+ 		pinctrl-0 = <&pri_mi2s_active &pri_mi2s_ws_active>;
+ 		pinctrl-names = "default";
+ 		model = "Redmi Note 10 Pro";
++		widgets = "Speaker", "Speaker Spk",
++			  "Speaker", "Microphone Spk";
++		audio-routing = "Speaker Spk", "Speaker DAC Output",
++				"Microphone Spk", "Microphone DAC Output",
++				"Speaker AIF_RX", "PRI_MI2S_RX",
++				"Microphone AIF_RX", "PRI_MI2S_RX";
+ 
+ 		mm1-dai-link {
+ 			link-name = "MultiMedia1";
+@@ -98,7 +104,7 @@ platform {
+ 			};
+ 
+ 			codec {
+-				sound-dai = <&speaker_amp>;
++				sound-dai = <&speaker_amp>, <&mic_amp>;
+ 			};
+ 		};
+ 	};
+@@ -155,7 +161,6 @@ speaker_amp: audio-codec@34 {
+ 		pinctrl-0 = <&amp_t_int_default>;
+ 
+ 		awinic,audio-channel = <0>;
+-		awinic,sync-flag;
+ 
+ 		sound-name-prefix = "Speaker";
+ 		#sound-dai-cells = <0>;
+@@ -173,7 +178,6 @@ mic_amp: audio-codec@35 {
+ 		pinctrl-0 = <&amp_b_int_default>;
+ 
+ 		awinic,audio-channel = <1>;
+-		awinic,sync-flag;
+ 
+ 		sound-name-prefix = "Microphone";
+ 		#sound-dai-cells = <0>;
+-- 
+2.43.0
+

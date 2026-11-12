@@ -1,0 +1,107 @@
+From 993ec3160edcbb633073fd35adb0e26320d501e2 Mon Sep 17 00:00:00 2001
+From: hanoip <hanoip@localhost>
+Date: Thu, 29 Oct 2026 18:20:56 +0000
+Subject: [PATCH 191/194] media: qcom: camss: sm7150: give every CSIPHY the
+ stock clock set
+
+The vendor DT feeds each SM7150 CSIPHY from cphy_rx_clk_src at 400 MHz,
+csiphy0_clk, its own csiphyN_clk and the 300 MHz timer. Mainline only
+listed csiphyN and its timer for PHY1/PHY2, and the PHY0 table let the
+csiphy0 rate request drag cphy_rx down to 300 MHz. Without the full set
+PHY1 and PHY3 never delivered a frame (OV02B1B, S5K4H7 on hanoip).
+Use the same clock list for the four PHYs and vote cphy_rx at 400 MHz.
+---
+ .../media/platform/qcom/camss/camss-csiphy.c  |  8 +++++
+ drivers/media/platform/qcom/camss/camss.c     | 33 +++++++++++--------
+ 2 files changed, 28 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/media/platform/qcom/camss/camss-csiphy.c b/drivers/media/platform/qcom/camss/camss-csiphy.c
+index 7e4edd48f..21f29a578 100644
+--- a/drivers/media/platform/qcom/camss/camss-csiphy.c
++++ b/drivers/media/platform/qcom/camss/camss-csiphy.c
+@@ -153,6 +153,14 @@ static int csiphy_set_clock_rates(struct csiphy_device *csiphy)
+ 	for (i = 0; i < csiphy->nclocks; i++) {
+ 		struct camss_clock *clock = &csiphy->clock[i];
+ 
++		/* SM7150: stock votes cphy_rx at 400 MHz for every CSIPHY. */
++		if (csiphy->camss->res->version == CAMSS_7150 &&
++		    !strcmp(clock->name, "cphy_rx_src")) {
++			ret = clk_set_rate(clock->clk, 400000000);
++			if (ret < 0)
++				return ret;
++		}
++
+ 		if (csiphy->rate_set[i]) {
+ 			u64 min_rate = link_freq / 4;
+ 			long round_rate;
+diff --git a/drivers/media/platform/qcom/camss/camss.c b/drivers/media/platform/qcom/camss/camss.c
+index c2652ea87..01cad78f9 100644
+--- a/drivers/media/platform/qcom/camss/camss.c
++++ b/drivers/media/platform/qcom/camss/camss.c
+@@ -1957,11 +1957,11 @@ static const struct camss_subdev_resources csiphy_res_7150[] = {
+ 			{ .supply = "vdda-phy", .init_load_uA = 0 },
+ 			{ .supply = "vdda-pll", .init_load_uA = 0 }
+ 		},
+-		.clock = { "cphy_rx_src", "csiphy0", "csiphy0_timer_src", "csiphy0_timer" },
++		.clock = { "csiphy0", "csiphy0_timer_src", "csiphy0_timer", "cphy_rx_src" },
+ 		.clock_rate = { { 0 },
+-				{ 300000000, 384000000, 400000000 },
+-				{ 0 },	
+-				{ 300000000 } },
++				{ 0 },
++				{ 300000000 },
++				{ 384000000, 400000000, 400000000 } },
+ 		.reg = { "csiphy0" },
+ 		.interrupt = { "csiphy0" },
+ 		.csiphy = {
+@@ -1976,9 +1976,12 @@ static const struct camss_subdev_resources csiphy_res_7150[] = {
+ 			{ .supply = "vdda-phy", .init_load_uA = 0 },
+ 			{ .supply = "vdda-pll", .init_load_uA = 0 }
+ 		},
+-		.clock = { "csiphy1", "csiphy1_timer" },
+-		.clock_rate = { { 300000000, 384000000, 400000000 },
+-				{ 300000000 } },
++		.clock = { "csiphy1", "csiphy1_timer_src", "csiphy1_timer", "cphy_rx_src", "csiphy0" },
++		.clock_rate = { { 0 },
++				{ 0 },
++				{ 300000000 },
++				{ 384000000, 400000000, 400000000 },
++				{ 0 } },
+ 		.reg = { "csiphy1" },
+ 		.interrupt = { "csiphy1" },
+ 		.csiphy = {
+@@ -1993,9 +1996,12 @@ static const struct camss_subdev_resources csiphy_res_7150[] = {
+ 			{ .supply = "vdda-phy", .init_load_uA = 0 },
+ 			{ .supply = "vdda-pll", .init_load_uA = 0 }
+ 		},
+-		.clock = { "csiphy2", "csiphy2_timer" },
+-		.clock_rate = { { 19200000, 300000000, 384000000, 400000000 },
+-				{ 300000000 } },
++		.clock = { "csiphy2", "csiphy2_timer_src", "csiphy2_timer", "cphy_rx_src", "csiphy0" },
++		.clock_rate = { { 0 },
++				{ 0 },
++				{ 300000000 },
++				{ 384000000, 400000000, 400000000 },
++				{ 0 } },
+ 		.reg = { "csiphy2" },
+ 		.interrupt = { "csiphy2" },
+ 		.csiphy = {
+@@ -2010,11 +2016,12 @@ static const struct camss_subdev_resources csiphy_res_7150[] = {
+ 			{ .supply = "vdda-phy", .init_load_uA = 0 },
+ 			{ .supply = "vdda-pll", .init_load_uA = 0 }
+ 		},
+-		.clock = { "csiphy3", "csiphy3_timer_src", "csiphy3_timer", "cphy_rx_src" },
++		.clock = { "csiphy3", "csiphy3_timer_src", "csiphy3_timer", "cphy_rx_src", "csiphy0" },
+ 		.clock_rate = { { 0 },
+-				{ 300000000 },
+ 				{ 0 },
+-				{ 384000000, 400000000, 400000000 } },
++				{ 300000000 },
++				{ 384000000, 400000000, 400000000 },
++				{ 0 } },
+ 		.reg = { "csiphy3" },
+ 		.interrupt = { "csiphy3" },
+ 		.csiphy = {
+-- 
+2.43.0
+

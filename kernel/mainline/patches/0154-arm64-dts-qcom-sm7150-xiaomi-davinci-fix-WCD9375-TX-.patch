@@ -1,0 +1,64 @@
+From 4881b81e79a4545a00bd738f250e647e6f63d430 Mon Sep 17 00:00:00 2001
+From: Artem Hutsaliuk <artemgutsaliukv@gmail.com>
+Date: Sun, 9 Aug 2026 23:05:29 -0500
+Subject: [PATCH 154/194] arm64: dts: qcom: sm7150-xiaomi-davinci: fix WCD9375
+ TX port mapping
+
+The TX port map sent both ADCs to the wrong SoundWire ports and declared
+ten channels instead of twelve, so the transport for the microphone path
+was never programmed and capture returned silence.
+
+Port topology is a property of the codec, so the values are those of
+qcm6490-idp, the reference board carrying the same WCD9375. The master
+port numbers are one higher here because the driver looks the port
+configuration up as pconfig[m_port] and the sm7150 TX controller has one
+dout port: the microphone inputs start at port 2, which is also why the
+qcom,ports-* arrays of swr2 begin with 0xff.
+
+The channel map gains its two missing entries: the codec has twelve
+channels - adc1, adc2, adc3, dmic0, dmic1, mbhc, dmic2, dmic3, dmic4,
+dmic5, dmic6, dmic7.
+
+While at it, drop a stray line continuation left on the port mapping
+line.
+
+Tested on a Xiaomi Mi 9T (SM7150-AA, WCD9375).
+
+Signed-off-by: Artem Hutsaliuk <artemgutsaliukv@gmail.com>
+---
+ .../boot/dts/qcom/sm7150-xiaomi-davinci.dtsi  | 19 +++++++++++++++++--
+ 1 file changed, 17 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi
+index c555244e7..e5272801b 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi
+@@ -604,8 +604,23 @@ wcd_tx: codec@0,3 {
+ 		compatible = "sdw20217010a00";
+ 		reg = <0 3>;
+ 
+-		qcom,tx-port-mapping = <2 3 4 5>;\
+-		qcom,tx-channel-mapping = /bits/ 8 <1 1 2 1 2 4 1 2 4 8>;
++		/*
++		 * Port topology belongs to the codec itself:
++		 *   TX Port 1 (ADC1)                <=> SWR Port 2
++		 *   TX Port 2 (ADC2, ADC3)          <=> SWR Port 2
++		 *   TX Port 3 (DMIC0..3 and MBHC)   <=> SWR Port 3
++		 *   TX Port 4 (DMIC4..7)            <=> SWR Port 4
++		 * Twelve channels: adc1, adc2, adc3, dmic0, dmic1, mbhc,
++		 * dmic2, dmic3, dmic4, dmic5, dmic6, dmic7.
++		 *
++		 * The master port numbers differ by one from qcm6490-idp,
++		 * which uses <1 1 2 3>: the driver looks the port config up
++		 * as pconfig[m_port], and the sm7150 TX controller has one
++		 * dout port, so the microphone inputs start at port 2 - which
++		 * is also why the qcom,ports-* arrays of swr2 begin with 0xff.
++		 */
++		qcom,tx-port-mapping = <2 2 3 4>;
++		qcom,tx-channel-mapping = /bits/ 8 <1 2 1 1 2 3 3 4 1 2 3 4>;
+ 	};
+ };
+ 
+-- 
+2.43.0
+

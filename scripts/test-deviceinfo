@@ -6,8 +6,8 @@ set -eu
 cd "$(dirname "$0")/.."
 f=pmaports/device/testing/device-motorola-hanoip/deviceinfo
 fail() { echo "FAIL: $*" >&2; exit 1; }
-cmd=$(sed -n 's/^deviceinfo_kernel_cmdline="\(.*\)"$/\1/p' "$f")
-[ -n "$cmd" ] || fail "no deviceinfo_kernel_cmdline in $f"
+cmd=$(sed -n 's/^deviceinfo_kernel_cmdline_downstream="\(.*\)"$/\1/p' "$f")
+[ -n "$cmd" ] || fail "no deviceinfo_kernel_cmdline_downstream in $f"
 case $cmd in console=ttyMSM0,115200n8\ *) ;; *) fail "the command line must start with console=ttyMSM0,115200n8, got: ${cmd%% *}" ;; esac
 case " $cmd " in *" console=tty0 "*) fail "console=tty0 is in the command line (never booted from vendor_boot)" ;; esac
 for a in hanoip_splashfb.screen_off=1 ignore_loglevel lpm_levels.sleep_disabled=1 loop.max_part=7; do
@@ -16,5 +16,26 @@ done
 # Issue #21 is explained (console=tty0) and the images boot-deploy makes from this file boot on the phone, so a package
 # update flashes them again. The check above is what keeps that safe: a command line that does not start with the
 # working console must never reach a flash.
-grep -qx 'deviceinfo_flash_kernel_on_update="true"' "$f" || fail "deviceinfo_flash_kernel_on_update must be \"true\""
+grep -qx 'deviceinfo_flash_kernel_on_update_downstream="true"' "$f" || fail "deviceinfo_flash_kernel_on_update_downstream must be \"true\""
+
+# Mainline overrides (EFI path, Duranium): no boot.img, no flash on update, DTB from mainline package, cmdline with panic=5
+for v in dtb kernel_cmdline generate_bootimg flash_kernel_on_update; do
+	grep -q "^deviceinfo_${v}_mainline=" "$f" || fail "deviceinfo_${v}_mainline is missing"
+done
+case $(sed -n 's/^deviceinfo_dtb_mainline="\(.*\)"$/\1/p' "$f") in qcom/sm7150-motorola-hanoip) ;; *) fail "deviceinfo_dtb_mainline is not qcom/sm7150-motorola-hanoip" ;; esac
+case $(sed -n 's/^deviceinfo_kernel_cmdline_mainline="\(.*\)"$/\1/p' "$f") in console=ttyMSM0,115200n8\ *panic=5*) ;; *) fail "deviceinfo_kernel_cmdline_mainline must start with console=ttyMSM0,115200n8 and contain panic=5" ;; esac
+[ "$(sed -n 's/^deviceinfo_generate_bootimg_mainline="\(.*\)"$/\1/p' "$f")" = "false" ] || fail "deviceinfo_generate_bootimg_mainline must be false"
+[ "$(sed -n 's/^deviceinfo_flash_kernel_on_update_mainline="\(.*\)"$/\1/p' "$f")" = "false" ] || fail "deviceinfo_flash_kernel_on_update_mainline must be false"
+
+# devicepkg_subpackage_kernel stops the build ("should contain a kernel subpackage suffix") when a variable exists both plain
+# and with a kernel suffix: with two kernel subpackages every kernel-specific variable carries its suffix.
+for s in downstream mainline; do
+	for v in $(sed -n "s/^\(deviceinfo_[a-z_]*\)_$s=.*/\1/p" "$f"); do
+		! grep -q "^$v=" "$f" || fail "$v is plain and also has the _$s suffix: devicepkg_subpackage_kernel refuses it"
+	done
+done
+for v in dtb kernel_cmdline generate_bootimg flash_kernel_on_update; do
+	grep -q "^deviceinfo_${v}_downstream=" "$f" || fail "deviceinfo_${v}_downstream is missing"
+done
+
 echo "deviceinfo: ok"

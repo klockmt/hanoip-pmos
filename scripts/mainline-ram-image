@@ -1,0 +1,49 @@
+#!/bin/sh
+# Packs a RAM-only test image for the mainline kernel built by scripts/build-mainline-kernel: an Android boot image
+# header v2 that our U-Boot boots with `fastboot boot` (docs/MAINLINE.md, section 7). Its initramfs is
+# kernel/mainline/$INIT-init, a static busybox, bounded-loop and the kernel's modules. Nothing touches the phone.
+#   INIT=ram-test (default)  locks every disk read-only, mounts nothing, reboots after 10 minutes unless someone logs in;
+#   INIT=super-root          boots the root that scripts/mainline-make-root wrote into super's approved region.
+# Usage: [INIT=...] scripts/mainline-ram-image [out.img]   (default: $HANOIP_MAINLINE_DIR/out/boot-$INIT.img)
+# BUSYBOX: a static aarch64 busybox, e.g. bin/busybox.static from Alpine's busybox-static apk.
+set -eu
+. "$(dirname "$0")/env.sh"
+k=${HANOIP_MAINLINE_DIR:-$HANOIP_SRC_DIR/hanoip-mainline-7.3}
+init=${INIT:-ram-test}
+[ -f "$HANOIP_ROOT/kernel/mainline/$init-init" ] || { echo "no kernel/mainline/$init-init" >&2; exit 1; }
+out=${1:-$k/out/boot-$init.img}
+bb=${BUSYBOX:-$HANOIP_TEST_DIR/busybox-static/x/bin/busybox.static}
+for f in "$k/out/Image.gz" "$k/out/kernel.dtb" "$bb"; do [ -s "$f" ] || { echo "missing $f" >&2; exit 1; }; done
+mods=$(ls "$k"/out/modules-*.tar.gz 2>/dev/null | head -1)
+[ -n "$mods" ] || { echo "missing $k/out/modules-*.tar.gz (run scripts/build-mainline-kernel)" >&2; exit 1; }
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+r=$tmp/root
+mkdir -p "$r/bin" "$r/dev" "$r/proc" "$r/sys" "$r/tmp" "$r/etc" "$r/lib/modules"
+install -m755 "$bb" "$r/bin/busybox"
+install -m755 "$HANOIP_ROOT/kernel/mainline/$init-init" "$r/init"
+"${CROSS_COMPILE:-aarch64-linux-gnu-}gcc" -static -Os -Wall -Wextra -o "$r/bin/bounded-loop" "$HANOIP_ROOT/kernel/mainline/bounded-loop.c"
+tar -C "$r/lib/modules" -xzf "$mods"
+(cd "$r" && find . | LC_ALL=C sort | cpio -o -H newc -R 0:0 --quiet | gzip -6n) > "$tmp/ramdisk"
+
+# panic=5 and oops=panic: U-Boot passes only this command line (not its DTB's bootargs), and a test that oopses must
+# reboot to the server instead of hanging (docs/PITFALLS.md).
+cmdline='earlycon=msm_geni_serial,0xa88000 console=tty0 console=ttyGS0 loglevel=7 clk_ignore_unused consoleblank=0 panic=5 oops=panic rdinit=/init'
+mkbootimg --header_version 2 --kernel "$k/out/Image.gz" --ramdisk "$tmp/ramdisk" --dtb "$k/out/kernel.dtb" \
+	--pagesize 4096 --base 0 --kernel_offset 0x00008000 --ramdisk_offset 0x04000000 --second_offset 0 \
+	--tags_offset 0x00000100 --dtb_offset 0x01f00000 --cmdline "$cmdline" -o "$out"
+
+# U-Boot finds the DTB of a v2 image at page + kernel + ramdisk + second + recovery_dtbo (each page-aligned) and
+# some mkbootimg builds write a wrong page size there; check where it really is. 112 MiB is U-Boot's
+# max-download-size.
+python3 -I - "$out" <<'EOF'
+import struct, sys
+d = open(sys.argv[1], "rb").read()
+ks, _, rs, _, ss, _, _, page, hv = struct.unpack_from("<9I", d, 8)
+al = lambda n: (n + page - 1) // page * page
+ptr = page + al(ks) + al(rs) + al(ss) + al(struct.unpack_from("<I", d, 1632)[0])
+ok = hv == 2 and page == 4096 and d[ptr:ptr + 4] == bytes.fromhex("d00dfeed") and len(d) <= 0x07000000
+sys.exit(0 if ok else "bad image: header %d, page %d, DTB magic %s at %d, %d bytes" % (hv, page, d[ptr:ptr + 4].hex(), ptr, len(d)))
+EOF
+echo "$out ($(wc -c < "$out") bytes)"

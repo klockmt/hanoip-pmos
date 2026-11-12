@@ -9,7 +9,7 @@ One line each, in this order:
 1. Server: average of 3 pings in ms to the default gateway (ip route), then the address of the internet host (1.1.1.1, HANOIP_PING_HOST) and its average ping.
 2. Network: interface of the default route (ip route), received and sent kbit/s over 1 s (/sys/class/net/*/statistics).
 3. CPU: busy % over 1 s (/proc/stat), lowest-highest current clock of the two clusters (cpufreq scaling_cur_freq), hottest core (thermal zones cpu-*-usr).
-4. GPU: busy % (kgsl gpu_busy_percentage), clock (kgsl gpuclk), hottest GPU sensor (thermal zones gpuss-*-usr), and on or off (kgsl runtime_status: active is on, suspended is off).
+4. GPU: busy % (kgsl gpu_busy_percentage; the mainline kernel has none: n/a), clock (kgsl gpuclk, or the devfreq cur_freq of 5000000.gpu), hottest GPU sensor (thermal zones gpuss-*-usr, or gpuss*-thermal), and on or off (kgsl runtime_status: active is on, suspended is off; on the mainline kernel a clock above 0 is on).
 5. RAM: used %, used/total GB (used = MemTotal - MemAvailable, /proc/meminfo) and the memory controller temperature (thermal zone ddr-usr).
 6. ROM: used % and used/total GB of the root filesystem (df /) and the flash temperature (thermal zone nvm-therm-adc).
 7. Battery: charge % (capacity), voltage (voltage_now), charge cycles (cycle_count, the average of the 8 buckets the PMIC keeps), temperature (temp).
@@ -24,11 +24,16 @@ sys=${HANOIP_SYS_DIR:-/sys}
 dev=$(ip route show default | awk '{for(i=1;i<=NF;i++) if($i=="dev") {print $(i+1); exit}}')
 net() { cat $sys/class/net/$dev/statistics/$1 2>/dev/null || echo 0; }
 cpu() { read -r _ u n s i w q sq st _ < /proc/stat; echo "$((u+n+s+i+w+q+sq+st)) $((i+w))"; }
-# Hottest of the thermal zones whose type matches the pattern $1, in °C (sysfs gives millidegrees).
+# Hottest of the thermal zones whose type matches any pattern given (4.14 names first, then the mainline ones), in °C
+# (sysfs gives millidegrees); n/a when the kernel has no such sensor.
 zones() {
-	for z in $sys/class/thermal/thermal_zone*; do read -r t < $z/type; case $t in $1) cat $z/temp;; esac; done |
-		sort -n | tail -1 | awk '{printf "%.1f", $1/1000}'
+	for z in $sys/class/thermal/thermal_zone*; do
+		read -r t < $z/type
+		for pat in "$@"; do case $t in $pat) cat $z/temp;; esac; done
+	done | sort -n | tail -1 | awk '{printf "%.1f", $1/1000} END{if (NR == 0) printf "n/a"}'
 }
+# First line of file $1, or $2 when the kernel does not have it (the mainline gauge lacks several of the 4.14's files).
+rd() { cat "$1" 2>/dev/null || echo "$2"; }
 
 gw=$(ip route show default | awk '{for(i=1;i<=NF;i++) if($i=="via") {print $(i+1); exit}}')
 pinghost=${HANOIP_PING_HOST:-1.1.1.1}
@@ -40,36 +45,49 @@ sleep 1
 rx1=$(net rx_bytes); tx1=$(net tx_bytes); set -- $(cpu); t1=$1; id1=$2
 
 freqs=$(cat $sys/devices/system/cpu/cpufreq/policy*/scaling_cur_freq | sort -n | awk 'NR==1{lo=$1} {hi=$1} END{lo/=1000; hi/=1000; if (lo==hi) printf "%d MHz", lo; else printf "%d-%d MHz", lo, hi}')
-kgsl=$sys/class/kgsl/kgsl-3d0
-gpubusy=$(awk '{print $1}' $kgsl/gpu_busy_percentage)
-if [ "$(cat $kgsl/device/power/runtime_status)" = active ]; then gpu=on; else gpu=off; fi
+# The 4.14 has kgsl; the mainline GPU is a devfreq device with a clock but no busy figure (0 Hz is off).
+kgsl=$sys/class/kgsl/kgsl-3d0 gdev=$sys/class/devfreq/5000000.gpu
+if [ -d "$kgsl" ]; then
+	gpubusy="$(awk '{print $1}' $kgsl/gpu_busy_percentage) %" gpuhz=$(cat $kgsl/gpuclk)
+	if [ "$(cat $kgsl/device/power/runtime_status)" = active ]; then gpu=on; else gpu=off; fi
+else
+	gpubusy=n/a gpuhz=$(rd $gdev/cur_freq 0)
+	if [ "$gpuhz" -gt 0 ]; then gpu=on; else gpu=off; fi
+fi
 
-bat=$sys/class/power_supply/battery
-usb=$sys/class/power_supply/usb
+# 4.14: supplies "battery" and "usb" with the charger's controls; mainline: the gauge "qcom_qg" and the PM6150 charger
+# (online, input voltage and current), and the charge limit's state is the file hanoip-ml-charge keeps.
+ps=$sys/class/power_supply
+bat=$ps/battery usb=$ps/usb
+[ -d "$bat" ] || bat=$ps/qcom_qg
+[ -d "$usb" ] || usb=$ps/hanoip-pm6150-monitor-charger
 cur=$(cat $bat/current_now); volt=$(cat $bat/voltage_now)
-present=$(cat $usb/present); suspended=$(cat $bat/input_suspend)
+present=$(rd $usb/present "$(rd $usb/online 0)"); suspended=$(rd $bat/input_suspend 0)
+mlstate=$(rd "${HANOIP_ML_STATE:-/run/hanoip-ml-charge.state}" off)
+if [ "$mlstate" = on ]; then ml_on=1; else ml_on=0; fi
+chg_on=$(rd $bat/charging_enabled $ml_on)
 # Current is positive while charging. Same figure btop uses when the battery has no power_now: |current| x voltage (µA x µV).
 batw=$(awk -v c=$cur -v v=$volt 'BEGIN{printf "%.2f W", (c<0?-c:c)*v/1e12}')
 if [ "$(cat $bat/status)" = Charging ]; then charging=charging; else charging="not charging"; fi
 # hanoip-charge-limit's hold: charger stopped, cable kept on and powering the phone.
-if [ "$present" = 1 ] && [ "$suspended" = 0 ] && [ "$(cat $bat/charging_enabled)" = 0 ]; then charging="$charging • bypass"; fi
+if [ "$present" = 1 ] && [ "$suspended" = 0 ] && [ "$chg_on" = 0 ]; then charging="$charging • bypass"; fi
 if [ "$present" = 1 ] && [ "$suspended" = 0 ]; then
-	total=$(awk -v c=$(cat $usb/input_current_now) -v v=$(cat $usb/voltage_now) 'BEGIN{printf "%.2f W • cable", c*v/1e12}')
+	total=$(awk -v c=$(rd $usb/input_current_now "$(rd $usb/current_now 0)") -v v=$(rd $usb/voltage_now 0) 'BEGIN{printf "%.2f W • cable", c*v/1e12}')
 else
 	total="$batw • battery"
 fi
-cycles=$(cat $bat/cycle_count)
+cycles=$(rd $bat/cycle_count n/a)
 
 echo "Server - $lat_gw | $pinghost  - $lat_net"
 echo "$dev rx $(( (rx1-rx0)*8/1000 )) kbit/s, tx $(( (tx1-tx0)*8/1000 )) kbit/s"
-echo "CPU - $(( ((t1-t0)-(id1-id0))*100/(t1-t0) )) % | $freqs | $(zones 'cpu-*-usr') °C"
-echo "GPU - $gpubusy % | $(( $(cat $kgsl/gpuclk) / 1000000 )) MHz | $(zones 'gpuss-*-usr') °C | $gpu"
-awk -v temp="$(zones ddr-usr)" '/MemTotal/{t=$2} /MemAvailable/{a=$2} END{printf "RAM - %.0f %% | %.1f/%.1f GB | %s °C\n", (t-a)*100/t, (t-a)/1048576, t/1048576, temp}' /proc/meminfo
+echo "CPU - $(( ((t1-t0)-(id1-id0))*100/(t1-t0) )) % | $freqs | $(zones 'cpu-*-usr' 'cpu[0-9]*-thermal') °C"
+echo "GPU - $gpubusy | $(( gpuhz / 1000000 )) MHz | $(zones 'gpuss-*-usr' 'gpuss[0-9]*-thermal') °C | $gpu"
+awk -v temp="$(zones ddr-usr ddr-thermal)" '/MemTotal/{t=$2} /MemAvailable/{a=$2} END{printf "RAM - %.0f %% | %.1f/%.1f GB | %s °C\n", (t-a)*100/t, (t-a)/1048576, t/1048576, temp}' /proc/meminfo
 df -P / | awk -v temp="$(zones nvm-therm-adc)" 'NR==2{printf "ROM - %d %% | %.1f/%.1f GB | %s °C\n", $5, $3/1048576, $2/1048576, temp}'
 echo "Battery - $(cat $bat/capacity) % | $(awk -v v=$volt 'BEGIN{printf "%.2f", v/1e6}') V | $cycles cycles | $(awk '{printf "%.1f", $1/10}' $bat/temp) °C"
 echo "$batw | $charging"
 echo "Energy drain - $total"
-echo "Body - $(zones quiet_therm) °C"
+echo "Body - $(zones quiet_therm pm6150-thermal) °C"
 # HANOIP_RESOLV_CONF replaces /etc/resolv.conf, for tests.
 if grep -q '100\.100\.100\.100' "${HANOIP_RESOLV_CONF:-/etc/resolv.conf}" 2>/dev/null; then
 	echo "Warning - resolv.conf uses Tailscale's DNS (100.100.100.100): tailscale set --accept-dns=false, then resolvconf -u"

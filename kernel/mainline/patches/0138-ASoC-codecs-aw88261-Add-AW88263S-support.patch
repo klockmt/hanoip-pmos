@@ -1,0 +1,298 @@
+From 7742d694e5a86cb7f7149307b46d33c3c73215ed Mon Sep 17 00:00:00 2001
+From: Aleks <aleks.spv@gmail.com>
+Date: Wed, 21 Oct 2026 10:28:07 +0600
+Subject: [PATCH 138/194] ASoC: codecs: aw88261: Add AW88263S support
+
+AW88263S (chip ID 0x2032) is accepted by the driver, but its register
+layout differs from AW88261:
+ - volume lives in SYSCTRL2[15:6] and hard mute in SYSCTRL2[4],
+ - TX feedback enable is bit 0 of register 0x07,
+ - 0x07/0x08 hold a different slot configuration and there is no
+   CCO_MUX, ULS hard mute, efuse/VSNTM calibration or PLL lock status.
+
+Handle these differences, use a simplified start sequence for this chip
+and add the "awinic,aw88263s" compatible.
+
+Tested on Xiaomi Redmi Note 10 Pro (sweet) with two AW88263S on PRI_MI2S.
+
+Signed-off-by: Aleks <aleks.spv@gmail.com>
+---
+ sound/soc/codecs/aw88261.c | 120 ++++++++++++++++++++++++++++++++-----
+ sound/soc/codecs/aw88261.h |  16 +++++
+ 2 files changed, 120 insertions(+), 16 deletions(-)
+
+diff --git a/sound/soc/codecs/aw88261.c b/sound/soc/codecs/aw88261.c
+index d10ed30da..f9376ef25 100644
+--- a/sound/soc/codecs/aw88261.c
++++ b/sound/soc/codecs/aw88261.c
+@@ -22,6 +22,11 @@
+ #include "aw88395/aw88395_data_type.h"
+ #include "aw88395/aw88395_device.h"
+ 
++static bool aw88261_is_aw88263s(struct aw_device *aw_dev)
++{
++	return aw_dev->chip_id == AW88263S_CHIP_ID;
++}
++
+ static const struct regmap_config aw88261_remap_config = {
+ 	.val_bits = 16,
+ 	.reg_bits = 8,
+@@ -34,12 +39,24 @@ static void aw88261_dev_set_volume(struct aw_device *aw_dev, unsigned int value)
+ {
+ 	unsigned int volume = min(value, (unsigned int)AW88261_MUTE_VOL);
+ 
+-	regmap_update_bits(aw_dev->regmap, AW88261_SYSCTRL2_REG,
+-		~AW88261_VOL_MASK, DB_TO_REG_VAL(volume));
++	if (aw88261_is_aw88263s(aw_dev))
++		regmap_update_bits(aw_dev->regmap, AW88261_SYSCTRL2_REG,
++			AW88263S_VOL_MASK,
++			DB_TO_REG_VAL(volume) << AW88263S_VOL_SHIFT);
++	else
++		regmap_update_bits(aw_dev->regmap, AW88261_SYSCTRL2_REG,
++			~AW88261_VOL_MASK, DB_TO_REG_VAL(volume));
+ }
+ 
+ static void aw88261_dev_i2s_tx_enable(struct aw_device *aw_dev, bool flag)
+ {
++	if (aw88261_is_aw88263s(aw_dev)) {
++		regmap_update_bits(aw_dev->regmap, AW88263S_I2SCFG1_REG,
++			AW88263S_I2STXEN_MASK,
++			flag ? AW88263S_I2STXEN_ENABLE : AW88263S_I2STXEN_DISABLE);
++		return;
++	}
++
+ 	if (flag)
+ 		regmap_update_bits(aw_dev->regmap, AW88261_I2SCFG1_REG,
+ 			~AW88261_I2STXEN_MASK, AW88261_I2STXEN_ENABLE_VALUE);
+@@ -72,11 +89,19 @@ static void aw88261_dev_mute(struct aw_device *aw_dev, bool is_mute)
+ {
+ 	if (is_mute) {
+ 		aw88261_dev_set_volume(aw_dev, AW88261_MUTE_VOL);
+-		regmap_update_bits(aw_dev->regmap, AW88261_SYSCTRL_REG,
+-				~AW88261_HMUTE_MASK, AW88261_HMUTE_ENABLE_VALUE);
++		if (aw88261_is_aw88263s(aw_dev))
++			regmap_update_bits(aw_dev->regmap, AW88261_SYSCTRL2_REG,
++					AW88263S_HMUTE_MASK, AW88263S_HMUTE_ENABLE);
++		else
++			regmap_update_bits(aw_dev->regmap, AW88261_SYSCTRL_REG,
++					~AW88261_HMUTE_MASK, AW88261_HMUTE_ENABLE_VALUE);
+ 	} else {
+-		regmap_update_bits(aw_dev->regmap, AW88261_SYSCTRL_REG,
+-				~AW88261_HMUTE_MASK, AW88261_HMUTE_DISABLE_VALUE);
++		if (aw88261_is_aw88263s(aw_dev))
++			regmap_update_bits(aw_dev->regmap, AW88261_SYSCTRL2_REG,
++					AW88263S_HMUTE_MASK, AW88263S_HMUTE_DISABLE);
++		else
++			regmap_update_bits(aw_dev->regmap, AW88261_SYSCTRL_REG,
++					~AW88261_HMUTE_MASK, AW88261_HMUTE_DISABLE_VALUE);
+ 		aw88261_dev_set_volume(aw_dev, aw_dev->volume_desc.ctl_volume);
+ 	}
+ }
+@@ -126,7 +151,7 @@ static int aw88261_dev_check_pll(struct aw_device *aw_dev)
+ 	return -EPERM;
+ }
+ 
+-static int aw88261_dev_configure_syspll(struct aw88261 *aw88261)
++static int aw88261_dev_configure_slots(struct aw88261 *aw88261)
+ {
+ 	struct aw_device *aw_dev = aw88261->aw_pa;
+ 	int ret;
+@@ -156,10 +181,21 @@ static int aw88261_dev_configure_syspll(struct aw88261 *aw88261)
+ 		return ret;
+ 
+ 	/* PLL divider must be used for 8/16/32 kHz modes */
+-	ret = regmap_update_bits(aw_dev->regmap, AW88261_PLLCTRL1_REG,
++	return regmap_update_bits(aw_dev->regmap, AW88261_PLLCTRL1_REG,
+ 			~AW88261_CCO_MUX_MASK, aw88261->cco_mux_value);
+-	if (ret)
+-		return ret;
++}
++
++static int aw88261_dev_configure_syspll(struct aw88261 *aw88261)
++{
++	struct aw_device *aw_dev = aw88261->aw_pa;
++	int ret;
++
++	/* AW88263S has a different slot layout and no CCO_MUX, keep the ACF values */
++	if (!aw88261_is_aw88263s(aw_dev)) {
++		ret = aw88261_dev_configure_slots(aw88261);
++		if (ret)
++			return ret;
++	}
+ 
+ 	/* The word clock (WCK) defines the beginning of a frame */
+ 	ret = regmap_update_bits(aw_dev->regmap, AW88261_I2SCTRL1_REG,
+@@ -193,6 +229,10 @@ static int aw88261_dev_configure_syspll(struct aw88261 *aw88261)
+ 	if (ret)
+ 		return ret;
+ 
++	/* AW88263S does not report PLL lock in SYSST */
++	if (aw88261_is_aw88263s(aw_dev))
++		return 0;
++
+ 	return aw88261_dev_check_pll(aw_dev);
+ }
+ 
+@@ -223,6 +263,10 @@ static int aw88261_dev_check_sysst(struct aw_device *aw_dev)
+ 
+ static void aw88261_dev_uls_hmute(struct aw_device *aw_dev, bool uls_hmute)
+ {
++	/* not present on AW88263S */
++	if (aw88261_is_aw88263s(aw_dev))
++		return;
++
+ 	if (uls_hmute)
+ 		regmap_update_bits(aw_dev->regmap, AW88261_SYSCTRL_REG,
+ 				~AW88261_ULS_HMUTE_MASK,
+@@ -321,6 +365,10 @@ static int aw88261_dev_set_vcalb(struct aw_device *aw_dev)
+ 	u32 reg_val;
+ 	int ret;
+ 
++	/* AW88263S takes VSNTM1 from the ACF */
++	if (aw88261_is_aw88263s(aw_dev))
++		return 0;
++
+ 	ret = aw88261_dev_get_icalk(aw_dev, &icalk_val);
+ 	if (ret)
+ 		return ret;
+@@ -349,6 +397,7 @@ static int aw88261_dev_reg_update(struct aw88261 *aw88261,
+ {
+ 	struct aw_device *aw_dev = aw88261->aw_pa;
+ 	struct aw_volume_desc *vol_desc = &aw_dev->volume_desc;
++	bool aw88263s = aw88261_is_aw88263s(aw_dev);
+ 	unsigned int read_val, efcheck_val, read_vol;
+ 	int data_len, i, ret;
+ 	int16_t *reg_data;
+@@ -372,7 +421,8 @@ static int aw88261_dev_reg_update(struct aw88261 *aw88261,
+ 		reg_addr = reg_data[i];
+ 		reg_val = reg_data[i + 1];
+ 
+-		if (reg_addr == AW88261_SYSCTRL_REG) {
++		/* AW88263S SYSCTRL bits differ, write the ACF value as is */
++		if (reg_addr == AW88261_SYSCTRL_REG && !aw88263s) {
+ 			aw88261->amppd_st = reg_val & (~AW88261_AMPPD_MASK);
+ 			ret = regmap_read(aw_dev->regmap, reg_addr, &read_val);
+ 			if (ret)
+@@ -389,7 +439,8 @@ static int aw88261_dev_reg_update(struct aw88261 *aw88261,
+ 			reg_val |= AW88261_ULS_HMUTE_ENABLE_VALUE;
+ 		}
+ 
+-		if (reg_addr == AW88261_DBGCTRL_REG) {
++		/* 0x14 is not DBGCTRL on AW88263S */
++		if (reg_addr == AW88261_DBGCTRL_REG && !aw88263s) {
+ 			efcheck_val = reg_val & (~AW88261_EF_DBMD_MASK);
+ 			if (efcheck_val == AW88261_OR_VALUE)
+ 				aw88261->efuse_check = AW88261_EF_OR_CHECK;
+@@ -398,20 +449,27 @@ static int aw88261_dev_reg_update(struct aw88261 *aw88261,
+ 		}
+ 
+ 		/* i2stxen */
+-		if (reg_addr == AW88261_I2SCTRL3_REG) {
++		if (reg_addr == AW88261_I2SCTRL3_REG && !aw88263s) {
+ 			/* close tx */
+ 			reg_val &= AW88261_I2STXEN_MASK;
+ 			reg_val |= AW88261_I2STXEN_DISABLE_VALUE;
+ 		}
+ 
++		if (reg_addr == AW88263S_I2SCFG1_REG && aw88263s)
++			reg_val &= ~AW88263S_I2STXEN_MASK;
++
+ 		if (reg_addr == AW88261_SYSCTRL2_REG) {
+-			read_vol = (reg_val & (~AW88261_VOL_MASK)) >>
+-				AW88261_VOL_START_BIT;
++			if (aw88263s)
++				read_vol = (reg_val & AW88263S_VOL_MASK) >>
++					AW88263S_VOL_SHIFT;
++			else
++				read_vol = (reg_val & (~AW88261_VOL_MASK)) >>
++					AW88261_VOL_START_BIT;
+ 			aw_dev->volume_desc.init_volume =
+ 				REG_VAL_TO_DB(read_vol);
+ 		}
+ 
+-		if (reg_addr == AW88261_VSNTM1_REG)
++		if (reg_addr == AW88261_VSNTM1_REG && !aw88263s)
+ 			continue;
+ 
+ 		ret = regmap_write(aw_dev->regmap, reg_addr, reg_val);
+@@ -498,6 +556,32 @@ static int aw88261_dev_fw_update(struct aw88261 *aw88261)
+ 	return ret;
+ }
+ 
++/*
++ * AW88263S does not report a stable SYSST after power up and lacks the
++ * boost and ULS settings, so only power up the amplifier and unmute it.
++ */
++static int aw88263s_dev_start(struct aw88261 *aw88261)
++{
++	struct aw_device *aw_dev = aw88261->aw_pa;
++
++	aw88261_dev_pwd(aw_dev, false);
++	usleep_range(AW88261_2000_US, AW88261_2000_US + 10);
++
++	aw88261_dev_amppd(aw_dev, false);
++	usleep_range(AW88261_1000_US, AW88261_1000_US + 50);
++
++	aw88261_dev_i2s_tx_enable(aw_dev, true);
++	aw88261_dev_clear_int_status(aw_dev);
++
++	/* the ACF leaves the amplifier hard-muted */
++	if (!aw88261->mute_st)
++		aw88261_dev_mute(aw_dev, false);
++
++	aw_dev->status = AW88261_DEV_PW_ON;
++
++	return 0;
++}
++
+ static int aw88261_dev_start(struct aw88261 *aw88261)
+ {
+ 	struct aw_device *aw_dev = aw88261->aw_pa;
+@@ -518,6 +602,9 @@ static int aw88261_dev_start(struct aw88261 *aw88261)
+ 		goto pll_check_fail;
+ 	}
+ 
++	if (aw88261_is_aw88263s(aw_dev))
++		return aw88263s_dev_start(aw88261);
++
+ 	/* amppd on */
+ 	aw88261_dev_amppd(aw_dev, false);
+ 	usleep_range(AW88261_1000_US, AW88261_1000_US + 50);
+@@ -1353,6 +1440,7 @@ MODULE_DEVICE_TABLE(i2c, aw88261_i2c_id);
+ 
+ static const struct of_device_id aw88261_of_table[] = {
+ 	{ .compatible = "awinic,aw88261" },
++	{ .compatible = "awinic,aw88263s" },
+ 	{ }
+ };
+ MODULE_DEVICE_TABLE(of, aw88261_of_table);
+diff --git a/sound/soc/codecs/aw88261.h b/sound/soc/codecs/aw88261.h
+index 0cc85af55..73081bbbd 100644
+--- a/sound/soc/codecs/aw88261.h
++++ b/sound/soc/codecs/aw88261.h
+@@ -535,6 +535,22 @@
+ #define AW88261_REG_TO_DB		(0x3f)
+ #define AW88261_INIT_PROFILE		(0)
+ 
++/*
++ * AW88263S register layout differences. Unlike the AW88261_*_MASK
++ * defines these are plain (not inverted) masks.
++ * SYSCTRL2 (0x05): VOL[15:6] | HDCCE[5] | HMUTE[4] | BST_IPEAK[3:0]
++ */
++#define AW88263S_VOL_SHIFT		(6)
++#define AW88263S_VOL_MASK		GENMASK(15, 6)
++#define AW88263S_HMUTE_MASK		BIT(4)
++#define AW88263S_HMUTE_ENABLE		BIT(4)
++#define AW88263S_HMUTE_DISABLE		(0)
++/* I2STXEN is bit 0 of 0x07, 0x08 holds the slot configuration */
++#define AW88263S_I2SCFG1_REG		(0x07)
++#define AW88263S_I2STXEN_MASK		BIT(0)
++#define AW88263S_I2STXEN_ENABLE		BIT(0)
++#define AW88263S_I2STXEN_DISABLE	(0)
++
+ #define REG_VAL_TO_DB(value)		((((value) >> AW88261_VOL_6DB_START) * \
+ 					AW88261_VOLUME_STEP_DB) + \
+ 					((value) & AW88261_REG_TO_DB))
+-- 
+2.43.0
+

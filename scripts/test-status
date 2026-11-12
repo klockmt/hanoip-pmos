@@ -76,6 +76,36 @@ if grep -q 'cycle-offset' "$script"; then echo "FAIL: hanoip-status still adds a
 echo 120 > "$b/cycle_count"
 state "Not charging" 0 0 0 1
 expect "cycles are the kernel's count as it is" "$(line 7)" "Battery - 81 % | 4.33 V | 120 cycles | 31.6 °C"
+
+# The mainline kernel (7.3): the gauge is qcom_qg and the cable shows on the PM6150 charger supply, the GPU is a devfreq
+# device, the thermal zones are named *-thermal, there is no kgsl, no cycle count, no quiet_therm and no ROM sensor; the
+# charge limit's state is the file hanoip-ml-charge keeps. Every line must still come out, with n/a where there is no figure.
+m=$dir/ml
+mkdir -p "$m/class/net/eth0/statistics" "$m/class/power_supply/qcom_qg" "$m/class/power_supply/hanoip-pm6150-monitor-charger" \
+	"$m/class/devfreq/5000000.gpu" "$m/devices/system/cpu/cpufreq/policy0" "$m/devices/system/cpu/cpufreq/policy6"
+echo 0 > "$m/class/net/eth0/statistics/rx_bytes"; echo 0 > "$m/class/net/eth0/statistics/tx_bytes"
+echo 300000 > "$m/devices/system/cpu/cpufreq/policy0/scaling_cur_freq"; echo 2304000 > "$m/devices/system/cpu/cpufreq/policy6/scaling_cur_freq"
+echo 0 > "$m/class/devfreq/5000000.gpu/cur_freq"
+n=0
+for z in cpu0-thermal:38800 cpu7-thermal:42400 gpuss0-thermal:36200 ddr-thermal:36200 pm6150-thermal:34375; do
+	mkdir -p "$m/class/thermal/thermal_zone$n"; echo "${z%%:*}" > "$m/class/thermal/thermal_zone$n/type"; echo "${z##*:}" > "$m/class/thermal/thermal_zone$n/temp"; n=$((n + 1))
+done
+q=$m/class/power_supply/qcom_qg c=$m/class/power_supply/hanoip-pm6150-monitor-charger
+echo 69 > "$q/capacity"; echo 4114236 > "$q/voltage_now"; echo 283 > "$q/temp"; echo -40283 > "$q/current_now"; echo "Not charging" > "$q/status"
+echo 1 > "$c/online"; echo 4998256 > "$c/voltage_now"; echo 492755 > "$c/current_now"
+echo off > "$dir/ml.state"
+mlstatus() { HANOIP_SYS_DIR=$m HANOIP_ML_STATE=$dir/ml.state sh "$script" | sed -n "${1}p"; }
+expect "mainline: ten lines" "$(HANOIP_SYS_DIR=$m HANOIP_ML_STATE=$dir/ml.state sh "$script" | wc -l)" "10"
+expect "mainline: cpu sensors" "$(mlstatus 3 | cut -d'|' -f2-)" " 300-2304 MHz | 42.4 °C"
+expect "mainline: gpu has no busy figure, clock 0 is off" "$(mlstatus 4)" "GPU - n/a | 0 MHz | 36.2 °C | off"
+expect "mainline: ram temperature" "$(mlstatus 5 | awk -F' [|] ' '{print $NF}')" "36.2 °C"
+expect "mainline: no rom sensor" "$(mlstatus 6 | awk -F' [|] ' '{print $NF}')" "n/a °C"
+expect "mainline: battery from qcom_qg" "$(mlstatus 7)" "Battery - 69 % | 4.11 V | n/a cycles | 28.3 °C"
+expect "mainline: bypass when the limit stopped charging on the cable" "$(mlstatus 8)" "0.17 W | not charging • bypass"
+expect "mainline: cable power" "$(mlstatus 9)" "Energy drain - 2.46 W • cable"
+expect "mainline: body from pm6150" "$(mlstatus 10)" "Body - 34.4 °C"
+echo on > "$dir/ml.state"; echo Charging > "$q/status"
+expect "mainline: charging while the limit lets it" "$(mlstatus 8)" "0.17 W | charging"
 echo "status: all checks pass"
 
 # A resolv.conf that points at Tailscale's MagicDNS is the start of the DNS loop (docs/HOMELAB.md): warn in an 11th line.

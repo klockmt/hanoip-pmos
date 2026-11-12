@@ -1,0 +1,150 @@
+From ca538b50a9ec01178d97e5d69371f25a230093e9 Mon Sep 17 00:00:00 2001
+From: hanoip <h@l>
+Date: Tue, 27 Oct 2026 12:16:10 -0300
+Subject: [PATCH 169/194] power: supply: qcom_smbx: opt-in charging for the
+ hanoip monitor
+
+Dumping the charger registers on the hanoip shows the input path, APSD, float
+voltage (4.400 V), JEITA hard limit, termination and auto-recharge are already
+configured correctly by the bootloader; the only thing missing is the enable
+bit, because this driver deliberately skips the setup sequence.
+
+Add a three-write opt-in path, off by default and triggered only by writing 0/1
+to /sys/kernel/debug/hanoip-charge: disarm the charger watchdog (its bite
+disables charging and nothing pets it here), program a conservative battery
+current limit (charge_current_ua, default 1 A, hard bounded to 0.3-2 A) and set
+CHARGING_ENABLE_CMD bit 0. Everything else is left untouched.
+---
+ drivers/power/supply/qcom_smbx.c | 102 +++++++++++++++++++++++++++++++
+ 1 file changed, 102 insertions(+)
+
+diff --git a/drivers/power/supply/qcom_smbx.c b/drivers/power/supply/qcom_smbx.c
+index accd02594..dd276e3b3 100644
+--- a/drivers/power/supply/qcom_smbx.c
++++ b/drivers/power/supply/qcom_smbx.c
+@@ -10,6 +10,8 @@
+ 
+ #include <linux/bits.h>
+ #include <linux/debugfs.h>
++#include <linux/kstrtox.h>
++#include <linux/uaccess.h>
+ #include <linux/devm-helpers.h>
+ #include <linux/iio/consumer.h>
+ #include <linux/interrupt.h>
+@@ -1065,6 +1067,103 @@ static void smb_monitor_work(struct work_struct *work)
+ 	schedule_delayed_work(&chip->status_change_work, msecs_to_jiffies(10000));
+ }
+ 
++/*
++ * Opt-in charging for the hanoip monitor.
++ *
++ * The port runs this driver with monitor_only=1: the whole charger setup is
++ * skipped and the hardware keeps what the bootloader left. Dumping those
++ * registers (see the read-only view below) shows that everything needed is
++ * already configured correctly - float 4.400 V, JEITA hard limit on,
++ * termination and auto-recharge on, APSD working - except the enable bit:
++ * CHARGING_ENABLE_CMD bit 0 is 0, so the charger sits in DISABLE_CHARGE.
++ *
++ * Enabling charging therefore needs exactly three writes, in this order:
++ *   1. disarm the charger watchdog - SNARL_BARK_BITE_WD_CFG has "a watchdog
++ *      bite disables charging" set, and nothing pets the dog here;
++ *   2. program a conservative battery current limit;
++ *   3. set CHARGING_ENABLE_CMD bit 0.
++ * Everything else (float voltage, JEITA, input current limit, termination) is
++ * left exactly as the bootloader left it, which the Android DT shows to be
++ * below what Android itself would use.
++ *
++ * This is OFF by default. Nothing happens at probe; the state is changed only
++ * by writing 0/1 to /sys/kernel/debug/hanoip-charge.
++ */
++static unsigned int charge_current_ua = 1000000;
++module_param(charge_current_ua, uint, 0444);
++MODULE_PARM_DESC(charge_current_ua,
++		 "battery current limit used when charging is enabled (uA, default 1000000)");
++
++#define HANOIP_CHARGE_MAX_UA	2000000
++#define HANOIP_CHARGE_MIN_UA	 300000
++
++static int smb_set_charging(struct smb_chip *chip, bool on)
++{
++	int rc;
++
++	if (!chip->monitor_only)
++		return -EOPNOTSUPP;
++
++	if (on) {
++		if (charge_current_ua > HANOIP_CHARGE_MAX_UA ||
++		    charge_current_ua < HANOIP_CHARGE_MIN_UA)
++			return -EINVAL;
++
++		rc = regmap_write(chip->regmap, chip->base + SNARL_BARK_BITE_WD_CFG, 0);
++		if (rc)
++			return rc;
++
++		/* BIT(5) is BITE_WDOG_INT_EN, which this file does not name */
++		rc = regmap_update_bits(chip->regmap, chip->base + WD_CFG,
++					WATCHDOG_TRIGGER_AFP_EN_BIT |
++					BARK_WDOG_INT_EN_BIT | BIT(5) |
++					WDOG_TIMER_EN_ON_PLUGIN_BIT, 0);
++		if (rc)
++			return rc;
++
++		rc = regmap_write(chip->regmap, chip->base + FAST_CHARGE_CURRENT_CFG,
++				  charge_current_ua / chip->current_step_size_ua);
++		if (rc)
++			return rc;
++	}
++
++	rc = regmap_update_bits(chip->regmap, chip->base + CHARGING_ENABLE_CMD,
++				CHARGING_ENABLE_CMD_BIT,
++				on ? CHARGING_ENABLE_CMD_BIT : 0);
++	if (rc)
++		return rc;
++
++	dev_info(chip->dev, "hanoip: charging %s (%u uA)\n",
++		 on ? "ENABLED" : "disabled", on ? charge_current_ua : 0);
++
++	return 0;
++}
++
++static ssize_t hanoip_charge_write(struct file *file, const char __user *ubuf,
++				   size_t len, loff_t *ppos)
++{
++	struct smb_chip *chip = file->private_data;
++	char buf[8];
++	bool on;
++	int rc;
++
++	if (len == 0 || len >= sizeof(buf))
++		return -EINVAL;
++	if (copy_from_user(buf, ubuf, len))
++		return -EFAULT;
++	buf[len] = '\0';
++	if (kstrtobool(buf, &on))
++		return -EINVAL;
++
++	rc = smb_set_charging(chip, on);
++	return rc ? rc : len;
++}
++
++static const struct file_operations hanoip_charge_fops = {
++	.open = simple_open,
++	.write = hanoip_charge_write,
++};
++
+ #ifdef CONFIG_DEBUG_FS
+ /*
+  * Diagnostic, READ-ONLY view of the charger block.
+@@ -1214,6 +1313,9 @@ static int smb_probe(struct platform_device *pdev)
+ 
+ #ifdef CONFIG_DEBUG_FS
+ 	debugfs_create_file(chip->name, 0444, NULL, chip, &smb_regs_fops);
++	if (chip->monitor_only)
++		debugfs_create_file("hanoip-charge", 0200, NULL, chip,
++				    &hanoip_charge_fops);
+ #endif
+ 
+ 	if (match_data->monitor_only) {
+-- 
+2.43.0
+

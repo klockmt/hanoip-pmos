@@ -1,0 +1,106 @@
+From 8fa0e3a92abf393819bb69b08dfa7c9aca2a1a0f Mon Sep 17 00:00:00 2001
+From: hanoip <h@l>
+Date: Tue, 27 Oct 2026 16:53:35 -0300
+Subject: [PATCH 184/194] power: supply: qcom_qg: only trust OCV at rest, one
+ point per read
+
+Two failures seen live, both from the rest path.
+
+A single current sample of -660 mA (Wi-Fi waking up while the cable was pulled)
+went through the I*R correction with the 200 mOhm of this pack: 4.34 V + 132 mV
+reads as 4.47 V on the OCV curve, which is 97% on a pack that was at 92%. The
+estimate is only meaningful with the cell at rest, so require the current to
+stay under 120 mA for 30 s before using it; otherwise keep the reported value
+and restart the quiet time.
+
+The slow slew also banked steps: it allows 1% per two minutes, and after ten
+minutes without a single read it had five steps saved up and released them at
+once, which is the visible 92% -> 97% jump. Release at most one point per read
+regardless of the gap.
+---
+ drivers/power/supply/qcom_qg.c | 40 ++++++++++++++++++++++++++++++++--
+ 1 file changed, 38 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/power/supply/qcom_qg.c b/drivers/power/supply/qcom_qg.c
+index 73f6930fd..9ed2bfac1 100644
+--- a/drivers/power/supply/qcom_qg.c
++++ b/drivers/power/supply/qcom_qg.c
+@@ -82,6 +82,15 @@
+  */
+ #define QG_SOC_CHG_MAX			99
+ 
++/*
++ * The voltage based estimate is only meaningful at rest: it subtracts I*R, and
++ * a single current spike (Wi-Fi waking up measured -660 mA) adds +132 mV with
++ * the 200 mOhm of this pack, which the OCV curve reads as +5 points. Require a
++ * quiet period, not just a quiet sample.
++ */
++#define QG_REST_MAX_UA			120000
++#define QG_REST_SETTLE_MS		30000
++
+ #ifdef CONFIG_DEBUG_FS
+ #include <linux/debugfs.h>
+ #include <linux/seq_file.h>
+@@ -107,6 +116,7 @@ struct qcom_qg_chip {
+ 	 */
+ 	s64 coul_mpercent;
+ 	unsigned long coul_jiffies;
++	unsigned long rest_jiffies;	/* desde quando a corrente esta calma */
+ 	s64 coul_filt_ua;		/* corrente filtrada (sinal preservado) */
+ 	bool coul_filt_valid;
+ 	int last_current_ua;
+@@ -295,9 +305,10 @@ static int qcom_qg_smooth_capacity(struct qcom_qg_chip *chip, int soc,
+ 
+ 	chip->last_current_ua = current_ua;
+ 
+-	if (charging)
++	if (charging) {
+ 		qcom_qg_coul_update(chip, current_ua, now);
+-	else {
++		chip->rest_jiffies = 0;
++	} else {
+ 		chip->coul_jiffies = 0;
+ 		chip->coul_filt_valid = false;
+ 	}
+@@ -322,6 +333,23 @@ static int qcom_qg_smooth_capacity(struct qcom_qg_chip *chip, int soc,
+ 		return chip->msoc;
+ 	}
+ 
++	/*
++	 * Not at rest: a current spike makes the I*R correction lie, so keep
++	 * what we are showing and start counting the quiet time over.
++	 */
++	if (abs(current_ua) > QG_REST_MAX_UA) {
++		chip->rest_jiffies = 0;
++		return chip->msoc;
++	}
++
++	if (!chip->rest_jiffies) {
++		chip->rest_jiffies = now;
++		return chip->msoc;
++	}
++
++	if (now - chip->rest_jiffies < msecs_to_jiffies(QG_REST_SETTLE_MS))
++		return chip->msoc;
++
+ 	delta = soc - chip->msoc;
+ 
+ 	/*
+@@ -342,6 +370,14 @@ static int qcom_qg_smooth_capacity(struct qcom_qg_chip *chip, int soc,
+ 	if (!steps)
+ 		return chip->msoc;
+ 
++	/*
++	 * One point per read, whatever the gap. A ten minute gap without a
++	 * single read used to bank five steps and release them as a visible
++	 * 5% jump (seen live: 92% to 97% in one go).
++	 */
++	if (steps > 1)
++		steps = 1;
++
+ 	if (delta > 0) {
+ 		rise = min_t(unsigned int, delta, steps);
+ 		chip->msoc += rise;
+-- 
+2.43.0
+

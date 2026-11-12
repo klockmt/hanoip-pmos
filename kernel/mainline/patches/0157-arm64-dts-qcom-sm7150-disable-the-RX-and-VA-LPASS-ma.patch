@@ -1,0 +1,44 @@
+From d061ec50ab2982f55cf25ba8ea88435392b51811 Mon Sep 17 00:00:00 2001
+From: Artem Hutsaliuk <artemgutsaliukv@gmail.com>
+Date: Sun, 9 Aug 2026 23:36:56 -0500
+Subject: [PATCH 157/194] arm64: dts: qcom: sm7150: disable the RX and VA LPASS
+ macros by default
+
+The RX and VA macro nodes carried no status property, so they were
+enabled on every sm7150 board, including those that describe no audio
+codec at all - the TX macro and both SoundWire controllers next to them
+are disabled by default, as they should be.
+
+Disable them too and let the boards that use them turn them on;
+sm7150-xiaomi-davinci already does.
+
+Signed-off-by: Artem Hutsaliuk <artemgutsaliukv@gmail.com>
+---
+ arch/arm64/boot/dts/qcom/sm7150.dtsi | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/sm7150.dtsi b/arch/arm64/boot/dts/qcom/sm7150.dtsi
+index b30ad8b74..55050b83e 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm7150.dtsi
+@@ -4746,6 +4746,8 @@ rxmacro: rxmacro@62ee0000 {
+ 			#clock-cells = <0>;
+ 			clock-output-names = "mclk";
+ 			#sound-dai-cells = <1>;
++
++			status = "disabled";
+ 		};
+ 
+ 
+@@ -4793,6 +4795,8 @@ vamacro: codec@62f20000 {
+ 			#clock-cells = <0>;
+ 			clock-output-names = "fsgen";
+ 			#sound-dai-cells = <1>;
++
++			status = "disabled";
+ 		};
+ 
+ 		lpass_tlmm: pinctrl@62b52000 {
+-- 
+2.43.0
+

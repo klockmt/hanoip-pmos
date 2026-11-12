@@ -1,0 +1,28 @@
+#!/bin/sh
+# Checks hanoip-ml-charge (the charge limit of the mainline root) against a fake battery and a fake hanoip-charge file
+# (no phone needed). Each step runs one pass (HANOIP_ML_ONCE=1) and reads what the script wrote.
+set -eu
+cd "$(dirname "$0")/.."
+script=kernel/mainline/root-overlay/usr/bin/hanoip-ml-charge
+dir=$(mktemp -d)
+trap 'rm -rf "$dir"' EXIT
+mkdir -p "$dir/qg"
+export HANOIP_ML_QG=$dir/qg HANOIP_ML_CHARGE_CTL=$dir/ctl HANOIP_ML_STATE=$dir/state HANOIP_ML_ONCE=1
+fail() { echo "FAIL: $*" >&2; exit 1; }
+# step <capacity %> <voltage uV> <temp 0.1 C> <state before: on|off> <expected write: 0|1>
+step() {
+	echo "$1" > "$dir/qg/capacity"; echo "$2" > "$dir/qg/voltage_now"; echo "$3" > "$dir/qg/temp"
+	echo "$4" > "$dir/state"
+	rm -f "$dir/ctl"
+	sh "$script" >/dev/null 2>&1 || fail "the script failed at $1 %"
+	[ "$(cat "$dir/ctl" 2>/dev/null)" = "$5" ] || fail "$1 % $2 uV $3 (was $4): wrote '$(cat "$dir/ctl" 2>/dev/null)', expected '$5'"
+}
+step 60 4000000 300 off 1   # under the low mark: charge
+step 77 4150000 300 on 1    # between the marks while charging: keep charging
+step 77 4150000 300 off 0   # between the marks while not charging: stay off
+step 80 4200000 300 on 0    # at the high mark: stop
+step 60 4310000 300 off 0   # voltage over 4.30 V: never charge
+step 60 4000000 410 off 0   # battery over 40 C: never charge
+step 60 4000000 410 on 0    # ... and stop if it was charging
+grep -q 'trap .*0 > "$ctl"' "$script" || fail "the script does not switch charging off when it stops"
+echo "ok    test-mainline-charge"

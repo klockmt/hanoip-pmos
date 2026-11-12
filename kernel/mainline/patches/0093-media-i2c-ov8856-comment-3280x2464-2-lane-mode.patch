@@ -1,0 +1,35 @@
+From 502d74d670e59fe7ab0a32262bff347e9cb431ee Mon Sep 17 00:00:00 2001
+From: Vitalii Skorkin <nikroksm@mail.ru>
+Date: Tue, 25 Feb 2025 18:45:32 +0500
+Subject: [PATCH 093/194] media: i2c: ov8856: comment 3280x2464 2 lane mode
+
+Signed-off-by: Vitalii Skorkin <nikroksm@mail.ru>
+---
+ drivers/media/i2c/ov8856.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/media/i2c/ov8856.c b/drivers/media/i2c/ov8856.c
+index 754189066..6c8640e11 100644
+--- a/drivers/media/i2c/ov8856.c
++++ b/drivers/media/i2c/ov8856.c
+@@ -1476,7 +1476,7 @@ static const struct ov8856_lane_cfg lane_cfg_2 = {
+ 			.regs = mipi_data_rate_lane_2.regs_1,
+ 		}
+ 	}},
+-	{{
++	{/*{
+ 		.width = 3280,
+ 		.height = 2464,
+ 		.hts = 1928,
+@@ -1490,7 +1490,7 @@ static const struct ov8856_lane_cfg lane_cfg_2 = {
+ 		.link_freq_index = 0,
+ 		.data_lanes = 2,
+ 		.default_mbus_index = OV8856_MEDIA_BUS_FMT_SGRBG10_1X10,
+-	},
++	},*/
+ 	{
+ 		.width = 1640,
+ 		.height = 1232,
+-- 
+2.43.0
+

@@ -1,0 +1,125 @@
+From 26b068eb0431eae2f351cd240a3268a5ffaa6573 Mon Sep 17 00:00:00 2001
+From: Danila Tikhonov <danila@jiaxyga.com>
+Date: Wed, 16 Oct 2024 22:25:11 +0300
+Subject: [PATCH 069/194] WIP! arm64: dts: qcom: sm7150: Add venus node
+
+Signed-off-by: Danila Tikhonov <danila@jiaxyga.com>
+---
+ arch/arm64/boot/dts/qcom/pm6150.dtsi |  6 +-
+ arch/arm64/boot/dts/qcom/sm7150.dtsi | 83 ++++++++++++++++++++++++++++
+ 2 files changed, 85 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/pm6150.dtsi b/arch/arm64/boot/dts/qcom/pm6150.dtsi
+index 53cb1070d..73a70610d 100644
+--- a/arch/arm64/boot/dts/qcom/pm6150.dtsi
++++ b/arch/arm64/boot/dts/qcom/pm6150.dtsi
+@@ -154,10 +154,8 @@ pm6150_qgauge: qgauge@4800 {
+ 			compatible = "qcom,pm6150-qg";
+ 			reg = <0x4800>;
+ 
+-			io-channels = <&pm6150_adc ADC5_BAT_THERM_100K_PU>,
+-				      <&pm6150_adc ADC5_BAT_ID_100K_PU>;
+-			io-channel-names = "batt-therm",
+-					   "batt-id";
++			io-channels = <&pm6150_adc ADC5_BAT_THERM_100K_PU>;
++			io-channel-names = "batt-therm";
+ 
+ 			nvmem = <&pm6150_qg_sdam>;
+ 
+diff --git a/arch/arm64/boot/dts/qcom/sm7150.dtsi b/arch/arm64/boot/dts/qcom/sm7150.dtsi
+index 4acfb5e4d..4a25d449e 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm7150.dtsi
+@@ -3468,6 +3468,89 @@ cci1_i2c0: i2c-bus@0 {
+ 			};
+ 		};
+ 
++		venus: video-codec@aa00000 {
++			compatible = "qcom,sm7150-venus";
++			reg = <0 0x0aa00000 0 0xff000>;
++
++			interrupts = <GIC_SPI 174 IRQ_TYPE_LEVEL_HIGH>;
++
++			clocks = <&videocc VIDEOCC_MVSC_CORE_CLK>,
++				 <&videocc VIDEOCC_VENUS_AHB_CLK>,
++				 <&videocc VIDEOCC_MVSC_CTL_AXI_CLK>,
++				 <&videocc VIDEOCC_MVS0_CORE_CLK>,
++				 <&videocc VIDEOCC_MVS0_AXI_CLK>,
++				 <&videocc VIDEOCC_MVS1_CORE_CLK>,
++				 <&videocc VIDEOCC_MVS1_AXI_CLK>;
++			clock-names = "core",
++				      "iface",
++				      "bus",
++				      "vcodec0_core",
++				      "vcodec0_bus",
++				      "vcodec1_core",
++				      "vcodec1_bus";
++
++			interconnects = <&gem_noc MASTER_AMPSS_M0 QCOM_ICC_TAG_ALWAYS
++					 &config_noc SLAVE_VENUS_CFG QCOM_ICC_TAG_ALWAYS>,
++					<&mmss_noc MASTER_VIDEO_P0 QCOM_ICC_TAG_ALWAYS
++					 &mc_virt SLAVE_EBI_CH0 QCOM_ICC_TAG_ALWAYS>;
++			interconnect-names = "cpu-cfg",
++					     "video-mem";
++
++			power-domains = <&videocc VENUS_GDSC>,
++					<&videocc VCODEC0_GDSC>,
++					<&videocc VCODEC1_GDSC>,
++					<&rpmhpd RPMHPD_CX>;
++			power-domain-names = "venus",
++					     "vcodec0",
++					     "vcodec1",
++					     "cx";
++
++			operating-points-v2 = <&venus_opp_table>;
++
++			memory-region = <&venus_mem>;
++
++			iommus = <&apps_smmu 0x1080 0x60>;
++
++			status = "disabled";
++
++			video-decoder {
++				compatible = "venus-decoder";
++			};
++
++			video-encoder {
++				compatible = "venus-encoder";
++			};
++
++			venus_opp_table: opp-table {
++				compatible = "operating-points-v2";
++
++				opp-240000000 {
++					opp-hz = /bits/ 64 <240000000>;
++					required-opps = <&rpmhpd_opp_low_svs>;
++				};
++
++				opp-338000000 {
++					opp-hz = /bits/ 64 <338000000>;
++					required-opps = <&rpmhpd_opp_svs>;
++				};
++
++				opp-365000000 {
++					opp-hz = /bits/ 64 <365000000>;
++					required-opps = <&rpmhpd_opp_svs_l1>;
++				};
++
++				opp-444000000 {
++					opp-hz = /bits/ 64 <444000000>;
++					required-opps = <&rpmhpd_opp_nom>;
++				};
++
++				opp-533000000 {
++					opp-hz = /bits/ 64 <533000000>;
++					required-opps = <&rpmhpd_opp_turbo>;
++				};
++			};
++		};
++
+ 		videocc: clock-controller@ab00000 {
+ 			compatible = "qcom,sm7150-videocc";
+ 			reg = <0x0 0x0ab00000 0x0 0x10000>;
+-- 
+2.43.0
+

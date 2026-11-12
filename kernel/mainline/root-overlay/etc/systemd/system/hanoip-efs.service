@@ -1,0 +1,16 @@
+[Unit]
+Description=Copy modem EFS partitions to /run/efs
+Documentation=man:systemd.service(5)
+DefaultDependencies=no
+Before=rmtfs.service
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/hanoip-efs
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=basic.target

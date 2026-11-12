@@ -1,0 +1,29 @@
+#!/bin/sh
+# Checks the elogind PSI workaround of the device package (no phone needed). On the 4.14 kernel the memory-pressure
+# trigger that elogind's sd-event writes to its cgroup's memory.pressure corrupts a list in psi_trigger_create and one
+# CPU then spins forever (docs/PITFALLS.md). elogind is started by D-Bus activation, whose launch helper clears the
+# environment, so the package overrides the D-Bus service file in the directory D-Bus reads first.
+set -eu
+cd "$(dirname "$0")/.."
+pkg=pmaports/device/testing/device-motorola-hanoip
+svc=$pkg/org.freedesktop.login1.service
+dest=/usr/local/share/dbus-1/system-services/org.freedesktop.login1.service
+fail() { echo "FAIL: $*" >&2; exit 1; }
+
+[ -f "$svc" ] || fail "$svc is missing"
+grep -qx 'Name=org.freedesktop.login1' "$svc" || fail "$svc does not name org.freedesktop.login1"
+grep -qx 'User=root' "$svc" || fail "$svc does not run elogind as root"
+grep -qx 'Exec=/usr/bin/env MEMORY_PRESSURE_WATCH=/dev/null /usr/libexec/elogind/elogind --daemon' "$svc" ||
+	fail "$svc does not start elogind --daemon with MEMORY_PRESSURE_WATCH=/dev/null"
+
+# The package ships the file under /usr/share (abuild refuses anything under /usr/local) ...
+grep -q 'install -Dm644 "$srcdir/org.freedesktop.login1.service" "$pkgdir/usr/share/device-motorola-hanoip/org.freedesktop.login1.service"' \
+	"$pkg/APKBUILD" || fail "the APKBUILD does not install the service file under /usr/share/device-motorola-hanoip"
+grep -q 'org.freedesktop.login1.service' "$pkg/APKBUILD" && sed -n '/^source="/,/^"/p' "$pkg/APKBUILD" |
+	grep -q 'org.freedesktop.login1.service' || fail "org.freedesktop.login1.service is not in source="
+# ... and both install and upgrade copy it to where D-Bus looks first (post-install does not run on an upgrade).
+for s in post-install post-upgrade; do
+	grep -q "install -Dm644 /usr/share/device-motorola-hanoip/org.freedesktop.login1.service $dest" \
+		"$pkg/device-motorola-hanoip.$s" || fail "$s does not copy the service file to $dest"
+done
+echo "ok    test-elogind"

@@ -1,0 +1,132 @@
+From 9202309d958080731b0fd73f63a83175ecbfb189 Mon Sep 17 00:00:00 2001
+From: hanoip <hanoip@localhost>
+Date: Sun, 25 Oct 2026 21:34:25 +0000
+Subject: [PATCH 159/194] power: supply: qcom_qg: OCV capacity, smoothing and
+ charger status (PR #64)
+
+Bring the net result of the QG part of sm7150-mainline/linux PR #64 onto
+the hanoip tree: status follows the supplying charger and falls back to
+the battery current, capacity comes from the OCV table when the battery
+describes one (IR drop removed, clamped) and is smoothed to 1% per 20 s.
+The hanoip guards stay: -EAGAIN until battery info exists, unaligned SDAM
+reads for OCV and learned capacity, and the IIO_CONSUMER import.
+---
+ drivers/power/supply/qcom_qg.c | 58 +++++++++++++++++++++++++++-------
+ 1 file changed, 46 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/power/supply/qcom_qg.c b/drivers/power/supply/qcom_qg.c
+index 310a12d04..4d93d6f44 100644
+--- a/drivers/power/supply/qcom_qg.c
++++ b/drivers/power/supply/qcom_qg.c
+@@ -98,6 +98,35 @@ static int qcom_qg_get_voltage(struct qcom_qg_chip *chip, u8 offset, int *val)
+ 	return 0;
+ }
+ 
++/*
++ * Follow the charger while it is online, it knows when charging has
++ * terminated. Otherwise guess from the direction of the battery current.
++ */
++static int qcom_qg_get_status(struct qcom_qg_chip *chip,
++			      struct power_supply *psy, int *val)
++{
++	union power_supply_propval charger;
++	int ret, current_now;
++
++	ret = power_supply_get_property_from_supplier(psy, POWER_SUPPLY_PROP_STATUS,
++						      &charger);
++	if (!ret && (charger.intval == POWER_SUPPLY_STATUS_CHARGING ||
++		     charger.intval == POWER_SUPPLY_STATUS_FULL ||
++		     charger.intval == POWER_SUPPLY_STATUS_NOT_CHARGING)) {
++		*val = charger.intval;
++		return 0;
++	}
++
++	ret = qcom_qg_get_current(chip, QG_LAST_ADC_I_DATA0_REG, &current_now);
++	if (ret)
++		return ret;
++
++	*val = current_now > 0 ? POWER_SUPPLY_STATUS_CHARGING :
++				 POWER_SUPPLY_STATUS_DISCHARGING;
++
++	return 0;
++}
++
+ /*
+  * Voltage based estimates jump with the load, e.g. by ~15% when a charger is
+  * plugged in. Let the reported capacity follow them by at most 1% per
+@@ -135,10 +164,11 @@ static int qcom_qg_smooth_capacity(struct qcom_qg_chip *chip, int soc,
+  * of the battery and look it up. Otherwise interpolate the average voltage
+  * linearly between the design limits.
+  */
+-static int qcom_qg_get_capacity(struct qcom_qg_chip *chip, int *val)
++static int qcom_qg_get_capacity(struct qcom_qg_chip *chip,
++				struct power_supply *psy, int *val)
+ {
+ 	struct power_supply_battery_info *info = chip->batt_info;
+-	int ret, voltage_now, current_now, ir_drop = 0, temp, soc;
++	int ret, voltage_now, current_now, ir_drop = 0, temp, soc, status;
+ 	int voltage_min = chip->batt_info->voltage_min_design_uv;
+ 	int voltage_max = chip->batt_info->voltage_max_design_uv;
+ 
+@@ -182,7 +212,16 @@ static int qcom_qg_get_capacity(struct qcom_qg_chip *chip, int *val)
+ 						(voltage_max - voltage_min));
+ 	}
+ 
+-	*val = qcom_qg_smooth_capacity(chip, soc, current_now > 0);
++	ret = qcom_qg_get_status(chip, psy, &status);
++	if (ret)
++		return ret;
++
++	/* A terminated charge means full, whatever the estimate says */
++	if (status == POWER_SUPPLY_STATUS_FULL)
++		soc = 100;
++
++	*val = qcom_qg_smooth_capacity(chip, soc, current_now > 0 ||
++					status == POWER_SUPPLY_STATUS_FULL);
+ 
+ 	return 0;
+ }
+@@ -217,9 +256,9 @@ static int qcom_qg_get_property(struct power_supply *psy,
+ 
+ 	switch (psp) {
+ 	case POWER_SUPPLY_PROP_STATUS:
+-		ret = power_supply_get_property_from_supplier(psy, psp, val);
++		ret = qcom_qg_get_status(chip, psy, &val->intval);
+ 		if (ret)
+-			val->intval = POWER_SUPPLY_STATUS_UNKNOWN;
++			return ret;
+ 		break;
+ 	case POWER_SUPPLY_PROP_TECHNOLOGY:
+ 		val->intval = POWER_SUPPLY_TECHNOLOGY_LION;
+@@ -271,7 +310,7 @@ static int qcom_qg_get_property(struct power_supply *psy,
+ 		val->intval = get_unaligned_le16(data) * 1000; /* mAh to uAh */
+ 		break;
+ 	case POWER_SUPPLY_PROP_CAPACITY:
+-		ret = qcom_qg_get_capacity(chip, &val->intval);
++		ret = qcom_qg_get_capacity(chip, psy, &val->intval);
+ 		if (ret)
+ 			return ret;
+ 		break;
+@@ -289,18 +328,13 @@ static int qcom_qg_get_property(struct power_supply *psy,
+ 	return 0;
+ }
+ 
+-static void qcom_qg_external_power_changed(struct power_supply *psy)
+-{
+-	power_supply_changed(psy);
+-}
+-
+ static struct power_supply_desc batt_psy_desc = {
+ 	.name = "qcom_qg",
+ 	.type = POWER_SUPPLY_TYPE_BATTERY,
+ 	.properties = qcom_qg_props,
+ 	.num_properties = ARRAY_SIZE(qcom_qg_props),
+ 	.get_property = qcom_qg_get_property,
+-	.external_power_changed = qcom_qg_external_power_changed,
++	.external_power_changed = power_supply_changed,
+ };
+ 
+ static int qcom_qg_probe(struct platform_device *pdev)
+-- 
+2.43.0
+

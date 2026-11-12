@@ -1,0 +1,55 @@
+#!/sbin/openrc-run
+# Modem and Wi-Fi on the mainline root (docs/MAINLINE.md). The modem's EFS (modemst1, modemst2, fsg, fsc) is copied to
+# RAM and served read-only (rmtfs -o /run/efs -r), so those partitions are never written from mainline. udev does not
+# load these drivers (/etc/modprobe.d/hanoip-ml.conf): when the modem starts, SMEM item 134 (hanoip_mmi_unit_info,
+# without it the modem crashes 1.5 s after it is up), rmtfs and tqftpserv must already be there.
+description="Modem and Wi-Fi bring-up for the mainline root"
+
+depend() {
+	need localmount
+	after udev-settle
+	before networkmanager
+}
+
+start() {
+	ebegin "Starting the modem and Wi-Fi"
+	mkdir -p /run/efs /var/lib/tqftpserv
+	for p in modemst1:modem_fs1 modemst2:modem_fs2 fsg:modem_fsg fsc:modem_fsc; do
+		src=/dev/disk/by-partlabel/${p%%:*}
+		# fsg only exists per slot (fsg_a, fsg_b: identical copies on this phone); the 4.14 links fsg to the active one.
+		if [ ! -e "$src" ] && [ "${p%%:*}" = fsg ]; then
+			for s in fsg_b fsg_a; do [ -e "/dev/disk/by-partlabel/$s" ] && { src=/dev/disk/by-partlabel/$s; break; }; done
+		fi
+		if ! dd if="$src" of="/run/efs/${p##*:}" bs=1M 2>/dev/null; then
+			eend 1 "cannot read ${p%%:*}"
+			return 1
+		fi
+	done
+	start-stop-daemon --start --background --make-pidfile --pidfile /run/hanoip-rmtfs.pid \
+		--exec /usr/bin/rmtfs -- -o /run/efs -r
+	start-stop-daemon --start --background --make-pidfile --pidfile /run/hanoip-tqftpserv.pid \
+		--exec /usr/bin/tqftpserv
+	for m in hanoip_mmi_unit_info qcom_pd_mapper qrtr_smd qcom_q6v5_pas; do
+		if ! modprobe "$m"; then
+			eend 1 "modprobe $m failed"
+			return 1
+		fi
+	done
+	# IPA is the modem's data path; Wi-Fi does not need it, so a failure here is only a warning.
+	modprobe ipa || ewarn "modprobe ipa failed"
+	modprobe ath10k_snoc || ewarn "modprobe ath10k_snoc failed"
+	# A crashing modem is not restarted in a loop; the next boot tries again. The modem does not start by itself on
+	# mainline (the ADSP does): start it once its recovery is off. Wi-Fi (ath10k) comes up through it.
+	for r in /sys/class/remoteproc/remoteproc*; do
+		echo disabled > "$r/recovery" 2>/dev/null
+		[ "$(cat "$r/name")" = modem ] && [ "$(cat "$r/state")" = offline ] && echo start > "$r/state"
+	done
+	eend 0
+}
+
+stop() {
+	ebegin "Stopping rmtfs and tqftpserv"
+	start-stop-daemon --stop --pidfile /run/hanoip-tqftpserv.pid
+	start-stop-daemon --stop --pidfile /run/hanoip-rmtfs.pid
+	eend 0
+}

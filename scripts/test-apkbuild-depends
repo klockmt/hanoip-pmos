@@ -37,5 +37,11 @@ for apk in pmaports/device/*/*/APKBUILD; do
 	done
 	[ $used -eq 1 ] || { echo "FAIL: $apk depends on python3 but ships no python3 script" >&2; bad=1; }
 done
+# Duranium's mkosi looks for systemd-boot's EFI binary in the image and stops without it (2026-11-09: "a systemd-boot
+# binary was not found at /usr/lib/systemd/boot/efi"). Nothing but the device package can pull it in, so the mainline
+# kernel subpackage, the one the EFI path installs, depends on it.
+apk=pmaports/device/testing/device-motorola-hanoip/APKBUILD
+sed -n '/^kernel_mainline()/,/^}/p' "$apk" | grep -q 'depends=.*\bsystemd-boot\b' \
+	|| { echo "FAIL: kernel_mainline() in $apk must depend on systemd-boot (Duranium's mkosi needs its EFI binary)" >&2; bad=1; }
 [ $bad -eq 0 ] && echo "apkbuild depends: ok"
 exit $bad

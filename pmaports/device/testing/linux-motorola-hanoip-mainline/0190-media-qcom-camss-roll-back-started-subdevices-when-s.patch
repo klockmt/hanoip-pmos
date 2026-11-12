@@ -1,0 +1,62 @@
+From a6c1b2ccdd7491c6c7784e579928c03aeb2c8bfe Mon Sep 17 00:00:00 2001
+From: hanoip <hanoip@localhost>
+Date: Thu, 29 Oct 2026 18:20:56 +0000
+Subject: [PATCH 190/194] media: qcom: camss: roll back started subdevices when
+ stream start fails
+
+video_start_streaming() stops the pipeline on error but leaves the
+subdevices that already accepted s_stream(1) running. On hanoip a CCI
+timeout in the sensor start left the CSIPHY/CSID/VFE running and the
+next start failed with WARNs. Stop the already started subdevices in
+reverse order and keep the original error.
+---
+ .../media/platform/qcom/camss/camss-video.c    | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/drivers/media/platform/qcom/camss/camss-video.c b/drivers/media/platform/qcom/camss/camss-video.c
+index a7db9e621..9d365b7aa 100644
+--- a/drivers/media/platform/qcom/camss/camss-video.c
++++ b/drivers/media/platform/qcom/camss/camss-video.c
+@@ -257,6 +257,9 @@ static int video_prepare_streaming(struct vb2_queue *q)
+ 
+ static int video_start_streaming(struct vb2_queue *q, unsigned int count)
+ {
++	/* The current linear CAMSS pipeline is much shorter than this bound. */
++	struct v4l2_subdev *started[16];
++	unsigned int nstarted = 0;
+ 	struct camss_video *video = vb2_get_drv_priv(q);
+ 	struct video_device *vdev = &video->vdev;
+ 	struct media_entity *entity;
+@@ -287,14 +290,29 @@ static int video_start_streaming(struct vb2_queue *q, unsigned int count)
+ 		entity = pad->entity;
+ 		subdev = media_entity_to_v4l2_subdev(entity);
+ 
++		if (nstarted == ARRAY_SIZE(started)) {
++			ret = -E2BIG;
++			goto error;
++		}
+ 		ret = v4l2_subdev_call(subdev, video, s_stream, 1);
+ 		if (ret < 0 && ret != -ENOIOCTLCMD)
+ 			goto error;
++		if (!ret)
++			started[nstarted++] = subdev;
+ 	}
+ 
+ 	return 0;
+ 
+ error:
++	while (nstarted) {
++		int stop_ret = v4l2_subdev_call(started[--nstarted], video,
++						 s_stream, 0);
++
++		if (stop_ret && stop_ret != -ENOIOCTLCMD)
++			dev_warn(video->camss->dev,
++				 "Failed to roll back subdevice stream: %d\n",
++				 stop_ret);
++	}
+ 	video_device_pipeline_stop(vdev);
+ 
+ flush_buffers:
+-- 
+2.43.0
+

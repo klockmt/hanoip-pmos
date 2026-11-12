@@ -1,0 +1,27 @@
+From 1a1a7ee025933dc01bd0bc76ecd0bb830a7ca209 Mon Sep 17 00:00:00 2001
+From: Danila Tikhonov <danila@jiaxyga.com>
+Date: Wed, 10 Apr 2024 20:43:46 +0300
+Subject: [PATCH 083/194] media: qcom: camss: Add CAMSS_SM7150 enum
+
+Adds a CAMSS SoC identifier for the SM7150.
+
+Signed-off-by: Danila Tikhonov <danila@jiaxyga.com>
+---
+ drivers/media/platform/qcom/camss/camss.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/media/platform/qcom/camss/camss.h b/drivers/media/platform/qcom/camss/camss.h
+index 93d691c8a..fa3bc8d56 100644
+--- a/drivers/media/platform/qcom/camss/camss.h
++++ b/drivers/media/platform/qcom/camss/camss.h
+@@ -84,6 +84,7 @@ enum camss_version {
+ 	CAMSS_2290,
+ 	CAMSS_6150,
+ 	CAMSS_6350,
++	CAMSS_7150,
+ 	CAMSS_7280,
+ 	CAMSS_8x16,
+ 	CAMSS_8x39,
+-- 
+2.43.0
+

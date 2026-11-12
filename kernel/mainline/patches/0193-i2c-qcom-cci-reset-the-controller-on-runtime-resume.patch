@@ -1,0 +1,38 @@
+From 0f8c3afe36ab29d5f686ab215dcf4d3ba322cd27 Mon Sep 17 00:00:00 2001
+From: hanoip <hanoip@localhost>
+Date: Thu, 29 Oct 2026 18:20:56 +0000
+Subject: [PATCH 193/194] i2c: qcom-cci: reset the controller on runtime resume
+
+Runtime resume only re-enabled the clocks and rewrote the init
+registers. On SM7150 the camera power domain can collapse while the
+CCI is suspended, and the first transfer after resume then timed out
+("master N queue 0 timeout") until the error path reset the block.
+Reset it on resume as probe does: 9/9 camera starts with the CCI
+suspended in between, 0 timeouts (was intermittent black cameras).
+---
+ drivers/i2c/busses/i2c-qcom-cci.c | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/i2c/busses/i2c-qcom-cci.c b/drivers/i2c/busses/i2c-qcom-cci.c
+index bd70c6bae..29e8b3951 100644
+--- a/drivers/i2c/busses/i2c-qcom-cci.c
++++ b/drivers/i2c/busses/i2c-qcom-cci.c
+@@ -488,8 +488,13 @@ static int __maybe_unused cci_resume_runtime(struct device *dev)
+ 	if (ret)
+ 		return ret;
+ 
+-	cci_init(cci);
+-	return 0;
++	/*
++	 * hanoip (29/10): the camera power domain can collapse while the CCI
++	 * is runtime-suspended; cci_init() alone then leaves the first
++	 * transaction to time out ("master N queue 0 timeout") until the
++	 * error path resets the controller. Reset as probe does.
++	 */
++	return cci_reset(cci);
+ }
+ 
+ static const struct dev_pm_ops qcom_cci_pm = {
+-- 
+2.43.0
+
