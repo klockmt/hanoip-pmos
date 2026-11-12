@@ -431,3 +431,28 @@ entry; a kernel panic; `/status` from Telegram; the disk mounted by hand with Sa
 `scripts/pmb build --force device-motorola-hanoip` (the PC's sudo: the user approves it), `scripts/duranium-image
 --image-version=YYMMDDNN`, look inside with `dump.erofs`, compress the `usr` and `usr-verity` files with `zstd`, copy
 them and the `.efi` to `/var/tmp/hanoip-update/` on the phone, `/usr/lib/systemd/systemd-sysupdate update`, reboot.
+
+## Update 26111103 and the slot b boot (2026-11-12)
+
+- **Build.** `scripts/pmb build --force device-motorola-hanoip` gave `pkgrel 53` (the first try failed: the package did
+  not create `/usr/share/device-motorola-hanoip` before writing the revision; fixed in `9040246`, with a check in
+  `scripts/test-dashboard`). `scripts/duranium-image --image-version=26111103` built the image; inside it `pkgrel` reads
+  `53`, `hanoip-health` counts `eth0`, the dashboard files are there, and the root line of the tmpfiles is gone.
+- **Delivery.** The three files went to `/var/tmp/hanoip-update/` over the USB cable at 1 MB/s (`pv -L 1m`), hashes
+  equal on both sides. Two helper files that the glob also sent were removed from the phone.
+- **Update.** `systemd-sysupdate update` (with `sudo`) installed `26111103+2-0` on the free pair, which is slot b.
+  `26111101` stays installed as the fallback.
+- **Slot b.** `scripts/reboot-bootloader`, then `fastboot set_active b` and `fastboot reboot`. The boot came up on
+  `26111103` (`usrhash=09779c4d`). `fastboot getvar slot-successful:b` answers `yes`, `slot-unbootable:b` answers `no`.
+  The ABL reports `_b` (`/usr/bin/hanoip-ml-abl-slot`); `/proc/cmdline` always says `_a`, which is why the health
+  script reads the ABL.
+- **Ten reboots in a row** on slot b, each by `reboot` from Linux: all ten came back on `_b`, with SSH on the tailnet
+  and the health mark set each time. Each one still showed `starting` at the check, waiting for the NAS disk devices
+  (the mounts are `nofail`); `running` was reached after a while in the earlier checks.
+- **Dashboard.** `hanoip-dashboard` listens on the Tailscale address only, port 8080: the page and `/api/status` answer
+  from the tailnet, the USB address refuses, the LAN address does not answer. On slot b it reports `slot` `b` and
+  `slot_successful` true, and `pkgrel` 53, read from the package file.
+
+**Not done, and waiting for the owner:** writing `boot_a` with the new U-Boot (the backups are verified in
+`$HANOIP_BACKUP_DIR/2026-11-11-before-uboot/`), and the tests that need a broken boot on purpose (sshd down, watchdog,
+Wi-Fi loss). The 24-72 hour run is the owner's.
