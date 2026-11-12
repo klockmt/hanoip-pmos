@@ -27,6 +27,21 @@ Until this page is rewritten, [`DURANIUM.md`](DURANIUM.md) (the sections dated 2
 - Large transfers over the USB (NCM) network take it down until a reboot (issue #2). Throttle every copy to 1 MB/s with
   `pv -L 1m`; `push-firmware`, `push-modules` and `flash-boot-ssh` already do.
 
+## Status dashboard
+
+`hanoip-dashboard` (device package, `hanoip-dashboard.service`, a dynamic user, no root and no sudo) serves one page
+and its data on the Tailscale address only, port 8080:
+
+- `http://<tailnet-address>:8080/` is the page; it asks `/api/status` every 5 s, and only while the tab is visible.
+- `/api/status` is the JSON: the `/status` text, system (uptime, reboots, OOM kills, RAM, zram), boot (slot from the
+  ABL, and whether it is marked successful), storage (the NAS disk and its last scrub), network (Wi-Fi, Tailscale,
+  Samba on the tailnet), services, watchdog and versions (kernel and the package's pkgrel).
+- A field that cannot be read is `null` and the page shows `n/a`; nothing is approximated.
+- The address is read at start (`tailscale ip -4`), so nothing about it is written in the repo.
+- `hanoip-dashboard --data` prints the same JSON once, on the phone, for a check.
+
+Checked on 2026-11-12: answers from the tailnet; refused on the USB address; no answer on the LAN address.
+
 ## Services
 
 **On Duranium (systemd; written and tested without the phone, not running on it yet):** the device package's mainline subpackage
