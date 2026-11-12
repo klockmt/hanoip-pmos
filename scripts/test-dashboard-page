@@ -1,7 +1,7 @@
 #!/bin/sh
 # Checks the status dashboard page without a browser or the phone: one self-contained file, no CDN or web font,
-# every field of the /api/status contract that it reads, the 5 s poll, the visibility handling and the single
-# fixed fetch. Its script must at least parse (node is used when installed).
+# every field of the /api/status contract that it reads, the 1 s poll, the visibility handling, the reduced-motion
+# rule, the one fixed fetch, and the pure format and buffer functions (run under node when it is installed).
 set -eu
 cd "$(dirname "$0")/.."
 page=pmaports/device/testing/device-motorola-hanoip/dashboard/index.html
@@ -22,16 +22,26 @@ for f in system.uptime_s system.reboots system.oom_kills system.ram system.zram 
 	storage.nas storage.nas.mounted storage.scrub.state storage.scrub.finished_at storage.scrub.errors \
 	network.wifi.up network.wifi.ssid network.tailscale.up network.samba_tailnet.active \
 	services.sshd services.samba services.bot services.containers.running services.containers.names \
-	watchdog.last_feed_s_ago watchdog.resets version.kernel version.pkgrel status_text; do
+	watchdog.last_feed_s_ago watchdog.resets version.kernel version.pkgrel status_text slow_at \
+	metrics.cpu.used_pct metrics.cpu.mhz_min metrics.cpu.mhz_max metrics.cpu.temp_c \
+	metrics.gpu.used_pct metrics.gpu.mhz metrics.gpu.temp_c metrics.gpu.on metrics.ram_temp_c \
+	metrics.rom.used_pct metrics.rom.used_gb metrics.rom.total_gb metrics.rom.temp_c \
+	metrics.battery.pct metrics.battery.volts metrics.battery.cycles metrics.battery.temp_c \
+	metrics.battery.charging metrics.battery.bypass metrics.power.watts metrics.power.source \
+	metrics.body_temp_c metrics.net.iface metrics.net.rx_kbit metrics.net.tx_kbit \
+	metrics.ping.gateway_ms metrics.ping.internet_host metrics.ping.internet_ms; do
 	grep -qF "$f" "$page" || fail "contract field not read: $f"
 done
 
-# poll every 5 s, and only while visible
-grep -qF 'PERIOD_MS = 5000' "$page" || fail "poll period is not 5000 ms"
+# poll every 1 s, and only while visible
+grep -qF 'PERIOD_MS = 1000' "$page" || fail "poll period is not 1000 ms"
 grep -qF 'setInterval(poll, PERIOD_MS)' "$page" || fail "the poll does not use setInterval"
 grep -qF "addEventListener('visibilitychange'" "$page" || fail "no visibilitychange handler"
 grep -qF 'document.hidden' "$page" || fail "document.hidden is not checked"
 grep -qF 'clearInterval(timer)' "$page" || fail "the poll is not stopped when hidden"
+
+# reduced motion: the transitions and animations are switched off
+grep -qF '@media (prefers-reduced-motion: reduce)' "$page" || fail "no prefers-reduced-motion rule"
 
 # the one fetch goes to the fixed path; no request or user data in a URL
 calls=$(grep -c 'fetch(' "$page" || true)
@@ -41,16 +51,48 @@ fixed=$(grep -c "fetch('/api/status'," "$page" || true)
 # values go in with textContent only
 grep -q 'innerHTML' "$page" && fail "innerHTML is used; values must go in with textContent" || true
 
-# the script parses
 if command -v node >/dev/null 2>&1; then
 	dir=$(mktemp -d)
 	trap 'rm -rf "$dir"' EXIT
 	js=$dir/script.js
 	sed -n '/^<script>$/,/^<\/script>$/p' "$page" | sed '1d;$d' > "$js"
+	# the script parses
 	node --check "$js" || fail "the inline script does not parse"
 	echo "node --check: script parses"
+
+	# the pure functions (between the pure:begin and pure:end markers) with their rules
+	pure=$dir/pure.js
+	{
+		echo "'use strict';"
+		sed -n '/\/\* pure:begin \*\//,/\/\* pure:end \*\//p' "$js"
+		cat <<'JS'
+var eq = function (a, b, what) { if (a !== b) { console.error('FAIL: ' + what + ': got ' + JSON.stringify(a) + ', want ' + JSON.stringify(b)); process.exit(1); } };
+eq(fmtNum(null, F0, '%'), 'n/a', 'null is n/a');
+eq(fPct(null), 'n/a', 'null percent is n/a');
+eq(fPct(0), '0 %', '0 stays 0');
+eq(fW(0), '0 W', 'zero watts stays 0');
+eq(fCount(0), '0', 'zero count stays 0');
+eq(fBool(false), 'não', 'false is not n/a');
+eq(fBool(null), 'n/a', 'null bool is n/a');
+eq(fAgo(0), 'há 0 s', 'zero age stays 0');
+eq(fUptime(null), 'n/a', 'null uptime is n/a');
+eq(fText(''), 'n/a', 'empty text is n/a');
+eq(fText(0), '0', 'zero text stays 0');
+var b = new Buf(3); b.push(1); b.push(null); b.push(0);
+eq(JSON.stringify(b.values()), JSON.stringify([1, null, 0]), 'buffer keeps 0 and drops null to NaN');
+b.push(5);
+eq(JSON.stringify(b.values().map(function (x) { return isNaN(x) ? null : x; })), JSON.stringify([null, 0, 5]), 'buffer wraps at its length');
+eq(stats([null, 0, 4]).avg, 2, 'stats count 0 and skip null');
+eq(stats([null, null]), null, 'stats of nothing is null');
+var h = healthOf({ services: { sshd: 'active', bot: null }, network: { wifi: { up: false }, tailscale: { up: true } }, watchdog: { last_feed_s_ago: 75 }, system: { oom_kills: 0 } });
+eq(h.total, 5, 'a null check is left out of the total');
+eq(h.names.join(','), 'Wi-Fi,watchdog', 'failing checks are named');
+console.log('node: format and buffer functions ok');
+JS
+	} > "$pure"
+	node "$pure" || fail "the pure format/buffer functions do not match their rules"
 else
-	echo "node not installed: the inline script was not parsed"
+	echo "node not installed: the inline script and the pure functions were not run"
 fi
 
 echo "dashboard page: ok"

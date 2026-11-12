@@ -7,310 +7,954 @@
 <title>Estado do servidor</title>
 <style>
 :root {
-	--ground: #f3f5f6;
-	--ink: #1a2226;
-	--muted: #56646d;
-	--rule: #d3dadf;
-	--ok: #1f6b3c;
-	--warn: #7a5200;
-	--bad: #9b2c22;
-	--focus: #1f4f7a;
-	color-scheme: light dark;
+	color-scheme: light;
+	--bg: #F5F5F7; --surface: #FFFFFF; --surface-2: #EEEEF1; --line: #DCDDE2;
+	--text: #1D1D1F; --text-2: #5C5C63; --accent: #0066CC; --on-accent: #FFFFFF;
+	--ok: #166534; --warn: #854D0E; --crit: #B91C1C; --info: #1D4ED8; --focus: #0066CC;
 }
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme="light"]) {
-		--ground: #141a1f;
-		--ink: #e2e8ec;
-		--muted: #98a6b0;
-		--rule: #2a343c;
-		--ok: #8fcf9f;
-		--warn: #e8c170;
-		--bad: #ef8f85;
-		--focus: #9cc4e8;
+		color-scheme: dark;
+		--bg: #0F1115; --surface: #171A21; --surface-2: #1E222B; --line: #2A2F3A;
+		--text: #F2F4F7; --text-2: #A3AAB8; --accent: #7DB2FF; --on-accent: #0F1115;
+		--ok: #4ADE80; --warn: #FBBF24; --crit: #F87171; --info: #60A5FA; --focus: #9EC5FF;
 	}
 }
 :root[data-theme="dark"] {
-	--ground: #141a1f;
-	--ink: #e2e8ec;
-	--muted: #98a6b0;
-	--rule: #2a343c;
-	--ok: #8fcf9f;
-	--warn: #e8c170;
-	--bad: #ef8f85;
-	--focus: #9cc4e8;
+	color-scheme: dark;
+	--bg: #0F1115; --surface: #171A21; --surface-2: #1E222B; --line: #2A2F3A;
+	--text: #F2F4F7; --text-2: #A3AAB8; --accent: #7DB2FF; --on-accent: #0F1115;
+	--ok: #4ADE80; --warn: #FBBF24; --crit: #F87171; --info: #60A5FA; --focus: #9EC5FF;
 }
-* { box-sizing: border-box; }
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; }
 body {
-	margin: 0;
-	padding: 16px;
-	background: var(--ground);
-	color: var(--ink);
-	font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+	background: var(--bg);
+	color: var(--text);
+	font-family: system-ui, -apple-system, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+	font-size: 0.9375rem;
+	line-height: 1.45;
 	font-variant-numeric: tabular-nums;
-	overflow-wrap: anywhere;
+	-webkit-font-smoothing: antialiased;
+	min-height: 100vh;
+	overflow-x: hidden;
 }
-:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-header {
+h1, h2, p, dl, dd, figure, pre { margin: 0; }
+h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-height: 1.3; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 6px; }
+.wrap { max-width: 72rem; margin: 0 auto; padding: 0 1rem; }
+.cap { font-size: 0.75rem; font-weight: 500; letter-spacing: 0.01em; line-height: 1.3; color: var(--text-2); }
+.sm { font-size: 0.8125rem; line-height: 1.4; color: var(--text-2); }
+
+/* top bar: the only glass surface (with reduced transparency and no backdrop-filter support it is solid) */
+.top {
+	position: sticky; top: 0; z-index: 5;
+	background: color-mix(in srgb, var(--bg) 70%, transparent);
+}
+@supports (backdrop-filter: blur(1px)) {
+	.top { backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%); }
+}
+@media (prefers-reduced-transparency: reduce) {
+	.top { background: var(--bg); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+.top-in { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; min-height: 3.5rem; padding-top: 0.5rem; padding-bottom: 0.5rem; }
+.top h1 { margin-right: auto; }
+#msg { max-width: 72rem; margin: 0 auto; padding: 0 1rem; }
+#msg:empty, #notice:empty { display: none; }
+#msg p, #notice { color: var(--crit); font-weight: 500; font-size: 0.8125rem; padding: 0.5rem 0; }
+#notice { max-width: 72rem; margin: 0 auto; padding: 0 1rem; color: var(--text-2); }
+
+/* bento grid: 2 columns on a phone, 4 at 640 px, 12 at 960 px */
+.grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 72rem; margin: 0 auto; padding: 8px 16px 24px; }
+@media (min-width: 640px) { .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (min-width: 960px) { .grid { grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; } }
+.t { grid-column: span var(--pw, 2); }
+@media (min-width: 640px) { .t { grid-column: span var(--mw, 4); } }
+@media (min-width: 960px) { .t { grid-column: span var(--dw, 6); } }
+@media (max-width: 479px) { .t { grid-column: 1 / -1; } }
+/* desktop: every row adds up to 12 columns; a tile stretched by a taller neighbour gives the room to its chart */
+@media (min-width: 960px) {
+	.hero .checks { align-self: stretch; display: grid; grid-template-columns: 1fr 1fr; column-gap: 24px; }
+	.t > .chart { flex: 1; }
+	.t > .chart > .spark { flex: 1; height: auto; min-height: 5.5rem; }
+}
+.checks { width: 100%; }
+.checks > div > dt { font-size: 0.8125rem; }
+.t {
+	background: var(--surface);
+	border: 1px solid var(--line);
+	border-radius: 20px;
+	padding: 16px;
+	min-width: 0;
 	display: flex;
-	flex-wrap: wrap;
-	justify-content: space-between;
-	align-items: flex-end;
-	gap: 0.5rem 1.5rem;
-	max-width: 60rem;
-	margin: 0 auto 1rem;
+	flex-direction: column;
+	gap: 10px;
+	contain: layout paint;
 }
-h1 { margin: 0; font-size: 1.25rem; font-weight: 650; }
-#fresh { margin: 0.2rem 0 0; color: var(--muted); font-size: 0.9rem; }
-body[data-stale] #fresh { color: var(--warn); }
-.slot { margin: 0; text-align: right; color: var(--muted); font-size: 0.9rem; }
-.slot-letter { display: block; font-size: 2.75rem; font-weight: 300; line-height: 1; color: var(--ink); }
-#msg { max-width: 60rem; margin: 0 auto 1rem; color: var(--bad); font-weight: 600; }
-#msg:empty { display: none; }
-main {
-	display: grid;
-	grid-template-columns: 1fr;
-	gap: 0 2.5rem;
-	align-items: start;
-	max-width: 60rem;
-	margin: 0 auto;
+@media (min-width: 960px) { .t { padding: 20px; gap: 12px; } }
+@media (prefers-contrast: more) { .t { border: 2px solid var(--text-2); } }
+[data-stale] .t { border-style: dashed; }
+.hero { align-items: center; text-align: center; }
+.hero > h2 { align-self: stretch; text-align: left; }
+
+/* values */
+.v-m { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.015em; line-height: 1.1; }
+.v-l { font-size: 2.25rem; font-weight: 600; letter-spacing: -0.02em; line-height: 1.05; }
+.hero-v { font-size: clamp(2.75rem, 7vw, 4rem); font-weight: 650; letter-spacing: -0.03em; line-height: 1; }
+.reason { font-size: 1rem; font-weight: 600; line-height: 1.3; }
+
+/* rings: pathLength 100, so the dash offset is a percentage */
+.ringbox { position: relative; width: min(100%, 8.5rem); aspect-ratio: 1; margin: 0.25rem auto; }
+.ringbox.big { width: min(100%, 12.5rem); }
+.ring { width: 100%; height: 100%; display: block; overflow: visible; }
+.track { fill: none; stroke: var(--surface-2); stroke-width: 10; }
+.fill {
+	fill: none; stroke: var(--accent); stroke-width: 10; stroke-linecap: round;
+	stroke-dasharray: 100 100; stroke-dashoffset: 100;
+	transition: stroke-dashoffset 700ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-section { padding: 0.75rem 0 1rem; border-top: 1px solid var(--rule); break-inside: avoid; }
-h2 { margin: 0 0 0.35rem; font-size: 0.95rem; font-weight: 650; }
-.row {
-	display: flex;
-	justify-content: space-between;
-	align-items: baseline;
-	gap: 1rem;
-	padding: 0.2rem 0;
+.fill[data-s="ok"] { stroke: var(--ok); }
+.fill[data-s="warn"] { stroke: var(--warn); }
+.fill[data-s="bad"] { stroke: var(--crit); }
+.ringval {
+	position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+	font-size: 1.5rem; font-weight: 600; letter-spacing: -0.015em; text-align: center;
 }
-dt { color: var(--muted); flex: 0 1 auto; min-width: 0; }
-dd { margin: 0; text-align: right; min-width: 0; }
-[data-tone="ok"] { color: var(--ok); }
-[data-tone="warn"] { color: var(--warn); }
-[data-tone="bad"] { color: var(--bad); }
-details { max-width: 60rem; margin: 1.25rem auto 0; border-top: 1px solid var(--rule); padding-top: 0.75rem; }
-summary { cursor: pointer; font-weight: 650; font-size: 0.95rem; }
-pre {
-	margin: 0.5rem 0 0;
-	font: 0.85rem/1.4 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-	white-space: pre-wrap;
-	overflow-wrap: anywhere;
+.ringbox.big .ringval { font-size: clamp(2.25rem, 5vw, 2.75rem); font-weight: 650; letter-spacing: -0.03em; }
+
+/* charts: one path per series, drawn in a 300 x 80 box; the text beside them is the alternative */
+.chart { position: relative; display: flex; flex-direction: column; margin: 0; }
+.spark { width: 100%; height: 5.5rem; display: block; overflow: visible; }
+.chart.mini { width: 5.5rem; }
+.chart.mini .spark { height: 1.75rem; }
+.gl { stroke: var(--line); stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
+.line { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.area { fill: var(--accent); fill-opacity: 0.16; stroke: none; }
+.line2 { fill: none; stroke: var(--info); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.area2 { fill: var(--info); fill-opacity: 0.16; stroke: none; }
+.avg { stroke: var(--text-2); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.base { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.skel .line { stroke: var(--text-2); stroke-dasharray: 4 4; opacity: 0.6; }
+.dot {
+	position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%;
+	background: var(--accent); border: 2px solid var(--surface);
 }
-@media (min-width: 52rem) {
-	main { grid-template-columns: 1fr 1fr; }
+.dot[hidden] { display: none; }
+.ticks { display: flex; justify-content: space-between; }
+.note { font-weight: 400; font-size: 0.8125rem; color: var(--text-2); }
+
+/* segmented bars: 20 segments, each 5 % */
+.bar { display: flex; gap: 2px; height: 0.75rem; }
+.bar i { flex: 1 1 0; min-width: 0; border-radius: 3px; background: var(--surface-2); }
+.bar i.on { background: var(--accent); }
+.bar[data-s="ok"] i.on { background: var(--ok); }
+.bar[data-s="warn"] i.on { background: var(--warn); }
+.bar[data-s="bad"] i.on { background: var(--crit); }
+.bar[data-s="na"] i { background: none; box-shadow: inset 0 0 0 1px var(--line); }
+
+/* status pills: colour, glyph and word together */
+.pill {
+	display: inline-flex; align-items: center; gap: 0.375rem; align-self: flex-start;
+	min-height: 1.75rem; padding: 0.125rem 0.625rem; border-radius: 999px;
+	font-size: 0.75rem; font-weight: 500; line-height: 1.3; letter-spacing: 0.01em;
+	background: var(--surface-2); color: var(--text-2);
 }
+.pill svg { width: 0.875rem; height: 0.875rem; flex: none; }
+.pill[data-s="ok"] { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.pill[data-s="warn"] { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.pill[data-s="bad"] { color: var(--crit); background: color-mix(in srgb, var(--crit) 14%, transparent); }
+
+/* A/B slot: the active slot is filled, the other keeps a readable label */
+.slot {
+	display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 3px;
+	border-radius: 999px; background: var(--surface-2); max-width: 9rem;
+}
+.slot span { text-align: center; padding: 0.375rem 0; border-radius: 999px; font-weight: 600; color: var(--text-2); }
+.slot span[aria-current="true"] { background: var(--accent); color: var(--on-accent); }
+
+/* key / value rows */
+.kv { display: grid; }
+.kv > div {
+	display: flex; justify-content: space-between; align-items: baseline; gap: 0.75rem;
+	padding: 0.4375rem 0; border-top: 1px solid var(--line);
+}
+.kv dt { color: var(--text-2); font-size: 0.8125rem; min-width: 0; }
+.kv dd { text-align: right; min-width: 0; overflow-wrap: anywhere; }
+.trow {
+	display: grid; grid-template-columns: minmax(0, 1fr) auto 5.5rem; align-items: center; gap: 0.5rem;
+	padding: 0.25rem 0; border-top: 1px solid var(--line);
+}
+.trow:first-child { border-top: 0; }
+.trow .lbl { color: var(--text-2); font-size: 0.8125rem; min-width: 0; }
+.trow b { font-weight: 600; text-align: right; }
+.svc-row { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; padding: 0.375rem 0; border-top: 1px solid var(--line); }
+.svc-row:first-child { border-top: 0; }
+.svc-row > span:first-child { color: var(--text-2); font-size: 0.8125rem; }
+.chart-block { display: flex; flex-direction: column; gap: 6px; }
+.row-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* raw text and footer */
+.raw { max-width: 72rem; margin: 0 auto; padding: 0 16px 8px; }
+.raw summary { cursor: pointer; font-weight: 600; font-size: 0.9375rem; min-height: 44px; display: flex; align-items: center; }
+.raw pre {
+	font: 0.8125rem/1.4 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+	white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-2); padding: 8px 0 16px;
+}
+.foot { max-width: 72rem; margin: 0 auto; padding: 0 16px 32px; }
+
+/* intro: tiles fade in once, in order */
+.intro .t { animation: fade-in 450ms both; animation-delay: calc(var(--i, 0) * 40ms); }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
 @media (prefers-reduced-motion: reduce) {
-	* { transition: none !important; animation: none !important; }
+	*, *::before, *::after { transition-duration: 0s !important; animation: none !important; scroll-behavior: auto !important; }
 }
 </style>
 </head>
 <body>
-<header>
-	<div>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+	<symbol id="i-ok" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-6.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+	<symbol id="i-warn" viewBox="0 0 16 16"><path d="M8 2.5l6.2 11H1.8z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8 7v3M8 11.6v.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+	<symbol id="i-bad" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+	<symbol id="i-off" viewBox="0 0 16 16"><path d="M4 8h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+	<symbol id="i-na" viewBox="0 0 16 16"><circle cx="8" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2 2"/></symbol>
+</svg>
+
+<header class="top">
+	<div class="wrap top-in">
 		<h1>Estado do servidor</h1>
-		<p id="fresh">Aguardando a primeira leitura.</p>
+		<p class="pill" data-pill="top" data-s="na"><svg aria-hidden="true"><use href="#i-na"/></svg><span class="ptxt">Carregando</span></p>
+		<p class="cap" data-k="top.age" role="note">Aguardando a primeira leitura.</p>
 	</div>
-	<p class="slot"><span class="slot-letter" data-f="boot.slot" data-fmt="slot">n/a</span>slot ativo</p>
 </header>
-<p id="msg" role="status"></p>
+<div id="msg" role="status"><p></p></div>
+<p id="notice" data-k="notice"></p>
 
-<main>
-	<section aria-labelledby="h-sistema">
-		<h2 id="h-sistema">Sistema</h2>
-		<dl>
-			<div class="row"><dt>Tempo ligado</dt><dd data-f="system.uptime_s" data-fmt="uptime">n/a</dd></div>
-			<div class="row"><dt>Reinícios</dt><dd data-f="system.reboots" data-fmt="num">n/a</dd></div>
-			<div class="row"><dt>Processos mortos por falta de memória</dt><dd data-f="system.oom_kills" data-fmt="num">n/a</dd></div>
-			<div class="row"><dt>Memória RAM em uso</dt><dd data-f="system.ram" data-fmt="usage" data-total="total_gb">n/a</dd></div>
-			<div class="row"><dt>zram</dt><dd data-f="system.zram" data-fmt="usage" data-total="size_gb">n/a</dd></div>
+<main class="grid">
+
+	<section class="t hero" style="--i:0;--pw:2;--mw:4;--dw:6" aria-labelledby="h-saude">
+		<h2 id="h-saude">Saúde</h2>
+		<div class="ringbox big">
+			<svg class="ring" viewBox="0 0 120 120" aria-hidden="true" focusable="false"><circle class="track" cx="60" cy="60" r="50"/><circle class="fill" data-ring="hero" cx="60" cy="60" r="50" pathLength="100" transform="rotate(-90 60 60)"/></svg>
+			<p class="ringval hero-v" data-k="hero.pct">n/a</p>
+		</div>
+		<p class="reason" data-k="hero.reason" aria-live="polite">Aguardando a primeira leitura.</p>
+		<dl class="kv checks">
+			<div><dt>Ligado há</dt><dd data-k="sys.up">n/a</dd></div>
+			<div><dt>Slot ativo</dt><dd data-k="boot.word">n/a</dd></div>
+		</dl>
+		<dl class="kv checks">
+			<div><dt>SSH</dt><dd><span class="pill" data-pill="chk0" data-s="na"><svg aria-hidden="true"><use href="#i-na"/></svg><span class="ptxt">n/a</span></span></dd></div>
+			<div><dt>Bot do Telegram</dt><dd><span class="pill" data-pill="chk1" data-s="na"><svg aria-hidden="true"><use href="#i-na"/></svg><span class="ptxt">n/a</span></span></dd></div>
+			<div><dt>Wi-Fi</dt><dd><span class="pill" data-pill="chk2" data-s="na"><svg aria-hidden="true"><use href="#i-na"/></svg><span class="ptxt">n/a</span></span></dd></div>
+			<div><dt>Tailscale</dt><dd><span class="pill" data-pill="chk3" data-s="na"><svg aria-hidden="true"><use href="#i-na"/></svg><span class="ptxt">n/a</span></span></dd></div>
+			<div><dt>Watchdog</dt><dd><span class="pill" data-pill="chk4" data-s="na"><svg aria-hidden="true"><use href="#i-na"/></svg><span class="ptxt">n/a</span></span></dd></div>
+			<div><dt>Falta de memória</dt><dd><span class="pill" data-pill="chk5" data-s="na"><svg aria-hidden="true"><use href="#i-na"/></svg><span class="ptxt">n/a</span></span></dd></div>
+		</dl>
+		<p class="cap">Problema: SSH ou bot parados, Wi-Fi ou Tailscale fora, watchdog sem feed há mais de 60 s, ou algum processo morto por falta de memória.</p>
+	</section>
+
+	<section class="t" style="--i:1;--pw:1;--mw:2;--dw:3" aria-labelledby="h-bateria">
+		<h2 id="h-bateria">Bateria</h2>
+		<div class="ringbox">
+			<svg class="ring" viewBox="0 0 120 120" aria-hidden="true" focusable="false"><circle class="track" cx="60" cy="60" r="50"/><circle class="fill" data-ring="bat" cx="60" cy="60" r="50" pathLength="100" transform="rotate(-90 60 60)"/></svg>
+			<p class="ringval" data-k="bat.pct">n/a</p>
+		</div>
+		<p class="sm" data-k="bat.state">n/a</p>
+		<p class="cap">Aviso abaixo de 20 %</p>
+		<dl class="kv">
+			<div><dt>Tensão</dt><dd data-k="bat.volts">n/a</dd></div>
+			<div><dt>Ciclos de carga</dt><dd data-k="bat.cycles">n/a</dd></div>
+			<div><dt>Temperatura</dt><dd data-k="bat.temp">n/a</dd></div>
 		</dl>
 	</section>
 
-	<section aria-labelledby="h-boot">
-		<h2 id="h-boot">Boot</h2>
-		<dl>
-			<div class="row"><dt>Slot ativo</dt><dd data-f="boot.slot" data-fmt="slot">n/a</dd></div>
-			<div class="row"><dt>Slot marcado como bom</dt><dd data-f="boot.slot_successful" data-fmt="bool">n/a</dd></div>
+	<section class="t" style="--i:2;--pw:1;--mw:2;--dw:3" aria-labelledby="h-consumo">
+		<h2 id="h-consumo">Consumo</h2>
+		<p class="v-l" data-k="pow.val">n/a</p>
+		<p class="sm" data-k="pow.src">n/a</p>
+		<figure class="chart" data-chart="pow" role="img" aria-label="Consumo"><svg class="spark" viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="area"/><path class="line"/><line class="avg" x1="0" x2="300" y1="40" y2="40"/></svg><span class="dot" hidden></span></figure>
+		<p class="cap" data-cap="pow">coletando…</p>
+	</section>
+
+	<section class="t" style="--i:3;--pw:2;--mw:4;--dw:6" aria-labelledby="h-cpu">
+		<h2 id="h-cpu">Processador</h2>
+		<div style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:8px">
+			<p class="v-l" data-k="cpu.val">n/a</p>
+			<p class="sm" data-k="cpu.peak">coletando…</p>
+		</div>
+		<figure class="chart" data-chart="cpu" role="img" aria-label="Processador"><svg class="spark" viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true" focusable="false"><line class="gl" x1="0" x2="300" y1="22" y2="22"/><line class="gl" x1="0" x2="300" y1="40" y2="40"/><line class="gl" x1="0" x2="300" y1="58" y2="58"/><path class="area"/><path class="line"/><line class="avg" x1="0" x2="300" y1="40" y2="40"/></svg><span class="dot" hidden></span></figure>
+		<p class="cap">Escala de 0 a 100 %, linhas em 25, 50 e 75 %</p>
+		<p class="cap" data-cap="cpu">coletando…</p>
+		<dl class="kv">
+			<div><dt>Frequência</dt><dd data-k="cpu.freq">n/a</dd></div>
+			<div><dt>GPU</dt><dd data-k="gpu.state">n/a</dd></div>
 		</dl>
 	</section>
 
-	<section aria-labelledby="h-armazenamento">
-		<h2 id="h-armazenamento">Armazenamento</h2>
-		<dl>
-			<div class="row"><dt>NAS montado</dt><dd data-f="storage.nas.mounted" data-fmt="bool">n/a</dd></div>
-			<div class="row"><dt>Uso do btrfs</dt><dd data-f="storage.nas" data-fmt="usage" data-total="total_gb">n/a</dd></div>
-			<div class="row"><dt>Último scrub</dt><dd data-f="storage.scrub.state" data-fmt="text">n/a</dd></div>
-			<div class="row"><dt>Scrub terminou em</dt><dd data-f="storage.scrub.finished_at" data-fmt="time">n/a</dd></div>
-			<div class="row"><dt>Erros no scrub</dt><dd data-f="storage.scrub.errors" data-fmt="errors">n/a</dd></div>
+	<section class="t" style="--i:4;--pw:2;--mw:2;--dw:6" aria-labelledby="h-temp">
+		<h2 id="h-temp">Temperaturas</h2>
+		<div class="trow"><span class="lbl">Processador</span><b data-k="t.cpu">n/a</b><figure class="chart mini" data-chart="t_cpu" role="img" aria-label="Processador"><svg class="spark" viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="area"/><path class="line"/></svg></figure></div>
+		<div class="trow"><span class="lbl">GPU</span><b data-k="t.gpu">n/a</b><figure class="chart mini" data-chart="t_gpu" role="img" aria-label="GPU"><svg class="spark" viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="area"/><path class="line"/></svg></figure></div>
+		<div class="trow"><span class="lbl">Memória RAM</span><b data-k="t.ram">n/a</b><figure class="chart mini" data-chart="t_ram" role="img" aria-label="Memória RAM"><svg class="spark" viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="area"/><path class="line"/></svg></figure></div>
+		<div class="trow"><span class="lbl">Armazenamento interno</span><b data-k="t.rom">n/a</b><figure class="chart mini" data-chart="t_rom" role="img" aria-label="Armazenamento interno"><svg class="spark" viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="area"/><path class="line"/></svg></figure></div>
+		<div class="trow"><span class="lbl">Bateria</span><b data-k="t.bat">n/a</b><figure class="chart mini" data-chart="t_bat" role="img" aria-label="Bateria"><svg class="spark" viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="area"/><path class="line"/></svg></figure></div>
+		<div class="trow"><span class="lbl">Corpo</span><b data-k="t.body">n/a</b><figure class="chart mini" data-chart="t_body" role="img" aria-label="Corpo"><svg class="spark" viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="area"/><path class="line"/></svg></figure></div>
+	</section>
+
+	<section class="t" style="--i:5;--pw:1;--mw:2;--dw:4" aria-labelledby="h-memoria">
+		<h2 id="h-memoria">Memória</h2>
+		<div class="ringbox">
+			<svg class="ring" viewBox="0 0 120 120" aria-hidden="true" focusable="false"><circle class="track" cx="60" cy="60" r="50"/><circle class="fill" data-ring="ram" cx="60" cy="60" r="50" pathLength="100" transform="rotate(-90 60 60)"/></svg>
+			<p class="ringval" data-k="ram.pct">n/a</p>
+		</div>
+		<p class="sm" data-k="ram.sub">n/a</p>
+		<p class="cap">Aviso a partir de 85 %</p>
+		<div class="chart-block">
+			<p class="cap">zram comprimida</p>
+			<div class="bar" data-bar="zram" role="meter" aria-label="zram" aria-valuemin="0" aria-valuemax="100"></div>
+			<p class="sm" data-k="zram.val">n/a</p>
+		</div>
+	</section>
+
+	<section class="t" style="--i:6;--pw:1;--mw:2;--dw:8" aria-labelledby="h-ping">
+		<h2 id="h-ping">Ping</h2>
+		<p class="v-m" data-k="ping.ms">n/a</p>
+		<p class="sm" data-k="ping.host">n/a</p>
+		<p class="cap" data-k="slow.ping" hidden></p>
+		<figure class="chart" data-chart="ping" role="img" aria-label="Ping para a internet"><svg class="spark" viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="area"/><path class="line"/><line class="avg" x1="0" x2="300" y1="40" y2="40"/></svg><span class="dot" hidden></span></figure>
+		<p class="cap" data-cap="ping">coletando…</p>
+		<dl class="kv">
+			<div><dt>Roteador</dt><dd data-k="ping.gw">n/a</dd></div>
 		</dl>
 	</section>
 
-	<section aria-labelledby="h-rede">
+	<section class="t" style="--i:7;--pw:2;--mw:2;--dw:8" aria-labelledby="h-rede">
 		<h2 id="h-rede">Rede</h2>
-		<dl>
-			<div class="row"><dt>Wi-Fi conectado</dt><dd data-f="network.wifi.up" data-fmt="bool">n/a</dd></div>
-			<div class="row"><dt>Rede Wi-Fi</dt><dd data-f="network.wifi.ssid" data-fmt="text">n/a</dd></div>
-			<div class="row"><dt>Tailscale no ar</dt><dd data-f="network.tailscale.up" data-fmt="bool">n/a</dd></div>
-			<div class="row"><dt>Samba no tailnet</dt><dd data-f="network.samba_tailnet.active" data-fmt="bool">n/a</dd></div>
+		<div class="row-pills">
+			<span class="pill" data-pill="wifi" data-s="na"><svg aria-hidden="true"><use href="#i-na"/></svg><span class="ptxt">n/a</span></span>
+			<span class="pill" data-pill="ts" data-s="na"><svg aria-hidden="true"><use href="#i-na"/></svg><span class="ptxt">n/a</span></span>
+			<span class="pill" data-pill="samba" data-s="na"><svg aria-hidden="true"><use href="#i-na"/></svg><span class="ptxt">n/a</span></span>
+		</div>
+		<figure class="chart" data-chart="net" role="img" aria-label="Rede"><svg class="spark" viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true" focusable="false"><line class="base" x1="0" x2="300" y1="40" y2="40"/><path class="area"/><path class="line"/><path class="area2"/><path class="line2"/></svg><span class="dot" hidden></span></figure>
+		<p class="cap" data-cap="net">coletando…</p>
+		<dl class="kv">
+			<div><dt>Baixando</dt><dd data-k="net.rx">n/a</dd></div>
+			<div><dt>Enviando</dt><dd data-k="net.tx">n/a</dd></div>
+			<div><dt>Interface</dt><dd data-k="net.iface">n/a</dd></div>
+			<div><dt>Rede Wi-Fi</dt><dd data-k="wifi.ssid">n/a</dd></div>
 		</dl>
 	</section>
 
-	<section aria-labelledby="h-servicos">
-		<h2 id="h-servicos">Serviços</h2>
-		<dl>
-			<div class="row"><dt>sshd</dt><dd data-f="services.sshd" data-fmt="svc">n/a</dd></div>
-			<div class="row"><dt>Samba</dt><dd data-f="services.samba" data-fmt="svc">n/a</dd></div>
-			<div class="row"><dt>Bot do Telegram</dt><dd data-f="services.bot" data-fmt="svc">n/a</dd></div>
-			<div class="row"><dt>Contêineres em execução</dt><dd data-f="services.containers.running" data-fmt="num">n/a</dd></div>
-			<div class="row"><dt>Nomes dos contêineres</dt><dd data-f="services.containers.names" data-fmt="list">n/a</dd></div>
+	<section class="t" style="--i:8;--pw:1;--mw:2;--dw:4" aria-labelledby="h-boot">
+		<h2 id="h-boot">Boot</h2>
+		<div class="slot" role="group" aria-label="Slot de boot">
+			<span data-slot="a" aria-current="false">A</span>
+			<span data-slot="b" aria-current="false">B</span>
+		</div>
+		<dl class="kv">
+			<div><dt>Slot ativo</dt><dd data-k="boot.slot">n/a</dd></div>
+			<div><dt>Marcado como bom</dt><dd data-k="boot.ok">n/a</dd></div>
 		</dl>
 	</section>
 
-	<section aria-labelledby="h-watchdog">
+	<section class="t" style="--i:9;--pw:1;--mw:2;--dw:6" aria-labelledby="h-watchdog">
 		<h2 id="h-watchdog">Watchdog</h2>
-		<dl>
-			<div class="row"><dt>Último feed</dt><dd data-f="watchdog.last_feed_s_ago" data-fmt="ago">n/a</dd></div>
-			<div class="row"><dt>Resets pelo watchdog</dt><dd data-f="watchdog.resets" data-fmt="num">n/a</dd></div>
+		<p class="v-m" data-k="wd.age">n/a</p>
+		<p class="cap">Aviso após 60 s sem feed</p>
+		<figure class="chart" data-chart="wd" role="img" aria-label="Watchdog"><svg class="spark" viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="area"/><path class="line"/></svg></figure>
+		<p class="cap" data-cap="wd">coletando…</p>
+		<dl class="kv">
+			<div><dt>Resets pelo watchdog</dt><dd data-k="wd.resets">n/a</dd></div>
 		</dl>
 	</section>
 
-	<section aria-labelledby="h-versao">
-		<h2 id="h-versao">Versão</h2>
-		<dl>
-			<div class="row"><dt>Kernel</dt><dd data-f="version.kernel" data-fmt="text">n/a</dd></div>
-			<div class="row"><dt>pkgrel</dt><dd data-f="version.pkgrel" data-fmt="text">n/a</dd></div>
+	<section class="t" style="--i:10;--pw:2;--mw:4;--dw:6" aria-labelledby="h-servicos">
+		<h2 id="h-servicos">Serviços</h2>
+		<p class="cap" data-k="slow.svc" hidden></p>
+		<div class="svc-row"><span>sshd</span><span class="pill" data-pill="sshd" data-s="na"><svg aria-hidden="true"><use href="#i-na"/></svg><span class="ptxt">n/a</span></span></div>
+		<div class="svc-row"><span>Samba</span><span class="pill" data-pill="samba2" data-s="na"><svg aria-hidden="true"><use href="#i-na"/></svg><span class="ptxt">n/a</span></span></div>
+		<div class="svc-row"><span>Bot do Telegram</span><span class="pill" data-pill="bot" data-s="na"><svg aria-hidden="true"><use href="#i-na"/></svg><span class="ptxt">n/a</span></span></div>
+		<dl class="kv">
+			<div><dt>No ar</dt><dd data-k="svc.sum">n/a</dd></div>
+			<div><dt>Contêineres em execução</dt><dd data-k="svc.cont">n/a</dd></div>
+			<div><dt>Nomes dos contêineres</dt><dd data-k="svc.names">n/a</dd></div>
 		</dl>
 	</section>
+
+	<section class="t" style="--i:11;--pw:2;--mw:4;--dw:6" aria-labelledby="h-armaz">
+		<h2 id="h-armaz">Armazenamento</h2>
+		<div class="row-pills"><span class="pill" data-pill="nas" data-s="na"><svg aria-hidden="true"><use href="#i-na"/></svg><span class="ptxt">n/a</span></span></div>
+		<div class="chart-block">
+			<p class="cap">NAS (btrfs), aviso a partir de 85 %</p>
+			<div class="bar" data-bar="nas" role="meter" aria-label="NAS" aria-valuemin="0" aria-valuemax="100"></div>
+			<p class="sm" data-k="nas.use">n/a</p>
+		</div>
+		<div class="chart-block">
+			<p class="cap">Interno</p>
+			<div class="bar" data-bar="rom" role="meter" aria-label="Armazenamento interno" aria-valuemin="0" aria-valuemax="100"></div>
+			<p class="sm" data-k="rom.use">n/a</p>
+		</div>
+		<dl class="kv">
+			<div><dt>Último scrub</dt><dd data-k="scrub.state">n/a</dd></div>
+			<div><dt>Scrub terminou em</dt><dd data-k="scrub.fin">n/a</dd></div>
+			<div><dt>Erros no scrub</dt><dd><span class="pill" data-pill="scrub" data-s="na"><svg aria-hidden="true"><use href="#i-na"/></svg><span class="ptxt">n/a</span></span></dd></div>
+		</dl>
+	</section>
+
+	<section class="t" style="--i:12;--pw:1;--mw:2;--dw:3" aria-labelledby="h-sistema">
+		<h2 id="h-sistema">Sistema</h2>
+		<dl class="kv">
+			<div><dt>Tempo ligado</dt><dd data-k="sys.up2">n/a</dd></div>
+			<div><dt>Reinícios</dt><dd data-k="sys.reb">n/a</dd></div>
+			<div><dt>Desde que a página abriu</dt><dd data-k="sys.delta">n/a</dd></div>
+			<div><dt>Mortos por falta de memória</dt><dd><span class="pill" data-pill="oom" data-s="na"><svg aria-hidden="true"><use href="#i-na"/></svg><span class="ptxt">n/a</span></span></dd></div>
+		</dl>
+	</section>
+
+	<section class="t" style="--i:13;--pw:1;--mw:2;--dw:3" aria-labelledby="h-versao">
+		<h2 id="h-versao">Versão</h2>
+		<dl class="kv">
+			<div><dt>Kernel</dt><dd data-k="ver.kernel">n/a</dd></div>
+			<div><dt>pkgrel</dt><dd data-k="ver.pkgrel">n/a</dd></div>
+		</dl>
+	</section>
+
 </main>
 
-<details>
+<details class="raw">
 	<summary>Texto bruto de /status</summary>
-	<pre data-f="status_text" data-fmt="text">n/a</pre>
+	<pre data-k="raw">n/a</pre>
 </details>
+<p class="sm foot">O histórico dos gráficos é só o que esta página viu desde que foi aberta, até 60 min (uma leitura por segundo). Atualiza a cada 1 s, só com a aba visível. Avisos: bateria abaixo de 20 %, RAM e disco a partir de 85 %, watchdog sem feed há mais de 60 s.</p>
 
 <script>
 (function () {
 	'use strict';
-	var PERIOD_MS = 5000;
-	var TIMEOUT_MS = 4000;
-	var NA = 'n/a';
-	var nf = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
-	var timer = null;
-	var inFlight = false;
-	var lastGood = null;
-	var lastGoodAt = 0;
-	var failure = null;
+	var PERIOD_MS = 1000, TIMEOUT_MS = 2500, STALE_MS = 5000, WINDOW = 3600, TICK_MS = 1000;
+	var NET_FLOOR_KBIT = 100; // the network scale never goes below this, so an idle link is not drawn as a spike
 
+	/* pure:begin */
+	var NA = 'n/a';
+	var WD_STALE_S = 60;
+	var F0 = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 });
+	var F1 = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
+	var F2 = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 });
+	var SVC = { active: ['no ar', 'ok'], started: ['no ar', 'ok'], inactive: ['parado', 'off'], failed: ['com falha', 'bad'], crashed: ['com falha', 'bad'] };
 	function isNum(v) { return typeof v === 'number' && isFinite(v); }
-	function get(obj, path) {
-		var v = obj;
-		var keys = path.split('.');
+	function isBool(v) { return typeof v === 'boolean'; }
+	function get(o, path) {
+		var keys = path.split('.'), v = o;
 		for (var i = 0; i < keys.length; i++) {
 			if (v == null || typeof v !== 'object') return null;
 			v = v[keys[i]];
 		}
 		return v === undefined ? null : v;
 	}
-	// Each formatter gets the raw value and returns text. Only null means "n/a": 0 and false show as themselves.
-	var text = function (v) { return v == null || v === '' ? NA : String(v); };
-	var FMT = {
-		text: text,
-		num: function (v) { return isNum(v) ? nf.format(v) : text(v); },
-		bool: function (v) { return v === true ? 'sim' : v === false ? 'não' : NA; },
-		ago: function (v) { return isNum(v) ? 'há ' + nf.format(v) + ' s' : text(v); },
-		time: function (v) { return isNum(v) ? new Date(v * 1000).toLocaleString('pt-BR') : text(v); },
-		uptime: function (v) {
-			if (!isNum(v)) return text(v);
-			var s = Math.floor(v), d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
-			return d ? d + ' d ' + h + ' h ' + m + ' min' : h ? h + ' h ' + m + ' min' : m + ' min';
-		},
-		slot: function (v) { return v === 'a' ? 'A' : v === 'b' ? 'B' : NA; },
-		svc: function (v) { return text(v); },
-		list: function (v) { return Array.isArray(v) ? (v.length ? v.join(', ') : 'nenhum') : NA; },
-		errors: function (v) { return isNum(v) ? nf.format(v) : text(v); },
-		usage: function (v, el) {
-			if (v == null || typeof v !== 'object') return NA;
-			var total = v[el.getAttribute('data-total')];
-			var amount = isNum(v.used_gb) && isNum(total) ? nf.format(v.used_gb) + ' de ' + nf.format(total) + ' GB' : null;
-			if (isNum(v.used_pct)) return nf.format(v.used_pct) + ' %' + (amount ? ' (' + amount + ')' : '');
-			return amount || NA;
-		}
-	};
-	// Colour is a second cue; the text always says the state.
-	function tone(fmt, v) {
-		if (fmt === 'svc') return v === 'started' ? 'ok' : v === 'crashed' ? 'bad' : '';
-		if (fmt === 'errors') return v === 0 ? 'ok' : isNum(v) ? 'bad' : '';
-		return '';
+	// Only null (or a non-number) is "n/a": 0 prints as 0 and false as "não".
+	// The unit is joined with a no-break space, so a value and its unit never split across lines.
+	function fmtNum(v, F, unit) { return isNum(v) ? F.format(v) + (unit ? '\u00a0' + unit : '') : NA; }
+	function fPct(v) { return fmtNum(v, F0, '%'); }
+	function fCount(v) { return fmtNum(v, F0); }
+	function fGb(v) { return fmtNum(v, F2, 'GB'); }
+	function fW(v) { return fmtNum(v, F1, 'W'); }
+	function fV(v) { return fmtNum(v, F2, 'V'); }
+	function fC(v) { return fmtNum(v, F0, '°C'); }
+	function fMs(v) { return fmtNum(v, F0, 'ms'); }
+	function fKbit(v) { return fmtNum(v, F0, 'kbit/s'); }
+	function fMhz(v) { return fmtNum(v, F0, 'MHz'); }
+	function fAgo(v) { return isNum(v) ? 'há ' + F0.format(v) + '\u00a0s' : NA; }
+	function fBool(v) { return v === true ? 'sim' : v === false ? 'não' : NA; }
+	function fText(v) { return v == null || v === '' ? NA : String(v); }
+	function fUptime(s) {
+		if (!isNum(s)) return NA;
+		s = Math.floor(s);
+		var d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+		return d ? d + '\u00a0d ' + h + '\u00a0h' : h ? h + '\u00a0h ' + m + '\u00a0min' : m ? m + '\u00a0min' : s + '\u00a0s';
 	}
+	function fTime(v) { return isNum(v) ? new Date(v * 1000).toLocaleString('pt-BR') : NA; }
+	function fUse(pct, used, total) {
+		if (!isNum(pct)) return NA;
+		return F0.format(pct) + '\u00a0%' + (isNum(used) && isNum(total) ? ' (' + F2.format(used) + ' de ' + F2.format(total) + '\u00a0GB)' : '');
+	}
+	function fPair(a, b, unit) { return isNum(a) && isNum(b) ? F2.format(a) + ' de ' + F2.format(b) + '\u00a0' + unit : NA; }
+	function svcState(v) { return v == null ? 'na' : SVC[v] ? SVC[v][1] : 'warn'; }
+	function svcText(v) { return v == null ? NA : SVC[v] ? SVC[v][0] : String(v); }
+
+	// Rolling buffer of the samples this page has seen. NaN marks a missing value or a gap in time.
+	function Buf(n) { this.cap = n; this.v = new Float64Array(n); this.h = 0; this.n = 0; }
+	Buf.prototype.push = function (x) {
+		this.v[this.h] = isNum(x) ? x : NaN;
+		this.h = (this.h + 1) % this.cap;
+		if (this.n < this.cap) this.n++;
+	};
+	Buf.prototype.values = function () {
+		var out = new Array(this.n), start = (this.h - this.n + this.cap) % this.cap;
+		for (var i = 0; i < this.n; i++) out[i] = this.v[(start + i) % this.cap];
+		return out;
+	};
+
+	function stats(vals) {
+		var n = 0, sum = 0, mn = Infinity, mx = -Infinity;
+		for (var i = 0; i < vals.length; i++) {
+			var x = vals[i];
+			if (!isNum(x)) continue;
+			n++; sum += x;
+			if (x < mn) mn = x;
+			if (x > mx) mx = x;
+		}
+		return n ? { min: mn, max: mx, avg: sum / n, n: n } : null;
+	}
+
+	// x of sample t out of n, in the 300 x 80 chart box
+	function xOf(t, n) { return n > 1 ? t / (n - 1) * 300 : 300; }
+	// Path data for a series. Above 120 samples each bucket keeps its min and max, so spikes survive.
+	// Returns the line and the area closed down to base; NaN makes a gap.
+	function paths(vals, yOf, base) {
+		var n = vals.length, pts = [], b = n > 120 ? Math.ceil(n / 60) : 1;
+		for (var s = 0; s < n; s += b) {
+			var e = Math.min(n, s + b), mn = -1, mx = -1;
+			for (var i = s; i < e; i++) {
+				if (!isNum(vals[i])) continue;
+				if (mn < 0 || vals[i] < vals[mn]) mn = i;
+				if (mx < 0 || vals[i] > vals[mx]) mx = i;
+			}
+			if (mn < 0) { pts.push(null); continue; }
+			if (b === 1) pts.push([s, vals[s]]);
+			else {
+				var lo = Math.min(mn, mx), hi = Math.max(mn, mx);
+				pts.push([lo, vals[lo]]);
+				if (hi !== lo) pts.push([hi, vals[hi]]);
+			}
+		}
+		var out = { line: '', area: '' }, run = [];
+		function flush() {
+			if (!run.length) return;
+			var l = '';
+			for (var k = 0; k < run.length; k++) {
+				l += (k ? 'L' : 'M') + xOf(run[k][0], n).toFixed(1) + ' ' + yOf(run[k][1]).toFixed(1);
+			}
+			var xs = xOf(run[0][0], n).toFixed(1), xe = xOf(run[run.length - 1][0], n).toFixed(1);
+			out.line += l;
+			out.area += l + 'L' + xe + ' ' + base + 'L' + xs + ' ' + base + 'Z';
+			run = [];
+		}
+		for (var j = 0; j < pts.length; j++) { if (pts[j]) run.push(pts[j]); else flush(); }
+		flush();
+		return out;
+	}
+	// Maps lo..hi onto the chart's height; a flat series sits in the middle.
+	function scale(lo, hi) {
+		var span = hi - lo;
+		return span > 0 ? function (v) { return 76 - (v - lo) / span * 72; } : function () { return 40; };
+	}
+
+	// The health score: each check that has a value counts once. Unknown (null) checks are left out and not counted as ok.
+	function healthOf(d) {
+		var checks = [];
+		function check(label, passed) {
+			checks.push({ label: label, state: passed === null ? 'na' : passed ? 'ok' : 'bad' });
+		}
+		var s = get(d, 'services.sshd'), b = get(d, 'services.bot');
+		var w = get(d, 'network.wifi.up'), t = get(d, 'network.tailscale.up');
+		var f = get(d, 'watchdog.last_feed_s_ago'), o = get(d, 'system.oom_kills');
+		check('SSH', s == null ? null : svcState(s) === 'ok');
+		check('bot do Telegram', b == null ? null : svcState(b) === 'ok');
+		check('Wi-Fi', isBool(w) ? w : null);
+		check('Tailscale', isBool(t) ? t : null);
+		check('watchdog', isNum(f) ? f < WD_STALE_S : null);
+		check('falta de memória', isNum(o) ? o === 0 : null);
+		var names = [], ok = 0, total = 0;
+		checks.forEach(function (c) {
+			if (c.state === 'na') return;
+			total++;
+			if (c.state === 'ok') ok++; else names.push(c.label);
+		});
+		return { ok: ok, total: total, names: names, checks: checks };
+	}
+	/* pure:end */
+
+	var BUF = {};
+	['cpu', 'pow', 'ping', 'rx', 'tx', 'wd', 't_cpu', 't_gpu', 't_ram', 't_rom', 't_bat', 't_body'].forEach(function (k) { BUF[k] = new Buf(WINDOW); });
+	var CH = {
+		cpu: { lo: 0, hi: 100, area: true, fmt: fPct, label: 'Processador, histórico' },
+		pow: { lo: 0, area: false, fmt: fW, label: 'Consumo, histórico' },
+		ping: { lo: 0, area: false, fmt: fMs, label: 'Ping para a internet, histórico' },
+		wd: { lo: 0, area: true, fmt: fAgo, label: 'Idade do último feed do watchdog' },
+		net: { fmt: fKbit, label: 'Rede: baixando e enviando' },
+		t_cpu: { area: false, fmt: fC, label: 'Temperatura do processador' },
+		t_gpu: { area: false, fmt: fC, label: 'Temperatura da GPU' },
+		t_ram: { area: false, fmt: fC, label: 'Temperatura da RAM' },
+		t_rom: { area: false, fmt: fC, label: 'Temperatura do armazenamento' },
+		t_bat: { area: false, fmt: fC, label: 'Temperatura da bateria' },
+		t_body: { area: false, fmt: fC, label: 'Temperatura do corpo' }
+	};
+
+	var reduceMq = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+	function reduced() { return reduceMq ? reduceMq.matches : false; }
+
+	var K = {}, RING = {}, BAR = {}, PILL = {}, CHART = {}, SLOT = {};
+	document.querySelectorAll('[data-k]').forEach(function (el) { K[el.getAttribute('data-k')] = el; });
+	document.querySelectorAll('[data-ring]').forEach(function (el) { RING[el.getAttribute('data-ring')] = el; });
+	document.querySelectorAll('[data-slot]').forEach(function (el) { SLOT[el.getAttribute('data-slot')] = el; });
+	document.querySelectorAll('[data-bar]').forEach(function (el) {
+		var segs = [];
+		for (var i = 0; i < 20; i++) { var s = document.createElement('i'); el.appendChild(s); segs.push(s); }
+		BAR[el.getAttribute('data-bar')] = { el: el, segs: segs };
+	});
+	document.querySelectorAll('[data-pill]').forEach(function (el) {
+		PILL[el.getAttribute('data-pill')] = { el: el, use: el.querySelector('use'), txt: el.querySelector('.ptxt') };
+	});
+	document.querySelectorAll('[data-chart]').forEach(function (fig) {
+		var name = fig.getAttribute('data-chart');
+		CHART[name] = {
+			fig: fig,
+			line: fig.querySelector('.line'), area: fig.querySelector('.area'),
+			line2: fig.querySelector('.line2'), area2: fig.querySelector('.area2'),
+			avg: fig.querySelector('.avg'), dot: fig.querySelector('.dot'),
+			cap: document.querySelector('[data-cap="' + name + '"]')
+		};
+	});
+	document.querySelectorAll('.t').forEach(function (el, i) { el.style.setProperty('--i', i); });
+
+	function put(key, text) {
+		var el = K[key];
+		if (el && el.textContent !== text) el.textContent = text;
+	}
+	// A value (n/a when null) and, when it is empty, the reason in a dimmer span.
+	function putNote(key, text, note) {
+		var el = K[key];
+		if (!el) return;
+		el.textContent = text;
+		if (note) { var n = document.createElement('span'); n.className = 'note'; n.textContent = ' · ' + note; el.appendChild(n); }
+	}
+	function ring(name, pct, state) {
+		var f = RING[name];
+		if (!f) return;
+		var p = isNum(pct) ? Math.max(0, Math.min(100, pct)) : null;
+		f.style.strokeDashoffset = String(p === null ? 100 : 100 - p);
+		f.setAttribute('data-s', state || '');
+	}
+	function bar(name, pct, state, text) {
+		var b = BAR[name];
+		if (!b) return;
+		var n = isNum(pct) ? Math.round(Math.max(0, Math.min(100, pct)) / 5) : 0;
+		for (var i = 0; i < b.segs.length; i++) b.segs[i].className = i < n ? 'on' : '';
+		b.el.setAttribute('data-s', state || '');
+		if (isNum(pct)) b.el.setAttribute('aria-valuenow', String(Math.round(pct)));
+		else b.el.removeAttribute('aria-valuenow');
+		b.el.setAttribute('aria-valuetext', text);
+	}
+	// state: ok | warn | bad | off | na. The glyph and the word go with the colour.
+	function pill(name, state, text) {
+		var p = PILL[name];
+		if (!p) return;
+		p.el.setAttribute('data-s', state);
+		p.use.setAttribute('href', '#i-' + state);
+		if (p.txt.textContent !== text) p.txt.textContent = text;
+	}
+
+	// Numbers that move count up for 500 ms from what is on screen. Skipped under reduced motion or while hidden.
+	var ANIM = {}, SNAP = false;
+	function stopAnim(key) { if (ANIM[key]) { cancelAnimationFrame(ANIM[key]); delete ANIM[key]; } }
+	function count(key, v, fmt) {
+		var el = K[key];
+		if (!el) return;
+		stopAnim(key);
+		var text = fmt(v), first = isNum(v) && !el._began;
+		if (isNum(v)) el._began = true;
+		if (!first || reduced() || document.hidden || SNAP) { el.textContent = text; return; }
+		var t0 = null;
+		var step = function (now) {
+			if (t0 === null) t0 = now;
+			var t = Math.min(1, (now - t0) / 500), e = 1 - Math.pow(1 - t, 3);
+			if (t < 1) { el.textContent = fmt(v * e); ANIM[key] = requestAnimationFrame(step); }
+			else { el.textContent = text; delete ANIM[key]; }
+		};
+		el.textContent = fmt(0);
+		ANIM[key] = requestAnimationFrame(step);
+	}
+	function stopAll() { Object.keys(ANIM).forEach(stopAnim); }
+
+	// Charts: the path is rebuilt once per sample from the buffer; the text beside it says what the line shows.
+	function drawNet(c) {
+		var rv = BUF.rx.values(), tv = BUF.tx.values();
+		var s1 = stats(rv), s2 = stats(tv);
+		var mx = Math.max(s1 ? s1.max : 0, s2 ? s2.max : 0, NET_FLOOR_KBIT);
+		var up = paths(rv, function (v) { return 40 - v / mx * 36; }, 40);
+		var down = paths(tv, function (v) { return 40 + v / mx * 36; }, 40);
+		c.line.setAttribute('d', up.line); c.area.setAttribute('d', up.area);
+		c.line2.setAttribute('d', down.line); c.area2.setAttribute('d', down.area);
+		c.fig.classList.toggle('skel', !s1 && !s2);
+		if (c.dot) c.dot.hidden = true;
+		var txt = !s1 && !s2 ? 'coletando…' :
+			'baixando agora ' + CH.net.fmt(rv[rv.length - 1]) + ', enviando agora ' + CH.net.fmt(tv[tv.length - 1]) +
+			' · escala mínima ' + NET_FLOOR_KBIT + ' kbit/s';
+		c.fig.setAttribute('aria-label', CH.net.label + ': ' + txt);
+		if (c.cap) c.cap.textContent = txt;
+	}
+	function draw(name) {
+		var c = CHART[name], cfg = CH[name];
+		if (!c) return;
+		if (name === 'net') return drawNet(c);
+		var vals = BUF[name].values(), st = stats(vals);
+		var cur = vals.length ? vals[vals.length - 1] : NaN;
+		var lo = cfg.lo != null ? cfg.lo : st ? st.min : 0;
+		var hi = cfg.hi != null ? cfg.hi : st ? st.max : 0;
+		var yOf = scale(lo, hi), p = paths(vals, yOf, 80);
+		var enough = st && st.n >= 2;
+		c.fig.classList.toggle('skel', !enough);
+		c.line.setAttribute('d', enough ? p.line : 'M0 40L300 40');
+		if (c.area) c.area.setAttribute('d', enough && cfg.area ? p.area : '');
+		if (c.avg) {
+			c.avg.hidden = !enough;
+			if (st) { var ya = yOf(st.avg); c.avg.setAttribute('y1', String(ya)); c.avg.setAttribute('y2', String(ya)); }
+		}
+		if (c.dot) {
+			var li = -1;
+			for (var i = vals.length - 1; i >= 0; i--) if (isNum(vals[i])) { li = i; break; }
+			c.dot.hidden = li < 0;
+			if (li >= 0) {
+				c.dot.style.left = (xOf(li, vals.length) / 3) + '%';
+				c.dot.style.top = (yOf(vals[li]) / 80 * 100) + '%';
+			}
+		}
+		var txt = !enough ? 'coletando…' :
+			(isNum(cur) ? 'agora ' + cfg.fmt(cur) + ' · ' : 'sem dado agora · ') + 'média ' + cfg.fmt(st.avg) + ' · máx ' + cfg.fmt(st.max);
+		c.fig.setAttribute('aria-label', cfg.label + ': ' + txt);
+		if (c.cap) c.cap.textContent = txt;
+	}
+
+	var lastData = null, lastOkAt = 0, lastSlowAt = null, failing = null, R0 = null, inFlight = false, timer = null, ticker = null;
+
+	function sample(d) {
+		BUF.cpu.push(get(d, 'metrics.cpu.used_pct'));
+		BUF.pow.push(get(d, 'metrics.power.watts'));
+		BUF.ping.push(get(d, 'metrics.ping.internet_ms'));
+		BUF.rx.push(get(d, 'metrics.net.rx_kbit'));
+		BUF.tx.push(get(d, 'metrics.net.tx_kbit'));
+		BUF.wd.push(get(d, 'watchdog.last_feed_s_ago'));
+		BUF.t_cpu.push(get(d, 'metrics.cpu.temp_c'));
+		BUF.t_gpu.push(get(d, 'metrics.gpu.temp_c'));
+		BUF.t_ram.push(get(d, 'metrics.ram_temp_c'));
+		BUF.t_rom.push(get(d, 'metrics.rom.temp_c'));
+		BUF.t_bat.push(get(d, 'metrics.battery.temp_c'));
+		BUF.t_body.push(get(d, 'metrics.body_temp_c'));
+	}
+	// A missed poll or a hidden tab leaves a gap in every series, never a line across the time.
+	function gap() { Object.keys(BUF).forEach(function (k) { BUF[k].push(NaN); }); }
 
 	function render(d) {
-		var cells = document.querySelectorAll('[data-f]');
-		for (var i = 0; i < cells.length; i++) {
-			var el = cells[i];
-			var fmt = el.getAttribute('data-fmt') || 'text';
-			var v = get(d, el.getAttribute('data-f'));
-			el.textContent = FMT[fmt](v, el);
-			var t = tone(fmt, v);
-			if (t) el.setAttribute('data-tone', t); else el.removeAttribute('data-tone');
-		}
+		var m = get(d, 'metrics');
+		put('notice', m ? '' : 'Métricas (CPU, bateria, rede) ainda não vêm deste servidor.');
+
+		var h = healthOf(d), pct = h.total ? Math.round(h.ok / h.total * 100) : null, nbad = h.names.length;
+		var tone = pct === null ? '' : nbad ? (pct >= 50 ? 'warn' : 'bad') : 'ok';
+		ring('hero', pct, tone);
+		count('hero.pct', pct, fPct);
+		put('hero.reason', pct === null ? 'Sem dados para avaliar.' :
+			nbad ? 'Com problema: ' + h.names.join(', ') + '.' :
+			'Tudo certo: ' + h.ok + ' de ' + h.total + ' verificações ok.');
+		pill('top', pct === null ? 'na' : nbad ? (pct >= 50 ? 'warn' : 'bad') : 'ok',
+			pct === null ? 'Sem dados' : nbad ? (pct >= 50 ? 'Atenção' : 'Problema') : 'OK');
+
+		h.checks.forEach(function (c, i) {
+			pill('chk' + i, c.state, c.state === 'ok' ? 'ok' : c.state === 'bad' ? 'falhou' : 'sem dado');
+		});
+		put('sys.up', fUptime(get(d, 'system.uptime_s')));
+		put('sys.up2', fUptime(get(d, 'system.uptime_s')));
+		var slot = get(d, 'boot.slot');
+		Object.keys(SLOT).forEach(function (k) { SLOT[k].setAttribute('aria-current', k === slot ? 'true' : 'false'); });
+		put('boot.word', slot === 'a' || slot === 'b' ? 'Slot ' + slot.toUpperCase() : NA);
+		put('boot.slot', slot === 'a' || slot === 'b' ? slot.toUpperCase() : NA);
+		var sok = get(d, 'boot.slot_successful');
+		put('boot.ok', sok === true ? 'sim' : sok === false ? 'não' : NA);
+
+		// Battery and power
+		var bp = get(d, 'metrics.battery.pct');
+		ring('bat', bp, isNum(bp) && bp < 20 ? 'warn' : '');
+		count('bat.pct', bp, fPct);
+		var ch = get(d, 'metrics.battery.charging'), byp = get(d, 'metrics.battery.bypass'), src = get(d, 'metrics.power.source');
+		put('bat.state', ch === true ? 'Carregando' : byp === true ? 'Alimentado pela tomada (bypass)' :
+			ch === false ? (src === 'cable' ? 'Na tomada, sem carregar' : src === 'battery' ? 'Usando a bateria' : NA) : NA);
+		put('bat.volts', fV(get(d, 'metrics.battery.volts')));
+		var cyc = get(d, 'metrics.battery.cycles');
+		putNote('bat.cycles', fCount(cyc), isNum(cyc) ? '' : 'sem contador no kernel');
+		put('bat.temp', fC(get(d, 'metrics.battery.temp_c')));
+		count('pow.val', get(d, 'metrics.power.watts'), fW);
+		put('pow.src', src === 'cable' ? 'da tomada' : src === 'battery' ? 'da bateria' : NA);
+
+		// CPU and GPU
+		count('cpu.val', get(d, 'metrics.cpu.used_pct'), fPct);
+		var cs = stats(BUF.cpu.values());
+		put('cpu.peak', cs ? 'máx no histórico: ' + fPct(cs.max) : 'coletando…');
+		var lo = get(d, 'metrics.cpu.mhz_min'), hi = get(d, 'metrics.cpu.mhz_max');
+		put('cpu.freq', isNum(lo) && isNum(hi) ? F0.format(lo) + ' a ' + F0.format(hi) + ' MHz' : NA);
+		var gon = get(d, 'metrics.gpu.on'), gu = get(d, 'metrics.gpu.used_pct');
+		if (gon === true) putNote('gpu.state', 'ligada · ' + fMhz(get(d, 'metrics.gpu.mhz')), isNum(gu) ? 'uso ' + fPct(gu) : 'uso não medido');
+		else putNote('gpu.state', gon === false ? 'desligada' : NA, '');
+
+		put('t.cpu', fC(get(d, 'metrics.cpu.temp_c')));
+		put('t.gpu', fC(get(d, 'metrics.gpu.temp_c')));
+		put('t.ram', fC(get(d, 'metrics.ram_temp_c')));
+		var rt = get(d, 'metrics.rom.temp_c');
+		putNote('t.rom', fC(rt), isNum(rt) ? '' : 'sem sensor');
+		put('t.bat', fC(get(d, 'metrics.battery.temp_c')));
+		put('t.body', fC(get(d, 'metrics.body_temp_c')));
+
+		// Memory
+		var rp = get(d, 'system.ram.used_pct');
+		ring('ram', rp, isNum(rp) && rp >= 85 ? 'warn' : '');
+		count('ram.pct', rp, fPct);
+		put('ram.sub', fPair(get(d, 'system.ram.used_gb'), get(d, 'system.ram.total_gb'), 'GB'));
+		var zs = get(d, 'system.zram.size_gb'), zu = get(d, 'system.zram.used_gb');
+		var zok = isNum(zs) && isNum(zu) && zs > 0;
+		bar('zram', zok ? zu / zs * 100 : null, zok ? 'ok' : 'na', zok ? fPct(zu / zs * 100) : 'uso não medido');
+		putNote('zram.val', fGb(zs), isNum(zu) ? 'usado ' + fGb(zu) : 'uso não medido pelo kernel');
+
+		// Storage
+		var mounted = get(d, 'storage.nas.mounted');
+		pill('nas', mounted === true ? 'ok' : mounted === false ? 'off' : 'na',
+			mounted === true ? 'montado' : mounted === false ? 'não montado' : NA);
+		var np = get(d, 'storage.nas.used_pct');
+		bar('nas', np, np >= 85 ? 'warn' : 'ok', fUse(np, null, null));
+		put('nas.use', fUse(np, get(d, 'storage.nas.used_gb'), get(d, 'storage.nas.total_gb')));
+		var rpct = get(d, 'metrics.rom.used_pct');
+		bar('rom', rpct, rpct >= 85 ? 'warn' : 'ok', fUse(rpct, null, null));
+		put('rom.use', fUse(rpct, get(d, 'metrics.rom.used_gb'), get(d, 'metrics.rom.total_gb')));
+		put('scrub.state', fText(get(d, 'storage.scrub.state')));
+		put('scrub.fin', fTime(get(d, 'storage.scrub.finished_at')));
+		var errs = get(d, 'storage.scrub.errors');
+		pill('scrub', errs === 0 ? 'ok' : isNum(errs) ? 'bad' : 'na',
+			errs === 0 ? 'nenhum' : isNum(errs) ? F0.format(errs) + ' erros' : NA);
+
+		// Network
+		var wu = get(d, 'network.wifi.up'), tu = get(d, 'network.tailscale.up'), sa = get(d, 'network.samba_tailnet.active');
+		pill('wifi', wu === true ? 'ok' : wu === false ? 'bad' : 'na', wu === true ? 'Wi-Fi conectado' : wu === false ? 'Wi-Fi caiu' : 'Wi-Fi n/a');
+		pill('ts', tu === true ? 'ok' : tu === false ? 'bad' : 'na', tu === true ? 'Tailscale no ar' : tu === false ? 'Tailscale fora' : 'Tailscale n/a');
+		pill('samba', sa === true ? 'ok' : sa === false ? 'off' : 'na', sa === true ? 'Samba no tailnet' : sa === false ? 'Samba fora do tailnet' : 'Samba n/a');
+		put('wifi.ssid', fText(get(d, 'network.wifi.ssid')));
+		put('net.iface', fText(get(d, 'metrics.net.iface')));
+		var rx = get(d, 'metrics.net.rx_kbit'), tx = get(d, 'metrics.net.tx_kbit');
+		put('net.rx', fKbit(rx));
+		put('net.tx', fKbit(tx));
+
+		// Ping
+		var pms = get(d, 'metrics.ping.internet_ms'), ps = stats(BUF.ping.values());
+		put('ping.ms', fMs(pms));
+		put('ping.host', fText(get(d, 'metrics.ping.internet_host')) === NA ? NA : 'para ' + get(d, 'metrics.ping.internet_host'));
+		put('ping.gw', fMs(get(d, 'metrics.ping.gateway_ms')));
+		var slowAt = get(d, 'slow_at');
+		lastSlowAt = isNum(slowAt) ? slowAt : null;
+
+		// Services
+		var sv = { sshd: get(d, 'services.sshd'), samba: get(d, 'services.samba'), bot: get(d, 'services.bot') };
+		var known = 0, upn = 0;
+		['sshd', 'bot'].forEach(function (n) { pill(n, svcState(sv[n]), svcText(sv[n])); });
+		pill('samba2', svcState(sv.samba), svcText(sv.samba));
+		['sshd', 'samba', 'bot'].forEach(function (n) { var s = svcState(sv[n]); if (s !== 'na') known++; if (s === 'ok') upn++; });
+		put('svc.sum', known ? upn + ' de ' + known + ' ativos' : NA);
+		var cr = get(d, 'services.containers.running'), cn = get(d, 'services.containers.names');
+		put('svc.cont', isNum(cr) ? F0.format(cr) + ' em execução' : NA);
+		put('svc.names', Array.isArray(cn) ? (cn.length ? cn.join(', ') : 'nenhum') : NA);
+
+		// Watchdog and system
+		put('wd.age', fAgo(get(d, 'watchdog.last_feed_s_ago')));
+		put('wd.resets', fCount(get(d, 'watchdog.resets')));
+		var reb = get(d, 'system.reboots');
+		put('sys.reb', fCount(reb));
+		put('sys.delta', R0 !== null && isNum(reb) ? (reb - R0 >= 0 ? '+' : '') + F0.format(reb - R0) : NA);
+		var oom = get(d, 'system.oom_kills');
+		pill('oom', oom === 0 ? 'ok' : isNum(oom) ? 'bad' : 'na', oom === 0 ? 'nenhum' : isNum(oom) ? F0.format(oom) : NA);
+		put('ver.kernel', fText(get(d, 'version.kernel')));
+		put('ver.pkgrel', fText(get(d, 'version.pkgrel')));
+		put('raw', fText(get(d, 'status_text')));
+
+		['cpu', 'pow', 'ping', 'wd', 't_cpu', 't_gpu', 't_ram', 't_rom', 't_bat', 't_body', 'net'].forEach(draw);
+		SNAP = false;
 	}
 
+	// Stale only after STALE_MS without a good answer; a single missed poll keeps the last values on screen.
 	function paintAge() {
-		var fresh = document.getElementById('fresh');
-		if (!lastGood) {
-			fresh.textContent = failure ? 'Nenhum dado recebido ainda.' : 'Aguardando a primeira leitura.';
-			return;
-		}
-		var age = Math.max(0, Math.round((Date.now() - lastGoodAt) / 1000));
-		fresh.textContent = failure
-			? 'Desatualizado: último dado recebido há ' + nf.format(age) + ' s.'
-			: 'Atualizado há ' + nf.format(age) + ' s.';
-		if (failure) document.body.setAttribute('data-stale', ''); else document.body.removeAttribute('data-stale');
+		var now = Date.now(), stale = failing !== null && (!lastData || now - lastOkAt > STALE_MS);
+		document.body.toggleAttribute('data-stale', stale);
+		if (stale) pill('top', 'bad', 'Sem conexão');
+		if (!lastData) { put('top.age', failing ? 'Nenhum dado recebido ainda.' : 'Aguardando a primeira leitura.'); return; }
+		var age = Math.max(0, Math.round((now - lastOkAt) / 1000));
+		put('top.age', stale ? 'Dados de há ' + F0.format(age) + '\u00a0s, desatualizados' : 'Atualizado há ' + F0.format(age) + '\u00a0s');
+		// the slow part (ping, services, storage, boot, version) is read every 10 s on the server: show its age
+		var sa = lastSlowAt, slowTxt = isNum(sa) ? 'dados lentos há ' + F0.format(Math.max(0, Math.round(now / 1000 - sa))) + '\u00a0s' : '';
+		['slow.ping', 'slow.svc'].forEach(function (k) {
+			var el = K[k]; if (!el) return;
+			if (el.textContent !== slowTxt) el.textContent = slowTxt;
+			el.hidden = !slowTxt;
+		});
 	}
-
-	function reasonOf(e) {
+	function setMsg(t) {
+		var p = document.querySelector('#msg p');
+		if (p.textContent !== t) p.textContent = t;
+	}
+	function reason(e) {
 		if (e.name === 'AbortError') return 'tempo esgotado';
 		if (e.name === 'SyntaxError') return 'resposta sem JSON válido';
-		if (e.httpStatus) return 'HTTP ' + e.httpStatus;
+		if (e.status) return 'HTTP ' + e.status;
 		return 'sem conexão com o servidor';
 	}
 
 	function poll() {
 		if (inFlight) return;
 		inFlight = true;
-		var wasFailing = failure !== null;
+		var wasFailing = failing !== null;
 		var ctl = new AbortController();
-		var timeout = setTimeout(function () { ctl.abort(); }, TIMEOUT_MS);
+		var to = setTimeout(function () { ctl.abort(); }, TIMEOUT_MS);
 		fetch('/api/status', { cache: 'no-store', signal: ctl.signal, headers: { Accept: 'application/json' } })
 			.then(function (r) {
-				if (!r.ok) { var e = new Error('http'); e.httpStatus = r.status; throw e; }
+				if (!r.ok) { var e = new Error('http'); e.status = r.status; throw e; }
 				return r.json();
 			})
 			.then(function (d) {
-				lastGood = d;
-				lastGoodAt = Date.now();
-				failure = null;
+				lastData = d;
+				lastOkAt = Date.now();
+				failing = null;
+				if (R0 === null && isNum(get(d, 'system.reboots'))) R0 = get(d, 'system.reboots');
+				sample(d);
 				render(d);
-				document.getElementById('msg').textContent = wasFailing ? 'Conexão restabelecida.' : '';
+				setMsg(wasFailing ? 'Conexão restabelecida.' : '');
 			})
 			.catch(function (e) {
-				failure = reasonOf(e);
-				document.getElementById('msg').textContent = 'Não foi possível ler /api/status: ' + failure + '.'
-					+ (lastGood ? ' Os valores mostrados são os últimos recebidos.' : '');
+				failing = reason(e);
+				gap();
+				setMsg('Não foi possível ler /api/status (' + failing + ').' +
+					(lastData ? ' Os valores mostrados são os últimos recebidos.' : ''));
 			})
 			.then(function () {
-				clearTimeout(timeout);
+				clearTimeout(to);
 				inFlight = false;
 				paintAge();
 			});
 	}
 
-	// Poll only while the page is visible: nothing runs in a background tab.
-	function start() { if (timer) return; poll(); timer = setInterval(poll, PERIOD_MS); }
-	function stop() { clearInterval(timer); timer = null; }
+	// Polls only while the page is visible: nothing runs in a background tab, and the first read on return is immediate.
+	function start() {
+		if (timer) return;
+		poll();
+		timer = setInterval(poll, PERIOD_MS);
+		ticker = setInterval(paintAge, TICK_MS);
+	}
+	function stop() {
+		clearInterval(timer); clearInterval(ticker);
+		timer = null; ticker = null;
+		stopAll();
+	}
 	document.addEventListener('visibilitychange', function () {
-		if (document.hidden) stop(); else start();
+		if (document.hidden) { stop(); return; }
+		SNAP = true;
+		gap();
+		start();
 	});
+
+	document.body.classList.add('intro');
+	setTimeout(function () { document.body.classList.remove('intro'); }, 1500);
 	if (!document.hidden) start();
 })();
 </script>
