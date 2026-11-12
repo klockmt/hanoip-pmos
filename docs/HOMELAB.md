@@ -5,6 +5,10 @@ back. What works is in [`STATUS.md`](STATUS.md); what broke and why is in [`PITF
 investigations are in [`../NOTES.md`](../NOTES.md). Paths and addresses are variables from `.env`
 (`.env.example` lists them): nothing about your phone goes in the repository.
 
+**This page still describes the 4.14 server (OpenRC, chrony), which no longer runs.** Since 2026-11-10 the phone runs
+Duranium: the same services as systemd units, `systemd-timesyncd` for the clock, updates through `systemd-sysupdate`.
+Until this page is rewritten, [`DURANIUM.md`](DURANIUM.md) (the sections dated 2026-11-11 and after) is what is true.
+
 ## Reaching it
 
 - **SSH accepts only two paths: the USB cable and the tailnet.** The file `/etc/nftables.d/02_hanoip-ssh.nft` (from the
