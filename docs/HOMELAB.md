@@ -47,7 +47,18 @@ and its data on the Tailscale address only, port 8080:
 - The address is read at start (`tailscale ip -4`), so nothing about it is written in the repo.
 - `hanoip-dashboard --data` prints the same JSON once, on the phone, for a check.
 
-Checked on 2026-11-12: answers from the tailnet; refused on the USB address; no answer on the LAN address.
+What the page shows: a health ring with six checks (SSH, the bot, Wi-Fi, Tailscale, the watchdog fed within 60 s, no
+process killed for lack of memory), rings for the battery and the RAM, charts for the power draw, the CPU, the
+temperatures, the ping, the network and the watchdog, bars for zram and the disks, the A/B slot, the services, and the
+raw `/status` text. The charts hold only what the open page has seen, up to an hour; a reload starts them again. It
+warns below 20 % of battery and from 85 % of RAM or of the NAS disk. One column on a phone, a 12-column grid from
+960 px, light and dark.
+
+The first request after the service starts waits for the first slow collection (over 6 s); after that an answer takes
+a fraction of a second.
+
+Checked on 2026-11-12: answers from the tailnet; refused on the USB address; no answer on the LAN address; the figures
+change each second (image `26111201`). The page was looked at in a headless browser only, not on a phone.
 
 ## Services
 

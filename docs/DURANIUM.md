@@ -400,32 +400,35 @@ rollback of a bad image; then the stability list of step 6 (ten reboots, panic, 
 
 ## Where it stands (2026-11-12): what is done and what a v1.0.0 still needs
 
-The dated sections above are the log; where one of them says "not built" or "still open", this section is what holds.
+The dated sections are the log; where one of them says "not built" or "still open", this section is what holds. The two
+sections after this one ("Update 26111103" and "Update 26111201") are the detail of what is summed up here.
 
-**The phone now.** Duranium image `26111101`, device package `pkgrel 52`, kernel 7.3.0, slot a, reached over the tailnet
-(Wi-Fi, and Ethernet while the hub is in the host role). `boot_a` holds the U-Boot of 2026-11-08, `boot_b` the new one
-(never booted). The NAS disk is plugged in and **not mounted**. Everything is on `beta`; `main` is at v0.2.2.
+**The phone now.** Duranium image `26111201`, device package `pkgrel 54`, kernel 7.3.0, started by the new U-Boot from
+`boot_b`, slot b marked successful, reached over the tailnet. `26111103` (`pkgrel 53`) is installed as the fallback.
+`boot_a` still holds the U-Boot of 2026-11-08. The NAS disk is **not mounted**. Everything is on `beta`; `main` is at
+v0.2.2.
 
 **Done and seen on the phone:** the server's services except the two that need the disk; sudo for the login user, no
-root login, no port open to the LAN; ten reboots in a row; an A/B update; the automatic rollback from a broken boot
-entry; a kernel panic; `/status` from Telegram; the disk mounted by hand with Samba and Syncthing started.
+root login, no root `authorized_keys`, no port open to the LAN; an A/B update three times; the automatic rollback from
+a broken boot entry; a kernel panic; `/status` from Telegram; the new U-Boot and slot b, with ten reboots in a row on
+`26111103`; the status dashboard on the tailnet only, with its figures changing each second.
 
 **Open, in the order to do it** (each needs what is in brackets):
 1. [the hub unplugged and plugged back in] Mount the disk at 480 Mbit/s, start `smb` and `syncthing`, measure the read
-   rate, `btrfs scrub`, a Samba login and a Syncthing sync from a client (#27).
-2. [the cable to the PC] `fastboot set_active b`, reboot: the new U-Boot boots Duranium and `hanoip-health` marks slot b
-   (`fastboot getvar slot-successful:b`). Then the same image into `boot_a`, back to slot a, and the Alpine last resort
+   rate, `btrfs scrub`, a Samba login and a Syncthing sync from a client (#27). The dashboard's disk and scrub fields
+   show `n/a` until then.
+2. [the cable, and the owner's word] The same U-Boot image into `boot_a`, back to slot a, and the Alpine last resort
    from a RAM boot. The backup is `$HANOIP_BACKUP_DIR/2026-11-11-before-uboot/`.
 3. [the cable, and a decision] The USB role at boot: with the hub plugged in, a boot leaves the port in the device role,
-   so there is no Ethernet and no disk until someone plugs the hub in again. Only reboots were tried, not a cold boot.
-   Whatever sets the host role must not take `usb0` away from a PC on the cable. With it, the disk mounted by itself
-   when it appears, and a reboot with the disk plugged in (#28).
-4. `hanoip-health` counts the phone as reachable only with an address on `usb0` or `wlan0`: on Ethernet alone, with the
-   Wi-Fi down, it would not mark the slot and would reboot the phone ten minutes into every boot. Found by reading on
-   2026-11-12, not fixed, no test yet.
-5. Root's `authorized_keys` comes back at every boot (the image's tmpfiles line), unused while root login is off.
-6. The tests not run: a boot with sshd down, the watchdog on Duranium, Wi-Fi loss, 24 to 72 hours without a restart.
-7. `docs/HOMELAB.md` rewritten for Duranium; then `git log main..beta` to the user and the v1.0.0 question.
+   so there is no Ethernet and no disk until someone plugs the hub in again. Whatever sets the host role must not take
+   `usb0` away from a PC on the cable (#28). Only with it can the Ethernet-only path of `hanoip-health` be seen on the
+   phone: the fix is in the image, proven by its test alone.
+4. [the owner's word] The tests that break a boot on purpose: sshd down, the watchdog on Duranium, Wi-Fi loss. Each
+   needs a fault that lasts one boot and its recovery written down first.
+5. Ten reboots in a row on `26111201` (one boot was checked), and the dashboard page on a real phone screen.
+6. [the owner] 24 to 72 hours without a restart.
+7. `docs/HOMELAB.md` rewritten for Duranium (only its dashboard section is current); then `git log main..beta` to the
+   owner and the release question (152 commits since v0.2.2 on 2026-11-12).
 
 **How to make and deliver an update** (done once, 2026-11-11): `scripts/setup-pmaports`,
 `scripts/pmb build --force device-motorola-hanoip` (the PC's sudo: the user approves it), `scripts/duranium-image
