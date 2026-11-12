@@ -70,7 +70,8 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 @media (min-width: 960px) { .grid { grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; } }
 .t { grid-column: span var(--pw, 2); }
 @media (min-width: 640px) { .t { grid-column: span var(--mw, 4); } }
-@media (min-width: 960px) { .t { grid-column: span var(--dw, 6); } .hero { grid-row: span 2; } }
+@media (min-width: 960px) { .t { grid-column: span var(--dw, 6); } }
+@media (max-width: 479px) { .t { grid-column: 1 / -1; } }
 .checks { width: 100%; }
 .checks > div > dt { font-size: 0.8125rem; }
 .t {
@@ -116,10 +117,11 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 .ringbox.big .ringval { font-size: clamp(2.25rem, 5vw, 2.75rem); font-weight: 650; letter-spacing: -0.03em; }
 
 /* charts: one path per series, drawn in a 300 x 80 box; the text beside them is the alternative */
-.chart { position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 4.5rem; margin: 0; }
-.spark { flex: 1 1 auto; width: 100%; height: auto; min-height: 4.5rem; display: block; overflow: visible; }
-.chart.mini { flex: none; width: 5.5rem; height: 1.75rem; min-height: 0; }
-.chart.mini .spark { min-height: 0; }
+.chart { position: relative; display: flex; flex-direction: column; margin: 0; }
+.spark { width: 100%; height: 5.5rem; display: block; overflow: visible; }
+.chart.mini { width: 5.5rem; }
+.chart.mini .spark { height: 1.75rem; }
+.gl { stroke: var(--line); stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
 .line { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .area { fill: var(--accent); fill-opacity: 0.16; stroke: none; }
 .line2 { fill: none; stroke: var(--info); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
@@ -133,6 +135,7 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 }
 .dot[hidden] { display: none; }
 .ticks { display: flex; justify-content: space-between; }
+.note { font-weight: 400; font-size: 0.8125rem; color: var(--text-2); }
 
 /* segmented bars: 20 segments, each 5 % */
 .bar { display: flex; gap: 2px; height: 0.75rem; }
@@ -141,6 +144,7 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 .bar[data-s="ok"] i.on { background: var(--ok); }
 .bar[data-s="warn"] i.on { background: var(--warn); }
 .bar[data-s="bad"] i.on { background: var(--crit); }
+.bar[data-s="na"] i { background: none; box-shadow: inset 0 0 0 1px var(--line); }
 
 /* status pills: colour, glyph and word together */
 .pill {
@@ -241,6 +245,7 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 			<div><dt>Watchdog</dt><dd><span class="pill" data-pill="chk4" data-s="na"><svg aria-hidden="true"><use href="#i-na"/></svg><span class="ptxt">n/a</span></span></dd></div>
 			<div><dt>Falta de memória</dt><dd><span class="pill" data-pill="chk5" data-s="na"><svg aria-hidden="true"><use href="#i-na"/></svg><span class="ptxt">n/a</span></span></dd></div>
 		</dl>
+		<p class="cap">Problema: SSH ou bot parados, Wi-Fi ou Tailscale fora, watchdog sem feed há mais de 60 s, ou algum processo morto por falta de memória.</p>
 	</section>
 
 	<section class="t" style="--i:1;--pw:1;--mw:2;--dw:3" aria-labelledby="h-bateria">
@@ -272,7 +277,8 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 			<p class="v-l" data-k="cpu.val">n/a</p>
 			<p class="sm" data-k="cpu.peak">coletando…</p>
 		</div>
-		<figure class="chart" data-chart="cpu" role="img" aria-label="Processador"><svg class="spark" viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="area"/><path class="line"/><line class="avg" x1="0" x2="300" y1="40" y2="40"/></svg><span class="dot" hidden></span></figure>
+		<figure class="chart" data-chart="cpu" role="img" aria-label="Processador"><svg class="spark" viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true" focusable="false"><line class="gl" x1="0" x2="300" y1="22" y2="22"/><line class="gl" x1="0" x2="300" y1="40" y2="40"/><line class="gl" x1="0" x2="300" y1="58" y2="58"/><path class="area"/><path class="line"/><line class="avg" x1="0" x2="300" y1="40" y2="40"/></svg><span class="dot" hidden></span></figure>
+		<p class="cap">Escala de 0 a 100 %, linhas em 25, 50 e 75 %</p>
 		<p class="cap" data-cap="cpu">coletando…</p>
 		<dl class="kv">
 			<div><dt>Frequência</dt><dd data-k="cpu.freq">n/a</dd></div>
@@ -309,6 +315,7 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 		<h2 id="h-ping">Ping</h2>
 		<p class="v-m" data-k="ping.ms">n/a</p>
 		<p class="sm" data-k="ping.host">n/a</p>
+		<p class="cap" data-k="slow.ping" hidden></p>
 		<figure class="chart" data-chart="ping" role="img" aria-label="Ping para a internet"><svg class="spark" viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="area"/><path class="line"/><line class="avg" x1="0" x2="300" y1="40" y2="40"/></svg><span class="dot" hidden></span></figure>
 		<p class="cap" data-cap="ping">coletando…</p>
 		<dl class="kv">
@@ -358,6 +365,7 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 
 	<section class="t" style="--i:10;--pw:2;--mw:4;--dw:6" aria-labelledby="h-servicos">
 		<h2 id="h-servicos">Serviços</h2>
+		<p class="cap" data-k="slow.svc" hidden></p>
 		<div class="svc-row"><span>sshd</span><span class="pill" data-pill="sshd" data-s="na"><svg aria-hidden="true"><use href="#i-na"/></svg><span class="ptxt">n/a</span></span></div>
 		<div class="svc-row"><span>Samba</span><span class="pill" data-pill="samba2" data-s="na"><svg aria-hidden="true"><use href="#i-na"/></svg><span class="ptxt">n/a</span></span></div>
 		<div class="svc-row"><span>Bot do Telegram</span><span class="pill" data-pill="bot" data-s="na"><svg aria-hidden="true"><use href="#i-na"/></svg><span class="ptxt">n/a</span></span></div>
@@ -412,12 +420,12 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 	<summary>Texto bruto de /status</summary>
 	<pre data-k="raw">n/a</pre>
 </details>
-<p class="sm foot">O histórico dos gráficos é só o que esta página viu desde que foi aberta, até uma hora. Atualiza a cada 5 s, só com a aba visível. Avisos: bateria abaixo de 20 %, RAM e disco a partir de 85 %, watchdog sem feed há mais de 60 s.</p>
+<p class="sm foot">O histórico dos gráficos é só o que esta página viu desde que foi aberta, até 60 min (uma leitura por segundo). Atualiza a cada 1 s, só com a aba visível. Avisos: bateria abaixo de 20 %, RAM e disco a partir de 85 %, watchdog sem feed há mais de 60 s.</p>
 
 <script>
 (function () {
 	'use strict';
-	var PERIOD_MS = 5000, TIMEOUT_MS = 4000, WINDOW = 720, TICK_MS = 1000;
+	var PERIOD_MS = 1000, TIMEOUT_MS = 2500, STALE_MS = 5000, WINDOW = 3600, TICK_MS = 1000;
 	var NET_FLOOR_KBIT = 100; // the network scale never goes below this, so an idle link is not drawn as a spike
 
 	/* pure:begin */
@@ -438,7 +446,8 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 		return v === undefined ? null : v;
 	}
 	// Only null (or a non-number) is "n/a": 0 prints as 0 and false as "não".
-	function fmtNum(v, F, unit) { return isNum(v) ? F.format(v) + (unit ? ' ' + unit : '') : NA; }
+	// The unit is joined with a no-break space, so a value and its unit never split across lines.
+	function fmtNum(v, F, unit) { return isNum(v) ? F.format(v) + (unit ? '\u00a0' + unit : '') : NA; }
 	function fPct(v) { return fmtNum(v, F0, '%'); }
 	function fCount(v) { return fmtNum(v, F0); }
 	function fGb(v) { return fmtNum(v, F2, 'GB'); }
@@ -448,21 +457,21 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 	function fMs(v) { return fmtNum(v, F0, 'ms'); }
 	function fKbit(v) { return fmtNum(v, F0, 'kbit/s'); }
 	function fMhz(v) { return fmtNum(v, F0, 'MHz'); }
-	function fAgo(v) { return isNum(v) ? 'há ' + F0.format(v) + ' s' : NA; }
+	function fAgo(v) { return isNum(v) ? 'há ' + F0.format(v) + '\u00a0s' : NA; }
 	function fBool(v) { return v === true ? 'sim' : v === false ? 'não' : NA; }
 	function fText(v) { return v == null || v === '' ? NA : String(v); }
 	function fUptime(s) {
 		if (!isNum(s)) return NA;
 		s = Math.floor(s);
 		var d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
-		return d ? d + ' d ' + h + ' h' : h ? h + ' h ' + m + ' min' : m ? m + ' min' : s + ' s';
+		return d ? d + '\u00a0d ' + h + '\u00a0h' : h ? h + '\u00a0h ' + m + '\u00a0min' : m ? m + '\u00a0min' : s + '\u00a0s';
 	}
 	function fTime(v) { return isNum(v) ? new Date(v * 1000).toLocaleString('pt-BR') : NA; }
 	function fUse(pct, used, total) {
 		if (!isNum(pct)) return NA;
-		return F0.format(pct) + ' %' + (isNum(used) && isNum(total) ? ' (' + F2.format(used) + ' de ' + F2.format(total) + ' GB)' : '');
+		return F0.format(pct) + '\u00a0%' + (isNum(used) && isNum(total) ? ' (' + F2.format(used) + ' de ' + F2.format(total) + '\u00a0GB)' : '');
 	}
-	function fPair(a, b, unit) { return isNum(a) && isNum(b) ? F2.format(a) + ' de ' + F2.format(b) + ' ' + unit : NA; }
+	function fPair(a, b, unit) { return isNum(a) && isNum(b) ? F2.format(a) + ' de ' + F2.format(b) + '\u00a0' + unit : NA; }
 	function svcState(v) { return v == null ? 'na' : SVC[v] ? SVC[v][1] : 'warn'; }
 	function svcText(v) { return v == null ? NA : SVC[v] ? SVC[v][0] : String(v); }
 
@@ -606,6 +615,13 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 		var el = K[key];
 		if (el && el.textContent !== text) el.textContent = text;
 	}
+	// A value (n/a when null) and, when it is empty, the reason in a dimmer span.
+	function putNote(key, text, note) {
+		var el = K[key];
+		if (!el) return;
+		el.textContent = text;
+		if (note) { var n = document.createElement('span'); n.className = 'note'; n.textContent = ' · ' + note; el.appendChild(n); }
+	}
 	function ring(name, pct, state) {
 		var f = RING[name];
 		if (!f) return;
@@ -638,24 +654,18 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 	function count(key, v, fmt) {
 		var el = K[key];
 		if (!el) return;
-		var text = fmt(v), prev = el._v;
-		el._v = v;
 		stopAnim(key);
-		var from = isNum(el._cur) ? el._cur : prev;
-		if (!isNum(v) || !isNum(from) || fmt(from) === text || reduced() || document.hidden || SNAP) {
-			el._cur = v;
-			el.textContent = text;
-			return;
-		}
+		var text = fmt(v), first = isNum(v) && !el._began;
+		if (isNum(v)) el._began = true;
+		if (!first || reduced() || document.hidden || SNAP) { el.textContent = text; return; }
 		var t0 = null;
 		var step = function (now) {
 			if (t0 === null) t0 = now;
-			var t = Math.max(0, Math.min(1, (now - t0) / 500)), e = 1 - Math.pow(1 - t, 3);
-			el._cur = from + (v - from) * e;
-			el.textContent = fmt(el._cur);
-			if (t < 1) ANIM[key] = requestAnimationFrame(step);
-			else { el._cur = v; delete ANIM[key]; }
+			var t = Math.min(1, (now - t0) / 500), e = 1 - Math.pow(1 - t, 3);
+			if (t < 1) { el.textContent = fmt(v * e); ANIM[key] = requestAnimationFrame(step); }
+			else { el.textContent = text; delete ANIM[key]; }
 		};
+		el.textContent = fmt(0);
 		ANIM[key] = requestAnimationFrame(step);
 	}
 	function stopAll() { Object.keys(ANIM).forEach(stopAnim); }
@@ -704,12 +714,12 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 			}
 		}
 		var txt = !enough ? 'coletando…' :
-			(isNum(cur) ? '' : 'sem dado agora · ') + 'agora ' + cfg.fmt(cur) + ' · média ' + cfg.fmt(st.avg) + ' · máx ' + cfg.fmt(st.max);
+			(isNum(cur) ? 'agora ' + cfg.fmt(cur) + ' · ' : 'sem dado agora · ') + 'média ' + cfg.fmt(st.avg) + ' · máx ' + cfg.fmt(st.max);
 		c.fig.setAttribute('aria-label', cfg.label + ': ' + txt);
 		if (c.cap) c.cap.textContent = txt;
 	}
 
-	var lastData = null, lastOkAt = 0, failing = null, R0 = null, inFlight = false, timer = null, ticker = null;
+	var lastData = null, lastOkAt = 0, lastSlowAt = null, failing = null, R0 = null, inFlight = false, timer = null, ticker = null;
 
 	function sample(d) {
 		BUF.cpu.push(get(d, 'metrics.cpu.used_pct'));
@@ -763,7 +773,7 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 			ch === false ? (src === 'cable' ? 'Na tomada, sem carregar' : src === 'battery' ? 'Usando a bateria' : NA) : NA);
 		put('bat.volts', fV(get(d, 'metrics.battery.volts')));
 		var cyc = get(d, 'metrics.battery.cycles');
-		put('bat.cycles', isNum(cyc) ? fCount(cyc) : 'n/a (sem contador)');
+		putNote('bat.cycles', fCount(cyc), isNum(cyc) ? '' : 'sem contador no kernel');
 		put('bat.temp', fC(get(d, 'metrics.battery.temp_c')));
 		count('pow.val', get(d, 'metrics.power.watts'), fW);
 		put('pow.src', src === 'cable' ? 'da tomada' : src === 'battery' ? 'da bateria' : NA);
@@ -774,16 +784,15 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 		put('cpu.peak', cs ? 'máx no histórico: ' + fPct(cs.max) : 'coletando…');
 		var lo = get(d, 'metrics.cpu.mhz_min'), hi = get(d, 'metrics.cpu.mhz_max');
 		put('cpu.freq', isNum(lo) && isNum(hi) ? F0.format(lo) + ' a ' + F0.format(hi) + ' MHz' : NA);
-		var gon = get(d, 'metrics.gpu.on');
-		put('gpu.state', gon === false ? 'desligada' :
-			gon === true ? 'ligada · ' + (isNum(get(d, 'metrics.gpu.used_pct')) ? fPct(get(d, 'metrics.gpu.used_pct')) : 'uso n/a (sem medida)') +
-				' · ' + fMhz(get(d, 'metrics.gpu.mhz')) : NA);
+		var gon = get(d, 'metrics.gpu.on'), gu = get(d, 'metrics.gpu.used_pct');
+		if (gon === true) putNote('gpu.state', 'ligada · ' + fMhz(get(d, 'metrics.gpu.mhz')), isNum(gu) ? 'uso ' + fPct(gu) : 'uso não medido');
+		else putNote('gpu.state', gon === false ? 'desligada' : NA, '');
 
 		put('t.cpu', fC(get(d, 'metrics.cpu.temp_c')));
 		put('t.gpu', fC(get(d, 'metrics.gpu.temp_c')));
 		put('t.ram', fC(get(d, 'metrics.ram_temp_c')));
 		var rt = get(d, 'metrics.rom.temp_c');
-		put('t.rom', isNum(rt) ? fC(rt) : 'n/a (sem sensor)');
+		putNote('t.rom', fC(rt), isNum(rt) ? '' : 'sem sensor');
 		put('t.bat', fC(get(d, 'metrics.battery.temp_c')));
 		put('t.body', fC(get(d, 'metrics.body_temp_c')));
 
@@ -793,9 +802,9 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 		count('ram.pct', rp, fPct);
 		put('ram.sub', fPair(get(d, 'system.ram.used_gb'), get(d, 'system.ram.total_gb'), 'GB'));
 		var zs = get(d, 'system.zram.size_gb'), zu = get(d, 'system.zram.used_gb');
-		bar('zram', isNum(zs) && isNum(zu) && zs > 0 ? zu / zs * 100 : null, 'ok',
-			isNum(zs) && isNum(zu) && zs > 0 ? fPct(zu / zs * 100) : 'uso n/a');
-		put('zram.val', isNum(zs) ? 'tamanho ' + fGb(zs) + (isNum(zu) ? ', usado ' + fGb(zu) : ', uso n/a') : NA);
+		var zok = isNum(zs) && isNum(zu) && zs > 0;
+		bar('zram', zok ? zu / zs * 100 : null, zok ? 'ok' : 'na', zok ? fPct(zu / zs * 100) : 'uso não medido');
+		putNote('zram.val', fGb(zs), isNum(zu) ? 'usado ' + fGb(zu) : 'uso não medido pelo kernel');
 
 		// Storage
 		var mounted = get(d, 'storage.nas.mounted');
@@ -829,6 +838,8 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 		put('ping.ms', fMs(pms));
 		put('ping.host', fText(get(d, 'metrics.ping.internet_host')) === NA ? NA : 'para ' + get(d, 'metrics.ping.internet_host'));
 		put('ping.gw', fMs(get(d, 'metrics.ping.gateway_ms')));
+		var slowAt = get(d, 'slow_at');
+		lastSlowAt = isNum(slowAt) ? slowAt : null;
 
 		// Services
 		var sv = { sshd: get(d, 'services.sshd'), samba: get(d, 'services.samba'), bot: get(d, 'services.bot') };
@@ -837,9 +848,9 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 		pill('samba2', svcState(sv.samba), svcText(sv.samba));
 		['sshd', 'samba', 'bot'].forEach(function (n) { var s = svcState(sv[n]); if (s !== 'na') known++; if (s === 'ok') upn++; });
 		put('svc.sum', known ? upn + ' de ' + known + ' ativos' : NA);
-		var cont = get(d, 'services.containers');
-		put('svc.cont', cont ? fCount(cont.running) + ' em execução' : NA);
-		put('svc.names', cont && Array.isArray(cont.names) ? (cont.names.length ? cont.names.join(', ') : 'nenhum') : NA);
+		var cr = get(d, 'services.containers.running'), cn = get(d, 'services.containers.names');
+		put('svc.cont', isNum(cr) ? F0.format(cr) + ' em execução' : NA);
+		put('svc.names', Array.isArray(cn) ? (cn.length ? cn.join(', ') : 'nenhum') : NA);
 
 		// Watchdog and system
 		put('wd.age', fAgo(get(d, 'watchdog.last_feed_s_ago')));
@@ -857,10 +868,21 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 		SNAP = false;
 	}
 
+	// Stale only after STALE_MS without a good answer; a single missed poll keeps the last values on screen.
 	function paintAge() {
+		var now = Date.now(), stale = failing !== null && (!lastData || now - lastOkAt > STALE_MS);
+		document.body.toggleAttribute('data-stale', stale);
+		if (stale) pill('top', 'bad', 'Sem conexão');
 		if (!lastData) { put('top.age', failing ? 'Nenhum dado recebido ainda.' : 'Aguardando a primeira leitura.'); return; }
-		var age = Math.max(0, Math.round((Date.now() - lastOkAt) / 1000));
-		put('top.age', failing ? 'Dados de há ' + F0.format(age) + ' s, desatualizados' : 'Atualizado há ' + F0.format(age) + ' s');
+		var age = Math.max(0, Math.round((now - lastOkAt) / 1000));
+		put('top.age', stale ? 'Dados de há ' + F0.format(age) + '\u00a0s, desatualizados' : 'Atualizado há ' + F0.format(age) + '\u00a0s');
+		// the slow part (ping, services, storage, boot, version) is read every 10 s on the server: show its age
+		var sa = lastSlowAt, slowTxt = isNum(sa) ? 'dados lentos há ' + F0.format(Math.max(0, Math.round(now / 1000 - sa))) + '\u00a0s' : '';
+		['slow.ping', 'slow.svc'].forEach(function (k) {
+			var el = K[k]; if (!el) return;
+			if (el.textContent !== slowTxt) el.textContent = slowTxt;
+			el.hidden = !slowTxt;
+		});
 	}
 	function setMsg(t) {
 		var p = document.querySelector('#msg p');
@@ -891,14 +913,11 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 				if (R0 === null && isNum(get(d, 'system.reboots'))) R0 = get(d, 'system.reboots');
 				sample(d);
 				render(d);
-				document.body.removeAttribute('data-stale');
 				setMsg(wasFailing ? 'Conexão restabelecida.' : '');
 			})
 			.catch(function (e) {
 				failing = reason(e);
 				gap();
-				document.body.setAttribute('data-stale', '');
-				pill('top', 'bad', 'Sem conexão');
 				setMsg('Não foi possível ler /api/status (' + failing + ').' +
 					(lastData ? ' Os valores mostrados são os últimos recebidos.' : ''));
 			})
