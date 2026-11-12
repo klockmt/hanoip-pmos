@@ -1,0 +1,133 @@
+From 34453172b557492d2ebbc07d23cde3e6be630204 Mon Sep 17 00:00:00 2001
+From: Artem Hutsaliuk <artemgutsaliukv@gmail.com>
+Date: Sun, 9 Aug 2026 23:07:12 -0500
+Subject: [PATCH 156/194] arm64: dts: qcom: sm7150-xiaomi-davinci: wire up
+ microphone capture
+
+Add the capture links and the routing that turn the described codec into
+a working microphone: the analogue mics reach the WCD9375 ADCs and come
+back over the TX SoundWire bus, the digital mics wired to the LPASS go
+through the VA macro.
+
+Capture also gets a frontend of its own. With only MultiMedia1 both
+directions share a single PCM, and capture cannot set hw params while
+playback is running, so userspace can never have a source and a sink at
+the same time - PulseAudio then fails to find a working profile and
+gives up on the card entirely. Other boards do the same, e.g. Qualcomm
+RB5 plays on MultiMedia2 and captures on MultiMedia3.
+
+The capture link takes DAI 1 of swr2, not DAI 0. The controller
+registers one DAI per port and assigns the direction by index: the first
+num_dout_ports DAIs are playback only, the rest capture only. This TX
+controller has one dout port, so DAI 0 is playback and never gets
+hw_params in a capture link - and sdw_stream_add_master() is called from
+there, so the master ports would stay unprogrammed. qcm6490-idp can use
+<&swr1 0> because its TX controller has no dout port at all.
+
+The routing follows the vendor tree, including the ADCs sitting on
+SoundWire inputs 0 and 2 rather than on consecutive ones.
+
+Tested on a Xiaomi Mi 9T (SM7150-AA, WCD9375): the microphone records,
+noise floor -62 dBFS, signal to noise ratio 62 dB.
+
+Signed-off-by: Artem Hutsaliuk <artemgutsaliukv@gmail.com>
+---
+ .../boot/dts/qcom/sm7150-xiaomi-davinci.dtsi  | 75 +++++++++++++++++++
+ 1 file changed, 75 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi
+index 319e9dd46..07c4ed9b1 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi
+@@ -89,6 +89,18 @@ sound {
+ 		pinctrl-names = "default";
+ 		model = "Xiaomi Mi 9T";
+ 
++		/*
++		 * Matches the vendor tree. Note the ADCs sit on SoundWire
++		 * inputs 0 and 2, not on consecutive ones. The vendor also
++		 * lists "MIC BIAS" -> "Analog MicN" links, but no such widgets
++		 * exist in the mainline codec driver.
++		 */
++		audio-routing = "AMIC1", "MIC BIAS1",
++				"AMIC2", "MIC BIAS2",
++				"AMIC3", "MIC BIAS3",
++				"TX SWR_ADC0", "ADC1_OUTPUT",
++				"TX SWR_ADC2", "ADC2_OUTPUT";
++
+ 		mm1-dai-link {
+ 			link-name = "MultiMedia1";
+ 			cpu {
+@@ -96,6 +108,69 @@ cpu {
+ 			};
+ 		};
+ 
++		/*
++		 * Capture needs a frontend of its own. With only MultiMedia1
++		 * both directions share a single PCM, and capture cannot set
++		 * hw params while playback is running, so userspace can never
++		 * have a source and a sink at the same time. Other boards do
++		 * the same, e.g. Qualcomm RB5 plays on MultiMedia2 and
++		 * captures on MultiMedia3.
++		 */
++		mm2-dai-link {
++			link-name = "MultiMedia2";
++			cpu {
++				sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA2>;
++			};
++		};
++
++		/*
++		 * Capture through the WCD9375: the analogue mics reach the
++		 * codec's own ADCs and come back over the TX SoundWire bus,
++		 * the digital mics wired to the LPASS go through the VA macro.
++		 */
++		wcd-capture-dai-link {
++			link-name = "WCD Capture";
++
++			cpu {
++				sound-dai = <&q6afedai TX_CODEC_DMA_TX_3>;
++			};
++
++			platform {
++				sound-dai = <&q6routing>;
++			};
++
++			/*
++			 * Use DAI 1 of swr2, not DAI 0. The controller registers
++			 * one DAI per port and assigns the direction by index
++			 * (qcom_swrm_register_dais()): the first num_dout_ports
++			 * DAIs are playback only, the rest are capture only.
++			 * The sm7150 TX controller has one dout port, so "SDW
++			 * Pin0" is playback and never gets hw_params in a capture
++			 * link - and sdw_stream_add_master() is called from there,
++			 * leaving the master ports unprogrammed. qcm6490-idp can
++			 * use <&swr1 0> because its TX controller has no dout port.
++			 */
++			codec {
++				sound-dai = <&wcd9375 1>, <&swr2 1>, <&txmacro 0>;
++			};
++		};
++
++		va-dai-link {
++			link-name = "VA Capture";
++
++			cpu {
++				sound-dai = <&q6afedai VA_CODEC_DMA_TX_0>;
++			};
++
++			platform {
++				sound-dai = <&q6routing>;
++			};
++
++			codec {
++				sound-dai = <&vamacro 0>;
++			};
++		};
++
+ 		speaker_playback_dai {
+ 			link-name = "Primary Spkr Playback";
+ 			cpu {
+-- 
+2.43.0
+

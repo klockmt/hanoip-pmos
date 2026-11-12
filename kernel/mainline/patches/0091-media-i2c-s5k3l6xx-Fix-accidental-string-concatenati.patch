@@ -1,0 +1,27 @@
+From 80cdfd22c29616e4c146cf4b631dccf187681077 Mon Sep 17 00:00:00 2001
+From: Jens Reidel <adrian@mainlining.org>
+Date: Wed, 22 Oct 2025 21:35:49 +0200
+Subject: [PATCH 091/194] media: i2c: s5k3l6xx: Fix accidental string
+ concatenation
+
+Signed-off-by: Jens Reidel <adrian@mainlining.org>
+---
+ drivers/media/i2c/s5k3l6xx.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/media/i2c/s5k3l6xx.c b/drivers/media/i2c/s5k3l6xx.c
+index 15cd8779a..1ea8f9108 100644
+--- a/drivers/media/i2c/s5k3l6xx.c
++++ b/drivers/media/i2c/s5k3l6xx.c
+@@ -1118,7 +1118,7 @@ static const char * const s5k3l6xx_test_pattern_menu[] = {
+ 	"Fade", // Bars fading towards 50% at the bottom. 512px high. Subdivided into left smooth and right quantized halves.
+ 	"PN9", // pseudo-random noise
+ 	"White",
+-	"LFSR32"
++	"LFSR32",
+ 	"Address",
+ };
+ 
+-- 
+2.43.0
+

@@ -1,0 +1,30 @@
+From dec4d36fd9160370eed4a9c690e45873c9c8b18a Mon Sep 17 00:00:00 2001
+From: hanoip <hanoip@localhost>
+Date: Mon, 26 Oct 2026 13:36:23 +0000
+Subject: [PATCH 164/194] Input: pm8xxx-vibrator: fix the upper drive-level
+ byte on SPMI vibrators
+
+The level is in mV and spans two registers on PMI632-style vibrators:
+bits 7:0 in VSET_LB and bits 11:8 in VSET_UB. Shifting it left by 8 and
+masking with 0xf always wrote 0 to VSET_UB, so the motor never got more
+than the low byte. Shift right instead.
+---
+ drivers/input/misc/pm8xxx-vibrator.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/input/misc/pm8xxx-vibrator.c b/drivers/input/misc/pm8xxx-vibrator.c
+index 5b5d83fe1..7cb4c37df 100644
+--- a/drivers/input/misc/pm8xxx-vibrator.c
++++ b/drivers/input/misc/pm8xxx-vibrator.c
+@@ -121,7 +121,7 @@ static int pm8xxx_vib_set(struct pm8xxx_vib *vib, bool on)
+ 	vib->reg_vib_drv = val;
+ 
+ 	if (regs->drv2_mask) {
+-		val = vib->level << regs->drv2_shift;
++		val = vib->level >> regs->drv2_shift;
+ 		rc = regmap_write_bits(vib->regmap, vib->drv2_addr,
+ 				regs->drv2_mask, on ? val : 0);
+ 		if (rc < 0)
+-- 
+2.43.0
+

@@ -1,0 +1,58 @@
+#!/bin/sh
+# scripts/backup-server without the phone: a stand-in for hanoip-sudo runs each command here, on a small fake root,
+# and stops the first copy of the root archive halfway, as a dropped ssh does. The backup must resume it, end with
+# every file equal to the phone's, keep the swap file out, restore the test file, remove the phone's copy and refuse
+# a second run into the same folder; a damaged copy must stop it before the phone's copy is removed.
+set -eu
+cd "$(dirname "$0")/.."
+dir=$(mktemp -d)
+trap 'rm -rf "$dir"' EXIT
+bad=0
+fail() { echo "FAIL: $*" >&2; bad=1; }
+
+mkdir -p "$dir/scripts" "$dir/bin" "$dir/root/etc/apk" "$dir/root/boot" "$dir/root/var/lib/x"
+cp scripts/env.sh scripts/backup-server "$dir/scripts/"
+printf 'HANOIP_BACKUP_DIR=%s/pc\n' "$dir" > "$dir/.env"
+printf 'alpine-base\nopenssh\n' > "$dir/root/etc/apk/world"
+head -c 300000 /dev/urandom > "$dir/root/var/lib/x/data"
+head -c 1000 /dev/urandom > "$dir/root/swapfile"
+echo kernel > "$dir/root/boot/vmlinuz"
+printf '#!/bin/sh\necho alpine-base-3.23-r0\n' > "$dir/bin/apk"
+printf '#!/bin/sh\necho "local | default"\n' > "$dir/bin/rc-update"
+# MODE=drop: the first copy of root.tar.gz stops after 100000 bytes; MODE=damage: boot.tar.gz arrives with its first
+# byte changed and its size unchanged.
+cat > "$dir/scripts/hanoip-sudo" <<'EOF'
+#!/bin/sh
+case $MODE:$1 in
+"drop:tail -c +1 "*root.tar.gz) [ -e "$T/cut" ] || { : > "$T/cut"; sh -c "$1" | head -c 100000; exit 0; } ;;
+"damage:tail -c +1 "*boot.tar.gz) printf X; sh -c "$1" | tail -c +2; exit 0 ;;
+esac
+exec sh -c "$1"
+EOF
+chmod +x "$dir/scripts/hanoip-sudo" "$dir/bin/"*
+run_() { # run_ MODE OUT
+	(cd "$dir" && T=$dir MODE=$1 PATH="$dir/bin:$PATH" HANOIP_BACKUP_TMP="$dir/phone" HANOIP_BACKUP_ROOT="$dir/root" \
+		HANOIP_SERVER_BACKUP="$2" sh scripts/backup-server 2>&1)
+}
+
+b=$dir/pc/b
+out=$(run_ drop "$b") || fail "the backup failed: $out"
+echo "$out" | grep -q 'root.tar.gz: resuming at 100000 of' || fail "the dropped copy was not resumed"
+for f in root.tar.gz boot.tar.gz packages.txt runlevels.txt SHA256SUMS; do
+	[ -f "$b/$f" ] || fail "$f was not copied"
+	[ ! -e "$b/$f.part" ] || fail "$f.part was left behind"
+done
+(cd "$b" && sha256sum -c --quiet SHA256SUMS) || fail "a copy differs from the phone's"
+[ "$(stat -c %a "$b")" = 700 ] && [ "$(stat -c %a "$b/root.tar.gz")" = 600 ] || fail "the backup is readable by others"
+list=$(tar -tzf "$b/root.tar.gz")
+echo "$list" | grep -qx './var/lib/x/data' || fail "the data is missing from the archive"
+echo "$list" | grep -qx './swapfile' && fail "the swap file is in the archive"
+grep -qx 'alpine-base-3.23-r0' "$b/packages.txt" || fail "the package list was not saved"
+[ ! -e "$dir/phone" ] || fail "the phone's copy was not removed"
+run_ drop "$b" > /dev/null && fail "a second run went into a folder that already holds a backup"
+
+out=$(run_ damage "$dir/pc/c") && fail "a damaged copy passed"
+echo "$out" | grep -q 'Hash mismatch' || fail "a damaged copy was not reported: $out"
+[ -d "$dir/phone" ] || fail "the phone's copy was removed although a copy was damaged"
+[ $bad -eq 0 ] && echo "backup-server: all checks pass"
+exit $bad

@@ -37,3 +37,10 @@ SHA256SUMS
 # Working notes that are not part of the repository
 /research_notes/
 /reports/
+
+# graphify knowledge graph (rebuilt locally)
+graphify-out/
+
+# Local Claude Code settings (contains local paths)
+.claude/settings.json
+.claude/

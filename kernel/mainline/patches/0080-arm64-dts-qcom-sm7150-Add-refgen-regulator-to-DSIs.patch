@@ -1,0 +1,49 @@
+From 6e681361827190dc556694da0914dfedda72c565 Mon Sep 17 00:00:00 2001
+From: Jens Reidel <adrian@mainlining.org>
+Date: Sun, 21 Sep 2025 10:10:43 +0200
+Subject: [PATCH 080/194] arm64: dts: qcom: sm7150: Add refgen regulator to
+ DSIs
+
+Signed-off-by: Jens Reidel <adrian@mainlining.org>
+---
+ arch/arm64/boot/dts/qcom/sm7150.dtsi | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/sm7150.dtsi b/arch/arm64/boot/dts/qcom/sm7150.dtsi
+index d3f29f61a..4843108e5 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm7150.dtsi
+@@ -1889,6 +1889,12 @@ &config_noc SLAVE_QUP_1 QCOM_ICC_TAG_ALWAYS>,
+ 			};
+ 		};
+ 
++		refgen: regulator@ff1000 {
++			compatible = "qcom,sm7150-refgen-regulator",
++				     "qcom,sdm845-refgen-regulator";
++			reg = <0x0 0x00ff1000 0x0 0x60>;
++		};
++
+ 		mc_virt: interconnect@1380000 {
+ 			compatible = "qcom,sm7150-mc-virt";
+ 			reg = <0x0 0x01380000 0x0 0x40000>;
+@@ -3942,6 +3948,8 @@ mdss_dsi0: dsi@ae94000 {
+ 				phys = <&mdss_dsi0_phy>;
+ 				phy-names = "dsi";
+ 
++				refgen-supply = <&refgen>;
++
+ 				#address-cells = <1>;
+ 				#size-cells = <0>;
+ 
+@@ -4019,6 +4027,8 @@ mdss_dsi1: dsi@ae96000 {
+ 				phys = <&mdss_dsi1_phy>;
+ 				phy-names = "dsi";
+ 
++				refgen-supply = <&refgen>;
++
+ 				#address-cells = <1>;
+ 				#size-cells = <0>;
+ 
+-- 
+2.43.0
+

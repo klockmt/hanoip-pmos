@@ -18,4 +18,6 @@ rc-update add hanoip-watchdog default >/dev/null 2>&1 || true
 rc-update add hanoip-led default >/dev/null 2>&1 || true
 # The Tailscale rule used to be a hand-made file that accepted UDP 41641 on every interface; the package ships its own.
 grep -q "comment \"Tailscale direct connections\"$" /etc/nftables.d/52_tailscale.nft 2>/dev/null && rm -f /etc/nftables.d/52_tailscale.nft
+# elogind must not create a PSI trigger on 4.14 (docs/PITFALLS.md): D-Bus reads /usr/local first, so this overrides its service file.
+install -Dm644 /usr/share/device-motorola-hanoip/org.freedesktop.login1.service /usr/local/share/dbus-1/system-services/org.freedesktop.login1.service
 exit 0

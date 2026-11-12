@@ -1,0 +1,18 @@
+[Unit]
+Description=Modem and Wi-Fi bring-up for the mainline root
+Documentation=man:systemd.service(5)
+DefaultDependencies=no
+Before=network-online.target
+After=rmtfs.service tqftpserv.service hanoip-pd-mapper.service
+Wants=rmtfs.service tqftpserv.service hanoip-pd-mapper.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/usr/bin/hanoip-modem-load-modules
+ExecStart=/usr/bin/hanoip-modem-start
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=basic.target

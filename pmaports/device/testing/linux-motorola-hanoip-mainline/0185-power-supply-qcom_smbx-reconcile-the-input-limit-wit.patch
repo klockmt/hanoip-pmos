@@ -1,0 +1,105 @@
+From 267ebeba3bfcd772bc13fe402aa3f453782d77c0 Mon Sep 17 00:00:00 2001
+From: hanoip <h@l>
+Date: Tue, 27 Oct 2026 17:13:06 -0300
+Subject: [PATCH 185/194] power: supply: qcom_smbx: reconcile the input limit
+ with APSD
+
+The first negotiation runs the moment the input current is asked for, which is
+usually before APSD finished. It therefore programs the SDP default and nothing
+ever re-reads the result: measured on this phone, a wall charger settled as DCP
+(APSD_STATUS=0x01, result 0x02) while the input limit stayed at the SDP value
+of 500 mA. Forcing it by hand to 1 A worked, so the limit was the whole
+difference.
+
+Re-check the detected type in the ten second monitor worker and re-negotiate
+when it changes, plus one extra pass 2.5 s after charging is switched on. This
+costs two register reads per poll and leaves the interrupt path that the
+monitor mode deliberately avoids untouched.
+---
+ drivers/power/supply/qcom_smbx.c | 43 +++++++++++++++++++++++++++++++-
+ 1 file changed, 42 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/power/supply/qcom_smbx.c b/drivers/power/supply/qcom_smbx.c
+index 895c447d7..862ae4679 100644
+--- a/drivers/power/supply/qcom_smbx.c
++++ b/drivers/power/supply/qcom_smbx.c
+@@ -252,6 +252,13 @@ struct smb_chip {
+ 	unsigned int current_limit_max_ua;
+ 
+ 	struct delayed_work status_change_work;
++	/*
++	 * Ultimo tipo de fonte que o APSD reportou. No plugue o APSD ainda nao
++	 * terminou, o driver cai no padrao SDP e o resultado real (DCP) so
++	 * aparece depois; sem reconciliar, os 500 mA do padrao ficavam para
++	 * sempre. Medido: fonte DCP com o limite preso em 550 mA.
++	 */
++	int last_apsd_type;
+ 	/* debugfs may not be mounted yet when the driver probes */
+ 	struct delayed_work dbg_work;
+ 	int dbg_tries;
+@@ -1060,11 +1067,37 @@ static int smb_init_irq(struct smb_chip *chip, int *irq, const char *name,
+ 	return 0;
+ }
+ 
++/* Defined further down; the monitor worker reconciles the input limit. */
++static int smb_negotiate_input(struct smb_chip *chip);
++static const char *smb_usb_type_name(int type);
++
+ /* Diagnostic monitoring never runs the charger setup or IRQ write paths. */
+ static void smb_monitor_work(struct work_struct *work)
+ {
+ 	struct smb_chip *chip = container_of(to_delayed_work(work),
+ 						  struct smb_chip, status_change_work);
++	unsigned int type;
++	int rc;
++
++	/*
++	 * Reconcile the input current limit with what APSD says.
++	 *
++	 * The first negotiation runs the moment VBUS appears, usually before
++	 * APSD finished, so it programs the SDP default. The real answer
++	 * arrives a second or two later: measured on this phone, a wall
++	 * charger settled as DCP while the limit stayed at the SDP value and
++	 * nothing ever re-read it. Re-checking here costs two register reads
++	 * every ten seconds and fixes it without touching the interrupt path
++	 * that the monitor mode deliberately avoids.
++	 */
++	rc = smb_apsd_get_charger_type(chip, &type);
++	if (!rc && type != chip->last_apsd_type) {
++		chip->last_apsd_type = type;
++		dev_info(chip->dev,
++			 "hanoip: APSD agora diz %s, reconciliando o limite de entrada\n",
++			 smb_usb_type_name(type));
++		smb_negotiate_input(chip);
++	}
+ 
+ 	power_supply_changed(chip->chg_psy);
+ 	schedule_delayed_work(&chip->status_change_work, msecs_to_jiffies(10000));
+@@ -1206,8 +1239,15 @@ static int smb_set_charging(struct smb_chip *chip, bool on)
+ 		    charge_current_ua < HANOIP_CHARGE_MIN_UA)
+ 			return -EINVAL;
+ 
+-		/* more input current first, then switch the charger on */
++		/*
++		 * More input current first, then switch the charger on. Ask
++		 * again shortly after: the first attempt usually precedes the
++		 * end of APSD, and the type it guessed low would otherwise
++		 * stick until the next ten second poll.
++		 */
+ 		smb_negotiate_input(chip);
++		schedule_delayed_work(&chip->status_change_work,
++				      msecs_to_jiffies(2500));
+ 
+ 		rc = regmap_write(chip->regmap, chip->base + SNARL_BARK_BITE_WD_CFG, 0);
+ 		if (rc)
+@@ -1519,6 +1559,7 @@ static int smb_probe(struct platform_device *pdev)
+ 		if (rc)
+ 			return rc;
+ 		platform_set_drvdata(pdev, chip);
++		chip->last_apsd_type = -1;
+ 		schedule_delayed_work(&chip->status_change_work, msecs_to_jiffies(10000));
+ 		dev_info(chip->dev, "SMB5 monitor: charger/Type-C configuration preserved\n");
+ 		return 0;
+-- 
+2.43.0
+

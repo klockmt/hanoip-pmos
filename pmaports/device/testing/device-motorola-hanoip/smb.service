@@ -1,0 +1,18 @@
+[Unit]
+Description=Samba (the cloud share, tailnet only: 03_hanoip-samba.nft drops 139 and 445 elsewhere)
+After=network.target tailscaled.service
+# The share lives on the NAS disk. RequiresMountsFor keeps smbd from starting, and so from writing into the bare mount
+# point on the phone's own flash, while the disk is away.
+RequiresMountsFor=/mnt/hd-b
+ConditionPathExists=/var/lib/samba/private/passdb.tdb
+
+[Service]
+ExecStart=/usr/sbin/smbd --foreground --no-process-group
+RuntimeDirectory=samba
+LogsDirectory=samba
+LimitNOFILE=16384
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

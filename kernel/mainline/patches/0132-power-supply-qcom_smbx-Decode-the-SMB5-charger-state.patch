@@ -1,0 +1,40 @@
+From 52e67bbee2e55996784064d685e6d04de92dd0ec Mon Sep 17 00:00:00 2001
+From: Aleks <aleks.spv@gmail.com>
+Date: Thu, 22 Oct 2026 14:46:51 +0600
+Subject: [PATCH 132/194] power: supply: qcom_smbx: Decode the SMB5 charger
+ state
+
+SMB5 reorders the states in BATTERY_CHARGER_STATUS_1 as INHIBIT,
+TRICKLE, PRE, FULLON, TAPER, TERMINATE, PAUSE and DISABLE. The charging,
+terminate and disable codes agree with SMB2, but inhibit (0) is decoded
+as trickle charging and pause (6) as inhibit, i.e. full.
+
+Remap these two states before decoding them.
+
+Signed-off-by: Aleks <aleks.spv@gmail.com>
+---
+ drivers/power/supply/qcom_smbx.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/drivers/power/supply/qcom_smbx.c b/drivers/power/supply/qcom_smbx.c
+index 019b983fd..aec531949 100644
+--- a/drivers/power/supply/qcom_smbx.c
++++ b/drivers/power/supply/qcom_smbx.c
+@@ -412,6 +412,14 @@ static int smb_get_prop_status(struct smb_chip *chip, int *val)
+ 
+ 	stat = stat & BATTERY_CHARGER_STATUS_MASK;
+ 
++	/* SMB5 reports inhibit as 0 and pause as 6, the other states match */
++	if (chip->gen == SMB5) {
++		if (stat == 0)
++			stat = INHIBIT_CHARGE;
++		else if (stat == 6)
++			stat = DISABLE_CHARGE;
++	}
++
+ 	switch (stat) {
+ 	case TRICKLE_CHARGE:
+ 	case PRE_CHARGE:
+-- 
+2.43.0
+

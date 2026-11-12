@@ -10,13 +10,13 @@ Work-in-progress port of postmarketOS to the **Motorola Moto G60** (`hanoip`, XT
 | --- | --- |
 | Downstream kernel (4.14, cool585 Cybertron) | **Works.** postmarketOS edge boots on its own with openrc, SSH over the USB network gadget, a 104 GB root on `userdata` and an nftables firewall |
 | Wi-Fi (WCN3990) | **Works (2026-10-30).** 2.4 and 5 GHz, WPA3 (SAE) through NetworkManager, back by itself after a reboot. It needed `CONFIG_MMI_INFO` (the modem crashed without the SMEM item that driver creates). The modem userspace ships in the `device-motorola-hanoip-modem` subpackage: see [`userspace/modem/README.md`](userspace/modem/README.md) |
-| Mainline kernel | **Parked.** The plan is our own hardened 4.14 kernel, forked from the one above ([`docs/STATUS.md`](docs/STATUS.md), section 5). Mainline never booted: the bootloader (ABL) only runs header-v3 boot images, which invalidated the early tests. See [`docs/MAINLINE.md`](docs/MAINLINE.md) |
+| Mainline kernel | **Boots from slot a through U-Boot with no PC (2026-11-08), not the server yet.** Linux 7.3 with this project's patches (`kernel/mainline`). Our U-Boot in `boot_a` reads the kernel from UFS and boots a root in super's free region: Wi-Fi through the modem, Tailscale, nftables, a 75-80 % charge limit. Slot a marks itself successful after a complete boot, so both slots work; slot b, the 4.14 above, is active again and stays the server until its services move ([`docs/STATUS.md`](docs/STATUS.md), section 5, and [`docs/MAINLINE.md`](docs/MAINLINE.md), sections 7 to 7d) |
 
 The phone is reachable over Wi-Fi, the USB cable (network gadget) or a USB Ethernet adapter (RTL8152, ASIX, CDC). With a hub the phone is USB host: the PC on the hub cannot reach it over USB, so use Wi-Fi then.
 
 ## Tutorial: reproduce the working image
 
-Everything is scripted. Steps marked **[manual]** need your hands on the phone or an interactive prompt. The scripts that change something (`setup-pmaports`, `configure-pmbootstrap`, `build-image`, `setup-usb-net`, `flash-rootfs`, `flash-boot`, `flash-boot-ssh`, `setup-console`, `push-firmware`, `reboot-bootloader`, `mount-vendor`, `update-apkbuild-sums`, `restore-cycle-counts`) accept `DRY_RUN=1` (print the commands, change nothing), and `ASSUME_YES=1` skips their questions.
+Everything is scripted. Steps marked **[manual]** need your hands on the phone or an interactive prompt. The scripts that change something (`setup-pmaports`, `configure-pmbootstrap`, `build-image`, `setup-usb-net`, `flash-rootfs`, `flash-boot`, `flash-boot-ssh`, `setup-console`, `push-firmware`, `reboot-bootloader`, `mount-vendor`, `update-apkbuild-sums`, `restore-cycle-counts`, `backup-server`, `restore-server`) accept `DRY_RUN=1` (print the commands, change nothing), and `ASSUME_YES=1` skips their questions.
 
 ### What you need
 
@@ -108,6 +108,8 @@ The PC address is `172.16.42.2/24` on the phone's USB interface (`scripts/setup-
 
 On the phone, `hanoip-status` (and Telegram `/status`) prints the health of the phone in ten lines, and `hanoip-status -h` says what each is and where it is read. `hanoip-charge-limit` holds the battery near 80 % with the cable feeding the phone (bypass), `hanoip-thermal` pauses charging and caps the CPU when the battery heats up, and both are on by default. The services, what each does and how to check it are in [`docs/HOMELAB.md`](docs/HOMELAB.md); what was measured about the battery is in [`docs/BATTERY.md`](docs/BATTERY.md). Check the decisions without hardware with `scripts/test-charge-limit` and `scripts/test-thermal`.
 
+The phone also serves a status dashboard, next to the Telegram bot: `hanoip-dashboard` (`hanoip-dashboard.service` in the device package, no root) answers only on the phone's Tailscale address, port 8080. `/` is a one-file page (`pmaports/device/testing/device-motorola-hanoip/dashboard/index.html`, no external resource) that reads `/api/status` every 5 s while the tab is visible: everything `/status` prints, plus uptime, reboots, OOM kills, RAM, zram, the active slot and its success mark, the NAS disk and its last scrub, Wi-Fi, Tailscale, Samba, the services, the watchdog, the kernel and the package revision. A value that cannot be read shows as `n/a`. Open `http://<tailnet-address>:8080/` from a device on the tailnet; see [`docs/HOMELAB.md`](docs/HOMELAB.md#status-dashboard). `scripts/test-dashboard` and `scripts/test-dashboard-page` check both halves without the phone.
+
 ### 8. Update only the kernel later
 
 ```sh
@@ -137,13 +139,18 @@ I want to be clear about what has and has not been run end to end.
 | `build-image`, `configure-pmbootstrap` | Dry-run only (they need `sudo` and an interactive `init`). The commands are the ones the author ran to produce the images that boot. The package build **without** `--envkernel` (letting pmbootstrap compile the kernel itself) was never tried |
 | `backup-partitions`, `flash-rootfs`, `flash-boot` | Tested against a simulated phone, including the refusals (wrong device, not in recovery, corrupted write, no SSH). The underlying `dd`, `adb` and `fastboot` commands are the ones used on the real phone |
 | `setup-usb-net` | Interface detection and the `nmcli` command checked; same command the author used |
+| `build-mainline-kernel`, `mainline-ram-image`, `mainline-make-root`, `build-mainline-uboot`, `mainline-boot-a-image` | Run on the author's machine and phone (2026-11-07 and 08): what they build booted on the phone, and `mainline-make-root` left super unchanged outside its region (`docs/MAINLINE.md`, sections 7 to 7d). The U-Boot built on 2026-11-11 (Duranium first from either slot) is written to `boot_b` and has **not booted yet**. Not run on a clean machine |
+| `backup-server` | Run on the author's phone on 2026-11-08 (1.7 GB over the tailnet at 1 MB/s): hashes equal on both sides, one file restored and compared, the phone's copy removed. Resuming a dropped copy and refusing a damaged one were tested only against a simulated phone (`scripts/test-backup-server`) |
+| `restore-server` | Run on the author's phone on 2026-11-10, in a session that left no record of its output: on 2026-11-11 the restored data, the sudo password and `harden` (root login refused) were all found in place. Its step that sets the owner of Syncthing's folder ran while the NAS disk was away and had to be repeated by hand. It puts the 4.14 server's data (Wi-Fi profiles, Tailscale state, AdGuard Home, Samba, Syncthing, the bot's secrets) back on a fresh Duranium, sets the login user's sudo password and, last, turns root login off. Tested only against a simulated phone (`scripts/test-restore-server`: what is sent and what is not, owners and modes kept, no secret in any output, `harden` refusing without sudo) |
+| `hanoip-dashboard` (on the phone) | Run on the author's phone on 2026-11-12 from image `26111103` (device package `pkgrel 53`): the page and `/api/status` answer from the tailnet, the USB address refuses the connection, the LAN address does not answer; it reported slot `b`, marked successful, and `pkgrel` 53. Not seen: the page on a phone-width screen, and a NAS disk or a scrub result (the disk was not mounted) |
+| `duranium-image` | Run on the author's machine on 2026-11-11 (three times, device package r50 to r52): the image it built was checked with `dump.erofs`, delivered to the phone as an A/B update and is the running system (`docs/DURANIUM.md`). Pass `--image-version=YYMMDDNN` for an update, or the image keeps the old version. Not run on a clean machine |
 | A completely fresh machine, start to finish | **Run to the image (2026-11-02), in a clean KVM virtual machine** (Ubuntu 24.04 cloud image, only apt packages and the README steps, from the `beta` branch): `check-host`, `setup-pmaports`, `build-kernel`, `pmb init`, `configure-pmbootstrap` and `build-image` all ran and produced `boot.img` (header v3), `vendor_boot.img` (command line starting with `console=ttyMSM0,115200n8`) and the 2 GB rootfs. It needed five changes to the README and scripts, all fixed above. **Not run:** the flashing and booting that image on a phone, which erases `userdata`, and a second person following the README. The first attempt in a rootless container stopped at `pmbootstrap init` (no `origin/main`), the second in a privileged one at the partitions (no udev), which is why a VM was used |
 
 ## Layout
 
 | Path | What it is |
 | --- | --- |
-| `pmaports/` | `device-motorola-hanoip` and `linux-motorola-hanoip` packages, and `PMAPORTS_COMMIT`, the official pmaports commit they were built on |
+| `pmaports/` | `device-motorola-hanoip` and `linux-motorola-hanoip` packages, and `PMAPORTS_COMMIT`, the official pmaports commit they were built on; `linux-motorola-hanoip-mainline`, the Linux 7.3 package built from kernel.org and copies of `kernel/mainline` (not built yet) |
 | `kernel/downstream-patches/` | Patches for the 4.14 kernel (loop partition rescan, `clk.c` for `DEBUG_FS`, `icnss` BDF/REGDB/`host_cap`, console on the screen, splash framebuffer, serial kept out of the `mmi_info` log) |
 | `kernel/dts/` | Mainline DTS for the hanoip |
 | `userspace/modem/` | Notes on the modem/Wi-Fi userspace for 4.14 (diagnosis history). The files themselves are the `device-motorola-hanoip-modem` subpackage |
@@ -171,3 +178,9 @@ Partition backups, the device collection (serial, MAC and IMEI), and the proprie
 ## License
 
 GPL-2.0-only, see [`LICENSE`](LICENSE) for the text and [`NOTICE`](NOTICE) for the scope. The kernel patches and the device-tree sources are derived from the Linux kernel; the packaging, scripts and documentation use the same license. Proprietary firmware and device identifiers are not part of the repository.
+
+## Duranium running
+
+`fastfetch` on the phone after the first boot of the mainline image: Linux 7.3.0-sm7150 on aarch64, `/usr` on a read-only erofs, the rootfs on `userdata`, Wi-Fi up.
+
+![fastfetch on the Moto G60 running Duranium: Linux 7.3.0-sm7150, aarch64, 3.47 GiB of RAM](docs/images/fastfetch-duranium.png)

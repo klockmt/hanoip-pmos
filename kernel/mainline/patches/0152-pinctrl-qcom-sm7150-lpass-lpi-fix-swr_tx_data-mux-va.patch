@@ -1,0 +1,46 @@
+From b7a98d1d2b433531ef6792ac557d8cd1a748ddc0 Mon Sep 17 00:00:00 2001
+From: Artem Hutsaliuk <artemgutsaliukv@gmail.com>
+Date: Sun, 9 Aug 2026 23:03:12 -0500
+Subject: [PATCH 152/194] pinctrl: qcom: sm7150-lpass-lpi: fix swr_tx_data mux
+ value on GPIO1
+
+The SoundWire TX data line on LPI GPIO1 answers to the third mux value,
+not the first. The vendor device tree programs func3 for this signal on
+GPIO1, while using func2 for the same signal on GPIO2 - the position in
+LPI_PINGROUP() is the mux value written to the hardware, so listing
+swr_tx_data first makes the driver select 1 where the hardware expects 3.
+
+With the wrong value the data line never reaches the bus: the TX
+SoundWire controller reports "SWR bus clsh detected" on every boot and
+the TX side of the WCD9375 stays UNATTACHED, while the RX side comes up
+normally.
+
+Tested on a Xiaomi Mi 9T (SM7150-AA, WCD9375): with this change both
+SoundWire buses attach, no clashes are reported, and capture works.
+
+Signed-off-by: Artem Hutsaliuk <artemgutsaliukv@gmail.com>
+---
+ drivers/pinctrl/qcom/pinctrl-sm7150-lpass-lpi.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/drivers/pinctrl/qcom/pinctrl-sm7150-lpass-lpi.c b/drivers/pinctrl/qcom/pinctrl-sm7150-lpass-lpi.c
+index a8ff049d0..0b268ac08 100644
+--- a/drivers/pinctrl/qcom/pinctrl-sm7150-lpass-lpi.c
++++ b/drivers/pinctrl/qcom/pinctrl-sm7150-lpass-lpi.c
+@@ -81,6 +81,13 @@ static const char * const swr_tx_data_groups[] = { "gpio1", "gpio2", "gpio5" };
+ 
+ static const struct lpi_pingroup sm7150_groups[] = {
+ 	LPI_PINGROUP(0, 0, slimbus_clk, swr_tx_clk, _, _),
++	/*
++	 * The SoundWire TX data line on this pin answers to the third mux
++	 * value, not the first: the vendor tree programs func3 here while it
++	 * uses func2 for the same signal on the neighbouring pin. Selecting the
++	 * first slot leaves the line off the bus, and the controller reports a
++	 * bus clash while the TX side of the codec never enumerates.
++	 */
+ 	LPI_PINGROUP(1, 2, _, audio_ref, swr_tx_data, _),
+ 	LPI_PINGROUP(2, 4, slimbus_data, swr_tx_data, _, _),
+ 	LPI_PINGROUP(3, 8, slimbus_data, swr_rx_clk, _, _),
+-- 
+2.43.0
+

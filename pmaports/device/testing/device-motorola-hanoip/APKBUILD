@@ -4,7 +4,7 @@
 pkgname=device-motorola-hanoip
 pkgdesc="Motorola Moto G (60)"
 pkgver=0
-pkgrel=40
+pkgrel=53
 _qrtr_rev=29e36ae164389580a0f8ea7a7fdb728140ae978d
 _pdmapper_rev=5ecd2fe926aca7abfe40724177f63b942cff3947
 url="https://postmarketos.org"
@@ -17,6 +17,7 @@ depends="
 	firmware-qcom-sm7150
 	mkbootimg-osm0sis
 	postmarketos-base
+	python3
 	soc-qcom
 	soc-qcom-qbootctl
 	tailscale
@@ -24,9 +25,10 @@ depends="
 makedepends="devicepkg-dev linux-headers rust"
 install="$pkgname.post-install $pkgname.post-upgrade $pkgname-modem.post-install"
 subpackages="
-	$pkgname-kernel-downstream:kernel_downstream
 	$pkgname-kernel-mainline:kernel_mainline
+	$pkgname-kernel-downstream:kernel_downstream
 	$pkgname-modem:modem
+	$pkgname-mainline:mainline
 "
 source="
 	deviceinfo
@@ -58,12 +60,64 @@ source="
 	hanoip-tqftpserv.initd
 	hanoip-watchdog
 	hanoip-watchdog.initd
+	hanoip-dashboard
+	hanoip-dashboard.service
+	org.freedesktop.login1.service
 	pd-mapper-subsys-fallback.patch
 	tqftpserv-subsys-fallback.patch
 	qrtr-1.0.tar.gz::https://github.com/linux-msm/qrtr/archive/refs/tags/v1.0.tar.gz
 	qrtr-$_qrtr_rev.tar.gz::https://github.com/linux-msm/qrtr/archive/$_qrtr_rev.tar.gz
 	pd-mapper-$_pdmapper_rev.tar.gz::https://github.com/linux-msm/pd-mapper/archive/$_pdmapper_rev.tar.gz
 	tqftpserv-1.3.tar.gz::https://github.com/linux-msm/tqftpserv/archive/refs/tags/v1.3.tar.gz
+	hanoip-efs.service
+	hanoip-efs
+	rmtfs.service
+	hanoip-qrtr-ns.service
+	hanoip-pd-mapper.service
+	tqftpserv.service
+	hanoip-modem.service
+	hanoip-modem-load-modules
+	hanoip-modem-start
+	hanoip-charge.service
+	hanoip-charge-pre
+	hanoip-usb-net.service
+	hanoip-usb-net
+	hanoip-slot-mark.service
+	hanoip-ml-slot
+	hanoip-bot.service
+	hanoip-guard.service
+	hanoip-guard
+	hanoip-deadman.service
+	hanoip-deadman
+	hanoip-battery.service
+	hanoip-battery
+	hanoip-ml-up.service
+	hanoip-ml-networkmanager.conf
+	hanoip-ml-chrony
+	90-hanoip-watchdog.conf
+	hanoip-ml-abl-slot
+	hanoip-ml-charge
+	hanoip-ml.conf
+	kernel-cmdline.mainline.conf
+	hanoip-usb-gadget
+	hanoip-usb-gadget.service
+	hanoip.preset
+	hanoip-health
+	hanoip-health.service
+	adguardhome.service
+	smb.service
+	syncthing.service
+	hanoip-mnt-hd-a.mount
+	hanoip-mnt-hd-b.mount
+	hanoip-sysusers.conf
+	hanoip-thermal.service
+	hanoip-led.service
+	hanoip-journald.conf
+	hanoip-rtc.conf
+	hanoip-resolved.conf
+	hanoip-coredump.conf
+	hanoip-screen-off.service
+	hanoip-pam-sudo
 "
 
 prepare() {
@@ -116,6 +170,78 @@ package() {
 	install -Dm755 "$srcdir/hanoip-thermal.initd" "$pkgdir/etc/init.d/hanoip-thermal"
 	install -Dm755 "$srcdir/hanoip-watchdog" "$pkgdir/usr/bin/hanoip-watchdog"
 	install -Dm755 "$srcdir/hanoip-watchdog.initd" "$pkgdir/etc/init.d/hanoip-watchdog"
+	install -Dm755 "$srcdir/hanoip-dashboard" "$pkgdir/usr/bin/hanoip-dashboard"
+	install -Dm644 "$startdir/dashboard/index.html" "$pkgdir/usr/share/hanoip-dashboard/index.html"
+	install -Dm644 "$srcdir/hanoip-dashboard.service" "$pkgdir/etc/systemd/system/hanoip-dashboard.service"
+	# The dashboard reads its package revision from here: nothing else on the image records it.
+	install -d "$pkgdir/usr/share/device-motorola-hanoip"
+	printf '%s\n' "$pkgrel" > "$pkgdir/usr/share/device-motorola-hanoip/pkgrel"
+	install -Dm644 "$srcdir/org.freedesktop.login1.service" "$pkgdir/usr/share/device-motorola-hanoip/org.freedesktop.login1.service"
+
+	# Mainline systemd units and scripts (installed here, moved to mainline subpackage by amove)
+	install -Dm644 "$srcdir/hanoip-efs.service" "$pkgdir/etc/systemd/system/hanoip-efs.service"
+	install -Dm755 "$srcdir/hanoip-efs" "$pkgdir/usr/bin/hanoip-efs"
+	install -Dm644 "$srcdir/rmtfs.service" "$pkgdir/etc/systemd/system/rmtfs.service"
+	install -Dm644 "$srcdir/hanoip-qrtr-ns.service" "$pkgdir/etc/systemd/system/hanoip-qrtr-ns.service"
+	install -Dm644 "$srcdir/hanoip-pd-mapper.service" "$pkgdir/etc/systemd/system/hanoip-pd-mapper.service"
+	install -Dm644 "$srcdir/tqftpserv.service" "$pkgdir/etc/systemd/system/tqftpserv.service"
+	install -Dm644 "$srcdir/hanoip-modem.service" "$pkgdir/etc/systemd/system/hanoip-modem.service"
+	install -Dm755 "$srcdir/hanoip-modem-load-modules" "$pkgdir/usr/bin/hanoip-modem-load-modules"
+	install -Dm755 "$srcdir/hanoip-modem-start" "$pkgdir/usr/bin/hanoip-modem-start"
+	install -Dm644 "$srcdir/hanoip-charge.service" "$pkgdir/etc/systemd/system/hanoip-charge.service"
+	install -Dm755 "$srcdir/hanoip-charge-pre" "$pkgdir/usr/bin/hanoip-charge-pre"
+	install -Dm644 "$srcdir/hanoip-usb-net.service" "$pkgdir/etc/systemd/system/hanoip-usb-net.service"
+	install -Dm755 "$srcdir/hanoip-usb-net" "$pkgdir/usr/bin/hanoip-usb-net"
+	install -Dm644 "$srcdir/hanoip-slot-mark.service" "$pkgdir/etc/systemd/system/hanoip-slot-mark.service"
+	install -Dm755 "$srcdir/hanoip-ml-slot" "$pkgdir/usr/bin/hanoip-ml-slot"
+	install -Dm644 "$srcdir/hanoip-bot.service" "$pkgdir/etc/systemd/system/hanoip-bot.service"
+	install -Dm644 "$srcdir/hanoip-guard.service" "$pkgdir/etc/systemd/system/hanoip-guard.service"
+	install -Dm755 "$srcdir/hanoip-guard" "$pkgdir/usr/bin/hanoip-guard"
+	install -Dm644 "$srcdir/hanoip-deadman.service" "$pkgdir/etc/systemd/system/hanoip-deadman.service"
+	install -Dm755 "$srcdir/hanoip-deadman" "$pkgdir/usr/bin/hanoip-deadman"
+	install -Dm644 "$srcdir/hanoip-battery.service" "$pkgdir/etc/systemd/system/hanoip-battery.service"
+	install -Dm755 "$srcdir/hanoip-battery" "$pkgdir/usr/bin/hanoip-battery"
+	install -Dm644 "$srcdir/hanoip-ml-up.service" "$pkgdir/etc/systemd/system/hanoip-ml-up.service"
+	install -Dm644 "$srcdir/hanoip-ml-networkmanager.conf" "$pkgdir/etc/NetworkManager/conf.d/hanoip-ml.conf"
+	install -Dm755 "$srcdir/hanoip-ml-chrony" "$pkgdir/etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony"
+	install -Dm644 "$srcdir/90-hanoip-watchdog.conf" "$pkgdir/etc/systemd/system.conf.d/90-hanoip-watchdog.conf"
+	install -Dm755 "$srcdir/hanoip-ml-abl-slot" "$pkgdir/usr/bin/hanoip-ml-abl-slot"
+	install -Dm755 "$srcdir/hanoip-ml-charge" "$pkgdir/usr/bin/hanoip-ml-charge"
+	install -Dm644 "$srcdir/hanoip-ml.conf" "$pkgdir/etc/modprobe.d/hanoip-ml.conf"
+
+	# Duranium: the USB gadget, the boot-health check and the charge limit, enabled by a preset (mkosi's preset-all removes enable
+	# links in /etc); qbootctl.service (pmOS marks the slot good at multi-user.target, before anything is checked) is masked: hanoip-health marks it.
+	install -Dm755 "$srcdir/hanoip-usb-gadget" "$pkgdir/usr/bin/hanoip-usb-gadget"
+	install -Dm644 "$srcdir/hanoip-usb-gadget.service" "$pkgdir/etc/systemd/system/hanoip-usb-gadget.service"
+	install -Dm755 "$srcdir/hanoip-health" "$pkgdir/usr/bin/hanoip-health"
+	install -Dm644 "$srcdir/hanoip-health.service" "$pkgdir/etc/systemd/system/hanoip-health.service"
+	install -Dm644 "$srcdir/hanoip.preset" "$pkgdir/usr/lib/systemd/system-preset/10-hanoip.preset"
+	ln -s /dev/null "$pkgdir/etc/systemd/system/qbootctl.service"
+	# Bluetooth is unused; its MAC unit, started by udev, timed out now and then and left the system degraded. An empty
+	# rules file of the same name hides pmOS's rule (a mask link in /etc is removed by mkosi's preset-all).
+	install -Dm644 /dev/null "$pkgdir/etc/udev/rules.d/90-bootmac-bluetooth.rules"
+
+	# The services of the 4.14 server on systemd (Alpine ships only OpenRC scripts): their users keep the old IDs, the NAS disk mounts on its own
+	install -Dm644 "$srcdir/adguardhome.service" "$pkgdir/etc/systemd/system/adguardhome.service"
+	install -Dm644 "$srcdir/smb.service" "$pkgdir/etc/systemd/system/smb.service"
+	install -Dm644 "$srcdir/syncthing.service" "$pkgdir/etc/systemd/system/syncthing.service"
+	install -Dm644 "$srcdir/hanoip-mnt-hd-a.mount" "$pkgdir/etc/systemd/system/mnt-hd\x2da.mount"
+	install -Dm644 "$srcdir/hanoip-mnt-hd-b.mount" "$pkgdir/etc/systemd/system/mnt-hd\x2db.mount"
+	install -Dm644 "$srcdir/hanoip-sysusers.conf" "$pkgdir/usr/lib/sysusers.d/20-hanoip-services.conf"
+
+	# Heat protection and the power LED, as units (the scripts are shared with the 4.14 package)
+	install -Dm644 "$srcdir/hanoip-thermal.service" "$pkgdir/etc/systemd/system/hanoip-thermal.service"
+	install -Dm644 "$srcdir/hanoip-led.service" "$pkgdir/etc/systemd/system/hanoip-led.service"
+
+	# What a headless server does not need, or needs bounded: no multicast name queries, no core files, a journal with a size limit, the backlight off
+	install -Dm644 "$srcdir/hanoip-journald.conf" "$pkgdir/etc/systemd/journald.conf.d/90-hanoip.conf"
+	install -Dm644 "$srcdir/hanoip-rtc.conf" "$pkgdir/etc/tmpfiles.d/hanoip-rtc.conf"
+	install -Dm644 "$srcdir/hanoip-resolved.conf" "$pkgdir/etc/systemd/resolved.conf.d/10-hanoip.conf"
+	install -Dm644 "$srcdir/hanoip-coredump.conf" "$pkgdir/etc/systemd/coredump.conf.d/10-hanoip.conf"
+	install -Dm644 "$srcdir/hanoip-screen-off.service" "$pkgdir/etc/systemd/system/hanoip-screen-off.service"
+
+	# sudo-rs asks PAM for the service sudo; without this file the image falls back to other, which refuses everyone
+	install -Dm644 "$srcdir/hanoip-pam-sudo" "$pkgdir/etc/pam.d/sudo"
 
 	# Modem and Wi-Fi userspace; modem() below moves it into its own subpackage.
 	install -Dm755 "$srcdir/hanoip-qrtr-ns" "$pkgdir/usr/bin/hanoip-qrtr-ns"
@@ -146,17 +272,73 @@ kernel_downstream() {
 
 kernel_mainline() {
 	pkgdesc="Mainline kernel for Motorola Moto G (60)"
-	depends="linux-postmarketos-qcom-sm7150"
+	depends="linux-motorola-hanoip-mainline systemd-boot $pkgname-mainline"
 	devicepkg_subpackage_kernel $startdir $pkgname $subpkgname
 }
 
+mainline() {
+	pkgdesc="Mainline root services for Motorola Moto G (60): modem, charge limit, guard, slot marking, watchdog, network"
+	# The modem subpackage carries the binaries the modem units run (and rmtfs): without it pmOS's tqftpserv.service, which these
+	# units replace, would fail at every boot.
+	depends="
+		$pkgname
+		$pkgname-modem
+		adguardhome
+		samba-server
+		samba-common-tools
+		syncthing
+		btop
+		btrfs-progs
+		btrfs-progs-extra
+		debootstrap
+		doas
+		fastfetch
+		gcompat
+		hwloc-tools
+		iperf3
+		libdrm-tests
+		libstdc++
+		memtester
+		musl-utils
+		openssl
+		smartmontools
+		stress-ng
+		sudo-rs
+		tar
+		tzdata
+		wget
+	"
+	amove etc/systemd/system/hanoip-efs.service etc/systemd/system/rmtfs.service \
+		etc/systemd/system/hanoip-qrtr-ns.service etc/systemd/system/hanoip-pd-mapper.service \
+		etc/systemd/system/tqftpserv.service etc/systemd/system/hanoip-modem.service \
+		etc/systemd/system/hanoip-charge.service etc/systemd/system/hanoip-usb-net.service \
+		etc/systemd/system/hanoip-slot-mark.service etc/systemd/system/hanoip-bot.service \
+		etc/systemd/system/hanoip-guard.service etc/systemd/system/hanoip-deadman.service \
+		etc/systemd/system/hanoip-battery.service etc/systemd/system/hanoip-ml-up.service \
+		etc/systemd/system.conf.d/90-hanoip-watchdog.conf \
+		usr/bin/hanoip-efs usr/bin/hanoip-modem-load-modules usr/bin/hanoip-modem-start \
+		usr/bin/hanoip-charge-pre usr/bin/hanoip-usb-net usr/bin/hanoip-ml-slot \
+		usr/bin/hanoip-guard usr/bin/hanoip-deadman usr/bin/hanoip-battery \
+		usr/bin/hanoip-ml-abl-slot usr/bin/hanoip-ml-charge \
+		etc/modprobe.d/hanoip-ml.conf \
+		etc/NetworkManager/conf.d/hanoip-ml.conf \
+		etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony \
+		usr/bin/hanoip-usb-gadget etc/systemd/system/hanoip-usb-gadget.service \
+		usr/bin/hanoip-health etc/systemd/system/hanoip-health.service \
+		usr/lib/systemd/system-preset etc/systemd/system/qbootctl.service etc/udev/rules.d/90-bootmac-bluetooth.rules \
+		etc/systemd/system/adguardhome.service etc/systemd/system/smb.service etc/systemd/system/syncthing.service etc/systemd/system/mnt-hd\\x2da.mount etc/systemd/system/mnt-hd\\x2db.mount usr/lib/sysusers.d/20-hanoip-services.conf \
+		etc/systemd/system/hanoip-thermal.service etc/systemd/system/hanoip-led.service \
+		etc/systemd/journald.conf.d/90-hanoip.conf etc/tmpfiles.d/hanoip-rtc.conf etc/systemd/resolved.conf.d/10-hanoip.conf etc/systemd/coredump.conf.d/10-hanoip.conf etc/systemd/system/hanoip-screen-off.service \
+		etc/pam.d/sudo
+}
+
 sha512sums="
-c08d16814bc9ab6df7d73ddd4ab5f7fb12f9c6800902308e30808055e01d49b0d5e5ef00eaf78d0c678504a07760de22ba561f5fa79b583cac02a10fd35eda7c  deviceinfo
+31c2313261288bd529257f7ea3f0d5c75f2e61c480648e915be2f2c1ebab7a9867570649e606b940173a7db3c39067d2008261b6db17a80816d8affe60205ac4  deviceinfo
 743097f8b5390e7a1b409c000dc896d6eadb7c61d2e99492c5de0382bf4a8efa2b85dedb4f08a18e90cc20694403f2c9ee15da626f6a29d97a8eb520725c503a  hanoip-charge-limit
 150faba5a14964a45e27b726386387b334633e03e33a0af2f0435b5c3def74c6c6c98bbd3945dd8508b9f6949fd7ff074cd8a30c6c0a7793bfbc732811d23dfc  hanoip-bot.rs
 9fdf675c97e65639e858b1aaf23ad5954c59c3758daa4d8cc13ecf7993ef67d1b13dbdcc82932a8407f64338606e0fe0adf73ee13a5276d20b54b2d51f568b64  hanoip-bot.initd
 514860f64c0094e8bdadee4e33e9f37219d9e59e5c35c1adab87697b757bec430d8cac91ccb6d8357b318b60c2538848f65a0f54c50289280013cd042af6fe22  hanoip-charge-limit.initd
-0d9158b940037d9ab2c3a21a4b971285958321e2c1e2319ca1b07e8310178bdc63fc97c89599e81657d115c5ce2121e2bb4023827006339f722e98506747d911  hanoip-led
+7ed3d6213561eabfb4fb608074676cb342bd7e42ae0b72ed5bf9c89655a9d15d50a71e09c3536970541c01bae69d40bbdcb109319314b27dd84e69adfd6e7519  hanoip-led
 26c02867b21d8c2094cce5045cff1923943d2ca8ea07ef6fa3b268f07b1b4696c825fd5cf34f7abb3565c5e2b16c7d8acc0264125b0ca3533aa322138334a10e  hanoip-led.initd
 856a5b5efcee9a5b47d0671eacf09a9b7c0f88142ff1a705789c4a9503e1bcd7409f2d355731701b4fd2f96dcbc9061403aebff803210c849919e2274f1ea5b9  hanoip-console.start
 26e122ade046004a2305f3d380d43e7fd9187f8819910e93afb43f3626a847c779ae9ec90bc1a6b60faf473fffa9d3bab33a458a036920ae31fcf6db243364e0  hanoip-cpufreq.start
@@ -172,18 +354,70 @@ d053952c44b67385f7adc7153df5bd95e970956a839380192a8c1d2bc4254be479711ac1833a1504
 808985c9506b74278ce7ab595e51db4aaacabefbfeefbf867efc8909b5847fc76ae6c819619463038925226a3cc7882290594960a7332bf1129a9ae463f91b21  hanoip-samba.nft
 ca6c611b6e2509e9116604586233c665eba858f7dce9329d08a072e79a67b8f00c11effcc47c53f8d5f8c28527a84d7664d270bfddea82c26202bc2eae112566  hanoip-ssh.nft
 e9ca1358374ffd74680d371dd99bfce32d51940e9ed1f60dcae301a85808fb4e46af01f8ddc13a2c1ed57777c1989a8c672178714f8d8b466ea695780ef3a974  hanoip-sshd.conf
-b2ab559ba68d5a6ee089dfc6da5e5740978106b064eabe52314a6a92057b35dc9f08dae2e13734da2858084930d62ab206e59792e807b1e5ea5810c67e1b4655  hanoip-status
+d82028a2c60597ece36fe739d51fd40e00bd32598368d8d31e75802619bb0ac309d0379be23ca827237ed77e46048fe40d29545cb4bae789c508ef3ffaf9c82c  hanoip-status
 651fc11e659280d87dad9047b4405031854f4d7d146c5510a6275a60957332e33769762b294f03810d571f8150c72d9240dcb703c3ac4c3130e58987588a0832  hanoip-tailscale-dns.start
 cd448c113f43af2cbf745d486c6754d9da469a401365d5f1d406a66f192cd46d0c10836a8077fccf994e766411aa3a19580d8e47c7dc0f97926235ef78a69d76  hanoip-tailscale.nft
-6d9367494b27aca76b2a68f82d06f6b11d2fe3c8ba3a28cfee4391d216ad730af0071d3229a375f7a823bf2bee82bdd9bf650616974fc89f38fd2f9dab66e1ef  hanoip-thermal
+1b32211aa125c35088f5e4ae916f0f01bfda90cbb38d7928ff7c58d8f70d5b457d5e4fbc568f7566beda10ce5a15101424490e26c98e670c2fac3941dd67de4b  hanoip-thermal
 e2718a5060419afccb775e70f07e91cd28df068b59e7712c9d1caa490869726f24655d9e22dc1b8c7dceee18b2671741980e65b7a8d778a2eb78c88154b01a9c  hanoip-thermal.initd
 9aa163137d78b802f924cb38341102abd7c36129689220587a1b4a26bc528c23ac27de7cff6c85f266d059a30d41df3a25c45b2f03cbdaaffacb083fee619619  hanoip-tqftpserv.initd
 d73f8a395f5f4a886322cc6dc042b1bbe5cdd0f0a7f92123350874b312f7884b52d7031bcd08299a1adece5f22abc2705be9b04f2b987f746c8af466c2502e61  hanoip-watchdog
 833a8bef7313c05857e423034ade9dc22724e850e2d5eff5f583cb779d370586b732acaa8e452c9acfca213b798fc1310e78ff1c2a5b3e2ddca9e0ac6b6cab3d  hanoip-watchdog.initd
+d9febdb60702e7f7249222379f5606e5dd76c0afaaec8bff2b5331f654ec74cb4278bf5e6c68bdd7e801239cbdf5a38a59e5a9e5ffa472bc8f8749e6bedd6366  hanoip-dashboard
+fc825b7148a181054778326f8595c2ba483c1e519495d46bd35cd1e612d8d4365969117180550da5e93cc40a9b52f5723e46a6c114b93490726260da7acd3241  hanoip-dashboard.service
+123071b96bb753cb017c28959fdc8f9a7bb479fd837ba46709a97409b40b86a66861de5ff4cf4a3520bb5fc64d570828e30f358268fb787995034d86e0d6acfd  org.freedesktop.login1.service
 777d1dfc321840b6569981fc552742bac0b6c64e48f68c458775121fc1056017c371903862657de2c16eb98ff8942e9d3fbb52261735341ab172ed60752eba20  pd-mapper-subsys-fallback.patch
 0669d496aaa63bc654f8ea63b6f51426035e72b587d11ed17cd960b07a341ecbf705fdbd93fb04f0e07b6ed11f7c93a25148446b7c4bc266778ae9ad2f54f6b0  tqftpserv-subsys-fallback.patch
 67d1da9821dc6589504d9d04ad8efbb589f81db70e1fbcdbf5f8ae809428967f09c070c62233a296f39909f4313db8d2215507d3612ff3d8f2d87c4513abe324  qrtr-1.0.tar.gz
 aa5a5eb672fc32ce9e7612f6763d3e4988be8178218d64655cd3713070f145bfc664e2b122fdd4573e271e36c24422a62bc81501574aed0190929cae19e10862  qrtr-$_qrtr_rev.tar.gz
 d8dda67fac505141fc021e66c563672e76dc8202358a2b493db8c4a6034dac27db1a0dcda04406ef001bb62cfcafe7c8f8343a3846c935525407d53551c9f6c4  pd-mapper-$_pdmapper_rev.tar.gz
 1e43ef53633baf8b06132dc84bf8274ab9cf96c7d5c4c99b31d908f03ed6e90fc1a67ade76220ef2ed87eac8be50f5ac2de554ec3a604f026054ba6609364a74  tqftpserv-1.3.tar.gz
+19fde2cdaa8d83a4a872ffba2c72c49ac04efb551809091bb9f921dfc87cf67003fea208a52a849b8263c4c816813b94f1f0ff8c42d06a90ac5592aee3578bca  hanoip-efs.service
+a8431f0fb9666e7a8497b80f5871028d7754c0876c62dfccfb5de3e27e3fb42952263ac89441ffb68e4fc346e68ad20f3725806c7e3263de2894079e942ac049  hanoip-efs
+fd5b8942888b782394186b76ee6c034a6be03a6782893c20edf6869f689b3d6a1a7359e9105ed54d76b7ca309be0af1958213b0404fa52ad8deb4c7e77429aaf  rmtfs.service
+58648aeee994e7cfb266ccb9f8fe18c6a5e6b88b9cc236faef10098970645a3492273dc13058ecba039d54e6456ceee574dbebca62f1ebe629a2b1a842a28541  hanoip-qrtr-ns.service
+5ad9768bed38513d396a0c9b99c0fef7d4adddf25334a7dc9e806e465bdbe85b11aa880ffed5b3e73e1570823d69a24e0a6085a741e7463b72a6eba892fd86c6  hanoip-pd-mapper.service
+2963e83dc006050e115a7b05030eab496a77cd8441b4adaedb75b0ee55ab6635c9d03cb30e704f69e936566e60c389d290ad33a71abbdd9a27b02cbb0c9daa98  tqftpserv.service
+923a500995e72a682f02b82c1d2aa4f9d12547b3dca9f4be65b13465351c202391e9bab2aa29b6a44527cb5b7e651111c21ea029c98b7ef5a4a68ea1cb6bf0d0  hanoip-modem.service
+a62448fe18a3b614326fdd792ee47d35bc3fb6e889e18bef1f702b1fef21a7d32ea1816c364075059e59e4136d00d12cc60a66710937d051e2e792331414a699  hanoip-modem-load-modules
+c693550e80060eb014d7662950b3f656f0db14fec5a43f005f1a9755ff780b3e49b3c6943865fe808e6df5beeaafad7b616b45955ada3655a78fe1362ccceb22  hanoip-modem-start
+bb38ad3af398998b4d0d4635af3a1bc687893d41bab945ba1a1e2548ba95205f6ce2597000af1f39487b34948eff07a7ff8978aae65ce6caf66385b70749ce5d  hanoip-charge.service
+61d31f8254e0ffd06b12aba2bf5a67f996892471b25789e197e61245958eb521b6e40319cfe84943285604f1ea44e6af290d1fa8abacd5a1123642d17ff77b7c  hanoip-charge-pre
+4c4b597cd650a58aff0cf9de4d0542a8d098b782f15d7100fb9c8f8f244b614d016c67cb0b1780bc122c2cfd082f655cdd22753379ad624d272aaaeb5d749348  hanoip-usb-net.service
+8ba7cc4daef2032ecaef7c325b4232c05a0a52a6c2d552cffdd2a5cab970bb31a60bf9cf10cbc134d93562e3a603d5b64196751553d8c6b4db248d46685f6bb8  hanoip-usb-net
+be755f45b6e571085fb0c667607cbf9c0377a93c5d28b1f379ccda82af693896b88a6794acd82c088f437313f9e445dc7938bdddcd6ec0130b3c7bc882287a0c  hanoip-slot-mark.service
+6f05f43efec77604c6763e58d00ccd8b7b353eeac919f3cfb2380774c4b9cbe8dae83bbea0133b5332f0c4ebe8b7eb480cd1a4c5b6f107282dd9f2831aa1921b  hanoip-ml-slot
+1be0e261b8499dbafea1ef33b224b75546e69e28fd8d3383b402a5b4b7d292355a58f522654133b937e0e5d8582c003ea900a7bee2bfe14364ede3dcb19267d0  hanoip-bot.service
+ace468554ecfaac9daef10e75acada7c9c9e5b76d818a4e0b4a31c47de62701da2013def363e37d7afc8350d3f72c88e5d6135cf5c7dce04eb85d6a64d4c7e30  hanoip-guard.service
+4fd06ee5b2f97d3148dd71220fc3f2853cad18168c2ff6975b3443ec0d457601292a8654d8cbfc6847aa3aec21865857cb956b28151f40014da198fe2683fe5e  hanoip-guard
+339e81c5ab1f60f73f24a818c38d3d0a101c116e9fbadebebabd5d9b5792b427b8c4f10e36255f45a34033f9c74f1582d705be5cfa9375e07fc37346e6c2db82  hanoip-deadman.service
+72a3ed7770422b529291ff86427605a7d04e06029c08ea59513723a6444369e267aa5f821a4b1ac9b5ce2da8c5a86832187187740f0d0dedcb83e99df858e162  hanoip-deadman
+97526ea1e42ad7a3cd649a5701e4c4b1fb492ba57564a33fb0fcc6a5d5079a1a0800caeb9566c968a606602a16c5c896e2225f03ec80657d850de4fa8ee9e6c6  hanoip-battery.service
+2b40a94535215717bb77805a63262f8f2cf9a117273a847b354d2fa9d2d0516b53113841b1ae66901b0415b884a556d8ab4e3305cff4ec38927c927eb9debc7f  hanoip-battery
+1d2bc548ec0ae0351aa303e8e9d71daecba6a9acbc1bb23af67ca4f875aadd15a125267eb4f588a1da3d3eca77a0b631759929bb662f974f56db6c60f0f322a9  hanoip-ml-up.service
+bdb9ce098d217ec2cfb34e01afa7f24966f1988592f579cda243f7e21ad182919e52890e45338ea3bcfff14a9914908e2f337963b704e15e10e00aef8c1fba74  hanoip-ml-networkmanager.conf
+fe1de4984e9fbd01f2d1b0d9b47f8e46014fd438e8dcaee8b292796b8d0d086cb8d36836a0be7d3da97c7d92133e42240e24dcc2171d26c018c3dc2a3a271adf  hanoip-ml-chrony
+fb9b0f62de9f74cf57ffde5efa25b0484852ead3de09fedb2eb754b39af75f6346533bcc09dfc370e1f3e013fe3f33f1e13b5d1440321cd652c83346a27d01fc  90-hanoip-watchdog.conf
+fc7ae62bf0f2e70299a2b35098ea42d7b5b7fa5729ed93ab5be6705c725481fe38f0a95d29558f1f59421922d375ce970fb0cf9ec6e6a08bb0a17401f89e7785  hanoip-ml-abl-slot
+ca85d44d47dfbf71723236f0ddc0d655da6d513584db3ab4b35ccfe98530ee796689bc88c2d59956a4b34f59c19b2f5e7a6375c1225d7e59f7328c46698d5c48  hanoip-ml-charge
+1e4e231251adc837fb9924251ded484329d4669a2ca43a6f00818ed45a72052bedd15e1e02620f601d1511e50714762da9a1f8669f457a645e6262dd35bc96bb  hanoip-ml.conf
+1ef6c1b720e3a034141cb0aa1bb9c9af79163125cdae51b88cf3f1a2f8ea885ee7c30d24bfeab1bd1b35b3dd483a6b386dee5d0e30544b1ef8f2cb2cc221dd6a  kernel-cmdline.mainline.conf
+6f5bb8bbb6b0c88fc3ded4702375050d46f9226c7e453af42475ffaeb443e63264e69e324e4ecf449c192ad9488a61b141999a7f592f915f541b9406aba993f9  hanoip-usb-gadget
+1bc1bbcc21170ace4e1f6610b39ca5f9545acf52cf18325d4724e79af44cb4626f18cf082f00d627d4ba41467c2e59de79e1f8b378fd9f8c5e75d3bdaaff7d30  hanoip-usb-gadget.service
+0e92cb2d320433beb390865698e38a8ebe6e5db87958a982accc929b1ad7b5ad5ab10146f1c7fa9a40a7006c0fc602a1d3b3e36577027b961cd848f91d4bf3a1  hanoip.preset
+a7d7f15455264025e1d9d411af7f733ea2d3bace44d3920e3d328b3596bf454494e2e11c83231836f317773b6d7c24517cd7335f305d619f649dcf75621692b0  hanoip-health
+f7a55fa78f777b6bd8f59faed0370ce2a4147db68e41f93136c13384ccee61b9121c3fb02edc2f4515f5ccd18fc5150bd51426ba629e3becd9efbab92fc7a192  hanoip-health.service
+e8b7ee04edbc67e19c2936a8971f05b217488e6f72f5498afc942d9e3db04a126670c9a989182e32bec9aac26936f5014472538ea4b2279f6b9e2472afd37a09  adguardhome.service
+46369919006d0b53419468cf48035eefa53411c63d1e418a80217c5dd81150d746710b4773a93c502540aaefc162d96e369cd341348def86f51cdcad2eb13abb  smb.service
+e30f6431ad38b980b3a78b5f2e3b1a353a2221c181da8a37fe5027643c1a5c736acc153faf269b3ad07a9c9eeabfa29e87513851896f953f1bde826646281028  syncthing.service
+02ebc0ec2287dd2efeab8a2dc8abe61064cf813734157d4e7019b611f1b1bda250abbafaf3d9cb99beae691c9f4b49d3287a8d1dabf52f0c30ffebe95464cc2b  hanoip-mnt-hd-a.mount
+920a0bc78577956eb5d2e422c54e6e1496b8266da2293c091ce12d1cc540cdcd22e590bfe5d12470a9cb7ec8067919f53326372c8fed567f6c0b57926d570796  hanoip-mnt-hd-b.mount
+34460edfad3916ce361bbbad3ac19fe0c907ee84170d097568395be01f0e07319f33c323dc770e90f0fd0b280e1d031a02afb4cc9cf22fa77e871a5255186d54  hanoip-sysusers.conf
+aa62ddba3548bbd2bf4643197818ab93acc75b5e2cfa96c40b3d9e7ea747c0baee71b4e922b231d68f6988b05dbdff6a2d0d4c67917181e0eda6caa3457fbec2  hanoip-thermal.service
+644a0fccd9530f924b2aa49697a47576052daaf9ec4365afc6a8d9732f5c18df6e637dd0811067a100bcbb814718494177d348da8afd3395f6ac36f8c4d77775  hanoip-led.service
+49ed0974130bc31c39776e2ec05a36d745945dd6af1e451641d2e2a169da4aed0fafb4817aed55f4017362c401398719e7fd2f019ff3d969ccbc62e68bab3d38  hanoip-journald.conf
+b79b4620d52dc03b7078b672c49e490c14b5ed5ea4704b4e78a7b0364b283e72215bc30087f4692df66e796a8afa4d636f97148287d4dd4ec30079ba02c5230d  hanoip-rtc.conf
+6c66d66a309862b55aa13713e1b42abf5a73dd1d20ffe78a8ffc3d51f13f772e2e63c248769a7485a3abd8a4f071e40f62df3d42a01369b14a8aa2d286478cd8  hanoip-resolved.conf
+d6a5690c49b697ec9afbe371d78b832375fe15f678b26cfb0f9c43caf0529d5318f2af6269d0ae008a7eda34b6acab0ebb0f64f3ae70f5e735d30dd65e86cf9f  hanoip-coredump.conf
+a7ea12a4ef0f76db8a4ea63159a4705cfa3e56c15b81a44f2e5b4096730963ccbe5ebb9ca68e8903f3d9374920506dc4a8eab51fca13300be887967630c8d9c3  hanoip-screen-off.service
+cc7712730d5aabe0b958f553cf0d1accde5812322839a854fbb761fc00c88ff73f9fe4a97b3d80219c2c3cc98cc7262915f27d17395395afee46eff8011fd795  hanoip-pam-sudo
 "

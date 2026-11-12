@@ -1,0 +1,39 @@
+From b1fa849bb945b9fb29e514fad13b773fbe69bfd8 Mon Sep 17 00:00:00 2001
+From: Jens Reidel <adrian@mainlining.org>
+Date: Thu, 18 Sep 2025 05:48:25 +0200
+Subject: [PATCH 053/194] arm64: dts: qcom: sm7150-xiaomi-common: raise l6c
+ voltage
+
+Signed-off-by: Jens Reidel <adrian@mainlining.org>
+---
+ arch/arm64/boot/dts/qcom/sm7150-xiaomi-common.dtsi | 10 ++++++----
+ 1 file changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-common.dtsi b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-common.dtsi
+index 4d13019d7..72ebfcf7d 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-common.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-common.dtsi
+@@ -369,14 +369,16 @@ vreg_l5c_1p8: ldo5 {
+ 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+ 		};
+ 
++		/*
++		 * Downstream specifies a range of 1648-3100mV.
++		 * Tighten the range to 3000-3100mV for reliable touchscreen
++		 * initialization.
++		 */
+ 		vddpx_2:
+ 		vreg_l6c_3p0: ldo6 {
+-			regulator-min-microvolt = <1648000>;
++			regulator-min-microvolt = <3000000>;
+ 			regulator-max-microvolt = <3100000>;
+ 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+-			regulator-allow-set-load;
+-			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
+-						   RPMH_REGULATOR_MODE_HPM>;
+ 		};
+ 
+ 		vreg_l7c_3p0: ldo7 {
+-- 
+2.43.0
+

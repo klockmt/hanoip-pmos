@@ -1,0 +1,40 @@
+From 5eec380aa4ab2e650d96c77e7b852a468fb28402 Mon Sep 17 00:00:00 2001
+From: Aleks <aleks.spv@gmail.com>
+Date: Wed, 21 Oct 2026 11:02:40 +0600
+Subject: [PATCH 145/194] arm64: dts: qcom: sm7150: Use gpio function for the
+ WCD937x reset pin
+
+LPI gpio6 drives the WCD937x reset line. The codec driver toggles it
+through reset-gpios, which requires the pin to be muxed as a GPIO, not
+as cdc_pdm_rx.
+
+Signed-off-by: Aleks <aleks.spv@gmail.com>
+---
+ arch/arm64/boot/dts/qcom/sm7150.dtsi | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/sm7150.dtsi b/arch/arm64/boot/dts/qcom/sm7150.dtsi
+index a5ce5dcdf..5a47b8944 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm7150.dtsi
+@@ -4764,14 +4764,15 @@ data-pins {
+ 
+ 			wcd9375_reset_active: wcd9375-reset-active-state {
+ 				pins = "gpio6";
+-				function = "cdc_pdm_rx";
++				function = "gpio";
+ 				drive-strength = <16>;
++				bias-disable;
+ 				output-high;
+ 			};
+ 
+ 			wcd9375_reset_sleep: wcd9375-reset-sleep-state {
+ 				pins = "gpio6";
+-				function = "cdc_pdm_rx";
++				function = "gpio";
+ 				drive-strength = <16>;
+ 				bias-disable;
+ 				output-low;
+-- 
+2.43.0
+

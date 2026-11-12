@@ -1,0 +1,267 @@
+From 116911cdc33c2184af787c9fae0ed527ba3ef22d Mon Sep 17 00:00:00 2001
+From: hanoip <hanoip@localhost>
+Date: Sun, 25 Oct 2026 21:36:01 +0000
+Subject: [PATCH 160/194] arm64: dts: qcom: sm7150: keep one set of LPASS audio
+ nodes
+
+PR #65 and PR #60 both add the TX/RX/VA macros and SoundWire controllers
+to sm7150.dtsi, under different names, which duplicates codec@62f20000.
+Keep the PR #65 nodes (codec@, soundwire@, swr_tx/swr_rx) in the SoC file
+and move the values PR #60 tuned for davinci (TX wakeup interrupt, port
+tables, VA clocks and micbias) into the davinci board file.
+---
+ .../boot/dts/qcom/sm7150-xiaomi-davinci.dtsi  |  68 +++++++++-
+ arch/arm64/boot/dts/qcom/sm7150.dtsi          | 128 ------------------
+ 2 files changed, 62 insertions(+), 134 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi
+index 07c4ed9b1..87256766b 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-davinci.dtsi
+@@ -140,7 +140,7 @@ platform {
+ 			};
+ 
+ 			/*
+-			 * Use DAI 1 of swr2, not DAI 0. The controller registers
++			 * Use DAI 1 of swr_tx, not DAI 0. The controller registers
+ 			 * one DAI per port and assigns the direction by index
+ 			 * (qcom_swrm_register_dais()): the first num_dout_ports
+ 			 * DAIs are playback only, the rest are capture only.
+@@ -148,10 +148,10 @@ platform {
+ 			 * Pin0" is playback and never gets hw_params in a capture
+ 			 * link - and sdw_stream_add_master() is called from there,
+ 			 * leaving the master ports unprogrammed. qcm6490-idp can
+-			 * use <&swr1 0> because its TX controller has no dout port.
++			 * use <&swr_rx 0> because its TX controller has no dout port.
+ 			 */
+ 			codec {
+-				sound-dai = <&wcd9375 1>, <&swr2 1>, <&txmacro 0>;
++				sound-dai = <&wcd9375 1>, <&swr_tx 1>, <&txmacro 0>;
+ 			};
+ 		};
+ 
+@@ -688,7 +688,63 @@ amp_int_default: amp-int-default-state {
+ 	};
+ };
+ 
+-&swr1 {
++/*
++ * SoC audio nodes come from sm7150.dtsi (PR #65 layout). PR #60 tuned the
++ * davinci WCD9375 against its own copy of these nodes; keep those values
++ * here so the board behaves as tested.
++ */
++&swr_tx {
++	/*
++	 * The TX bus needs the second, wakeup interrupt: capture traffic
++	 * originates at the codec, so the bus has to wake itself. Without it
++	 * the SoundWire device never leaves runtime suspend and the sound card
++	 * fails to probe.
++	 */
++	interrupts = <GIC_SPI 296 IRQ_TYPE_LEVEL_HIGH>,
++		     <GIC_SPI 500 IRQ_TYPE_LEVEL_HIGH>;
++	interrupt-names = "core", "wakeup";
++	label = "TX";
++
++	qcom,din-ports = <6>;
++	qcom,dout-ports = <1>;
++	qcom,ports-sinterval-low =		/bits/ 8 <0xff 0x01 0x01 0x03 0x03 0xff 0xff>;
++	qcom,ports-offset1 =			/bits/ 8 <0xff 0x01 0x00 0x01 0x00 0xff 0xff>;
++	qcom,ports-offset2 =			/bits/ 8 <0xff 0x00 0x00 0x00 0x00 0xff 0xff>;
++	qcom,ports-hstart =			/bits/ 8 <0xff 0xff 0xff 0xff 0xff 0xff 0xff>;
++	qcom,ports-hstop =			/bits/ 8 <0xff 0xff 0xff 0xff 0xff 0xff 0xff>;
++	qcom,ports-word-length =		/bits/ 8 <0xff 0xff 0xff 0xff 0xff 0xff 0xff>;
++	qcom,ports-block-pack-mode =		/bits/ 8 <0xff 0xff 0xff 0xff 0xff 0xff 0xff>;
++	qcom,ports-block-group-count =		/bits/ 8 <0xff 0xff 0xff 0xff 0xff 0xff 0xff>;
++	qcom,ports-lane-control =		/bits/ 8 <0xff 0x00 0x01 0x00 0x01 0xff 0xff>;
++};
++
++&swr_rx {
++	label = "RX";
++
++	qcom,din-ports = <1>;
++	qcom,dout-ports = <6>;
++	qcom,ports-sinterval-low =	/bits/ 8 <0x03 0x1f 0x1f 0x07 0x00 0xff 0xff>;
++	qcom,ports-offset1 =		/bits/ 8 <0x00 0x00 0x0b 0x01 0x00 0xff 0xff>;
++	qcom,ports-offset2 =		/bits/ 8 <0x00 0x00 0x0b 0x00 0x00 0xff 0xff>;
++	qcom,ports-hstart =		/bits/ 8 <0xff 0x03 0xff 0xff 0xff 0xff 0xff>;
++	qcom,ports-hstop =		/bits/ 8 <0xff 0x06 0xff 0xff 0xff 0xff 0xff>;
++	qcom,ports-word-length =	/bits/ 8 <0x01 0x07 0x04 0xff 0xff 0xff 0xff>;
++	qcom,ports-block-pack-mode =	/bits/ 8 <0xff 0x00 0x01 0xff 0xff 0xff 0xff>;
++	qcom,ports-block-group-count =	/bits/ 8 <0xff 0xff 0xff 0xff 0x00 0xff 0xff>;
++	qcom,ports-lane-control =	/bits/ 8 <0x01 0x00 0x00 0x00 0x00 0xff 0xff>;
++};
++
++&vamacro {
++	clocks = <&q6afecc LPASS_CLK_ID_TX_CORE_MCLK LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
++		 <&q6afecc LPASS_CLK_ID_TX_CORE_NPL_MCLK LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
++		 <&q6afecc LPASS_HW_MACRO_VOTE LPASS_CLK_ATTRIBUTE_COUPLE_NO>;
++	clock-names = "mclk", "npl", "macro";
++
++	qcom,dmic-sample-rate = <2400000>;
++	vdd-micb-supply = <&vreg_l15a_1p8>;
++};
++
++&swr_rx {
+ 	status = "okay";
+ 
+ 	wcd_rx: codec@0,4 {
+@@ -700,7 +756,7 @@ wcd_rx: codec@0,4 {
+ 	};
+ };
+ 
+-&swr2 {
++&swr_tx {
+ 	status = "okay";
+ 	wcd_tx: codec@0,3 {
+ 		compatible = "sdw20217010a00";
+@@ -719,7 +775,7 @@ wcd_tx: codec@0,3 {
+ 		 * which uses <1 1 2 3>: the driver looks the port config up
+ 		 * as pconfig[m_port], and the sm7150 TX controller has one
+ 		 * dout port, so the microphone inputs start at port 2 - which
+-		 * is also why the qcom,ports-* arrays of swr2 begin with 0xff.
++		 * is also why the qcom,ports-* arrays of swr_tx begin with 0xff.
+ 		 */
+ 		qcom,tx-port-mapping = <2 2 3 4>;
+ 		qcom,tx-channel-mapping = /bits/ 8 <1 2 1 1 2 3 3 4 1 2 3 4>;
+diff --git a/arch/arm64/boot/dts/qcom/sm7150.dtsi b/arch/arm64/boot/dts/qcom/sm7150.dtsi
+index 55050b83e..add56b100 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm7150.dtsi
+@@ -4671,134 +4671,6 @@ wifi: wifi@18800000 {
+ 			status = "disabled";
+ 		};
+ 
+-		txmacro: txmacro@62ec0000 {
+-			compatible = "qcom,sm7150-lpass-tx-macro",
+-				     "qcom,sm8250-lpass-tx-macro";
+-			reg = <0 0x62ec0000 0 0x1000>;
+-
+-			clocks = <&q6afecc LPASS_CLK_ID_TX_CORE_MCLK LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
+-				 <&q6afecc LPASS_CLK_ID_TX_CORE_NPL_MCLK  LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
+-				 <&q6afecc LPASS_HW_MACRO_VOTE LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
+-				 <&vamacro>;
+-			clock-names = "mclk", "npl", "macro", "fsgen";
+-
+-			pinctrl-names = "default";
+-			pinctrl-0 = <&tx_swr_active>;
+-
+-			#clock-cells = <0>;
+-			clock-output-names = "mclk";
+-			#sound-dai-cells = <1>;
+-			status = "disabled";
+-		};
+-
+-		swr2: soundwire-controller@62ed0000 {
+-			reg = <0 0x62ed0000 0 0x2000>;
+-			compatible = "qcom,soundwire-v1.5.1";
+-			status = "disabled";
+-			/*
+-			 * The TX bus needs the second, wakeup interrupt: capture
+-			 * traffic originates at the codec, so the bus has to wake
+-			 * itself. Without it the SoundWire device never leaves
+-			 * runtime suspend, regmap-irq keeps reporting "IRQ sync
+-			 * failed to resume" and the sound card fails to probe.
+-			 * The RX bus does not need it - it is woken by the
+-			 * playback side.
+-			 */
+-			interrupts = <GIC_SPI 296 IRQ_TYPE_LEVEL_HIGH>,
+-				     <GIC_SPI 500 IRQ_TYPE_LEVEL_HIGH>;
+-			interrupt-names = "core", "wakeup";
+-
+-			clocks = <&txmacro>;
+-			clock-names = "iface";
+-			label = "TX";
+-
+-			qcom,din-ports = <6>;
+-			qcom,dout-ports = <1>;
+-			qcom,ports-sinterval-low =		/bits/ 8 <0xff 0x01 0x01 0x03 0x03 0xff 0xff>;
+-			qcom,ports-offset1 =			/bits/ 8 <0xff 0x01 0x00 0x01 0x00 0xff 0xff>;
+-			qcom,ports-offset2 =			/bits/ 8 <0xff 0x00 0x00 0x00 0x00 0xff 0xff>;
+-			qcom,ports-hstart =			/bits/ 8 <0xff 0xff 0xff 0xff 0xff 0xff 0xff>;
+-			qcom,ports-hstop =			/bits/ 8 <0xff 0xff 0xff 0xff 0xff 0xff 0xff>;
+-			qcom,ports-word-length =		/bits/ 8 <0xff 0xff 0xff 0xff 0xff 0xff 0xff>;
+-			qcom,ports-block-pack-mode =		/bits/ 8 <0xff 0xff 0xff 0xff 0xff 0xff 0xff>;
+-			qcom,ports-block-group-count =		/bits/ 8 <0xff 0xff 0xff 0xff 0xff 0xff 0xff>;
+-			qcom,ports-lane-control =		/bits/ 8 <0xff 0x00 0x01 0x00 0x01 0xff 0xff>;
+-
+-			#sound-dai-cells = <1>;
+-			#address-cells = <2>;
+-			#size-cells = <0>;
+-		};
+-
+-		rxmacro: rxmacro@62ee0000 {
+-			compatible = "qcom,sm7150-lpass-rx-macro",
+-				     "qcom,sm8250-lpass-rx-macro";
+-			reg = <0 0x62ee0000 0 0x1000>;
+-
+-			clocks = <&q6afecc LPASS_CLK_ID_TX_CORE_MCLK LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
+-				 <&q6afecc LPASS_CLK_ID_TX_CORE_NPL_MCLK  LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
+-				 <&q6afecc LPASS_HW_MACRO_VOTE LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
+-				 <&vamacro>;
+-			clock-names = "mclk", "npl", "macro", "fsgen";
+-
+-			pinctrl-names = "default";
+-			pinctrl-0 = <&rx_swr_active>;
+-
+-			#clock-cells = <0>;
+-			clock-output-names = "mclk";
+-			#sound-dai-cells = <1>;
+-
+-			status = "disabled";
+-		};
+-
+-
+-		swr1: soundwire-controller@62ef0000 {
+-			reg = <0 0x62ef0000 0 0x2000>;
+-			compatible = "qcom,soundwire-v1.5.1";
+-			status = "disabled";
+-			interrupts = <GIC_SPI 297 IRQ_TYPE_LEVEL_HIGH>;
+-
+-			clocks = <&rxmacro>;
+-			clock-names = "iface";
+-			label = "RX";
+-
+-			qcom,din-ports = <1>;
+-			qcom,dout-ports = <6>;
+-
+-			qcom,ports-sinterval-low =      /bits/ 8 <0x03 0x1f 0x1f 0x07 0x00 0xff 0xff>;
+-			qcom,ports-offset1 =            /bits/ 8 <0x00 0x00 0x0b 0x01 0x00 0xff 0xff>;
+-			qcom,ports-offset2 =            /bits/ 8 <0x00 0x00 0x0b 0x00 0x00 0xff 0xff>;
+-			qcom,ports-hstart =             /bits/ 8 <0xff 0x03 0xff 0xff 0xff 0xff 0xff>;
+-			qcom,ports-hstop =              /bits/ 8 <0xff 0x06 0xff 0xff 0xff 0xff 0xff>;
+-			qcom,ports-word-length =        /bits/ 8 <0x01 0x07 0x04 0xff 0xff 0xff 0xff>;
+-			qcom,ports-block-pack-mode =    /bits/ 8 <0xff 0x00 0x01 0xff 0xff 0xff 0xff>;
+-			qcom,ports-block-group-count =  /bits/ 8 <0xff 0xff 0xff 0xff 0x00 0xff 0xff>;
+-			qcom,ports-lane-control =       /bits/ 8 <0x01 0x00 0x00 0x00 0x00 0xff 0xff>;
+-
+-			#sound-dai-cells = <1>;
+-			#address-cells = <2>;
+-			#size-cells = <0>;
+-		};
+-
+-		vamacro: codec@62f20000 {
+-			compatible = "qcom,sm7150-lpass-va-macro",
+-				     "qcom,sm8250-lpass-va-macro";
+-			reg = <0 0x62f20000 0 0x1000>;
+-
+-			clocks = <&q6afecc LPASS_CLK_ID_TX_CORE_MCLK LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
+-				 <&q6afecc LPASS_CLK_ID_TX_CORE_NPL_MCLK LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
+-				 <&q6afecc LPASS_HW_MACRO_VOTE LPASS_CLK_ATTRIBUTE_COUPLE_NO>;
+-			clock-names = "mclk", "npl", "macro";
+-
+-			qcom,dmic-sample-rate = <2400000>; // insisted by the controller
+-			vdd-micb-supply = <&vreg_l15a_1p8>; // insisted by the controller
+-
+-			#clock-cells = <0>;
+-			clock-output-names = "fsgen";
+-			#sound-dai-cells = <1>;
+-
+-			status = "disabled";
+-		};
+-
+ 		lpass_tlmm: pinctrl@62b52000 {
+ 			compatible = "qcom,sm7150-lpass-lpi-pinctrl";
+ 			/* SSC range: <0 0x62b40000 0 0x12000> */
+-- 
+2.43.0
+

@@ -17,12 +17,29 @@ done
 
 sums=$(mktemp)
 trap 'rm -f "$sums"' EXIT
-# 2. every APKBUILD source exists and its checksum matches (the kernel tarball is skipped: it is downloaded)
+# 2. every APKBUILD source exists, is in git and its checksum matches (tarballs are skipped: they are downloaded).
+# A source that is only in the working tree builds here and fails on a clean clone, which happened to the mainline
+# subpackage's thirteen copies.
+# Also guard: every local source= entry (not a URL, not name::url) must be tracked by git.
 for d in pmaports/device/*/*/; do
 	[ -f "$d/APKBUILD" ] || continue
+	# Check git-tracked for all local source= entries
+	srcdir= . "$d/APKBUILD"
+	for s in $source; do
+		case $s in
+			*://*) ;;                          # skip URLs
+			*::*) ;;                           # skip name::url
+			*)
+				f="${s##*/}"
+				git ls-files --error-unmatch "$d$f" >/dev/null 2>&1 || echo "untracked source: $d$f"
+				;;
+		esac
+	done
+	# Check checksums
 	grep -E '^[0-9a-f]{128}  ' "$d/APKBUILD" | while read -r sum name; do
-		case $name in *.tar.gz) continue;; esac
+		case $name in *.tar.gz|*.tar.xz) continue;; esac
 		[ -f "$d/$name" ] || { echo "missing source: $d$name"; continue; }
+		git ls-files --error-unmatch "$d$name" >/dev/null 2>&1 || { echo "untracked source: $d$name"; continue; }
 		[ "$(sha512sum "$d/$name" | cut -d' ' -f1)" = "$sum" ] || echo "stale checksum: $d$name"
 	done
 done > "$sums"
@@ -41,16 +58,23 @@ files=$(git ls-files; git ls-files -o --exclude-standard)
 # a longer name that contains it (a GitHub account, say) does not match. Both new patterns report file:line
 # and not the line, so a hit does not copy the value into the output.
 user=$(sed -n 's/^HANOIP_USER=//p' .env 2>/dev/null | head -1 | tr -d "\"'")
+# People who asked not to be named: HANOIP_PRIVATE_NAMES in .env (words, any case). Reported as file:line only.
+names=$(sed -n 's/^HANOIP_PRIVATE_NAMES=//p' .env 2>/dev/null | head -1 | tr -d "\"'")
 hits=$(for f in $files; do [ -f "$f" ] || continue; case $f in *.dtb) continue;; esac
-	grep -InE '([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}' "$f" | grep -v '00:00:00:00:00:00' | sed "s|^|$f:|"
+	grep -InE '([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}' "$f" | grep -v -e '00:00:00:00:00:00' -e 'AA:BB:CC:DD:EE:FF' | sed "s|^|$f:|"
 	grep -InE 'androidboot\.serialno=[^X"[:space:]]' "$f" | sed "s|^|$f:|"
 	grep -InE 'linux,seriallow *= *<0x0*[1-9a-f]' "$f" | sed "s|^|$f:|"
 	grep -InE 'mmi,battid *= *"[^R]' "$f" | sed "s|^|$f:|"
 	grep -InE '^(battid|pcb-part-no): *[^R ]' "$f" | sed "s|^|$f:|"
 	grep -InE '(^|[[:space:]"'"'"'=:(])/home/[a-z][a-z0-9_-]*/' "$f" | sed "s|^|$f:|"
-	grep -InE '[A-Za-z0-9._-]+@[A-Za-z0-9-]+\.(com|org|net|io|dev)' "$f" | grep -v 'noreply@' | sed "s|^|$f:|"
+	# The upstream patches carry their authors' public e-mails, which are part of the attribution; the kernel package
+	# holds identical copies of them (scripts/test-mainline-kernel-package).
+	case $f in kernel/mainline/patches/*|kernel/mainline/uboot/base/*|pmaports/device/testing/linux-motorola-hanoip-mainline/*.patch) ;; *)
+		grep -InE '[A-Za-z0-9._-]+@[A-Za-z0-9-]+\.(com|org|net|io|dev)' "$f" | grep -v 'noreply@' | sed "s|^|$f:|" ;;
+	esac
 	grep -InE '(^|[^0-9A-Za-z])[0-9]{15}([^0-9A-Za-z]|$)' "$f" | cut -d: -f1 | sed "s|^|$f:|"
 	if [ -n "$user" ]; then grep -InwF -- "$user" "$f" | cut -d: -f1 | sed "s|^|$f:|"; fi
+	for nm in $names; do grep -InwiF -- "$nm" "$f" | cut -d: -f1 | sed "s|^|$f:|"; done
 done)
 if [ -n "$hits" ]; then echo "$hits" | cut -c1-160 | while read -r l; do fail "private-looking data: $l"; done; bad=1; else ok "no private-looking data in committable files"; fi
 # the DTB is binary: check the same fields through fdtget when available

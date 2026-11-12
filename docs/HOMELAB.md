@@ -5,6 +5,10 @@ back. What works is in [`STATUS.md`](STATUS.md); what broke and why is in [`PITF
 investigations are in [`../NOTES.md`](../NOTES.md). Paths and addresses are variables from `.env`
 (`.env.example` lists them): nothing about your phone goes in the repository.
 
+**This page still describes the 4.14 server (OpenRC, chrony), which no longer runs.** Since 2026-11-10 the phone runs
+Duranium: the same services as systemd units, `systemd-timesyncd` for the clock, updates through `systemd-sysupdate`.
+Until this page is rewritten, [`DURANIUM.md`](DURANIUM.md) (the sections dated 2026-11-11 and after) is what is true.
+
 ## Reaching it
 
 - **SSH accepts only two paths: the USB cable and the tailnet.** The file `/etc/nftables.d/02_hanoip-ssh.nft` (from the
@@ -23,9 +27,34 @@ investigations are in [`../NOTES.md`](../NOTES.md). Paths and addresses are vari
 - Large transfers over the USB (NCM) network take it down until a reboot (issue #2). Throttle every copy to 1 MB/s with
   `pv -L 1m`; `push-firmware`, `push-modules` and `flash-boot-ssh` already do.
 
+## Status dashboard
+
+`hanoip-dashboard` (device package, `hanoip-dashboard.service`, a dynamic user, no root and no sudo) serves one page
+and its data on the Tailscale address only, port 8080:
+
+- `http://<tailnet-address>:8080/` is the page; it asks `/api/status` every 5 s, and only while the tab is visible.
+- `/api/status` is the JSON: the `/status` text, system (uptime, reboots, OOM kills, RAM, zram), boot (slot from the
+  ABL, and whether it is marked successful), storage (the NAS disk and its last scrub), network (Wi-Fi, Tailscale,
+  Samba on the tailnet), services, watchdog and versions (kernel and the package's pkgrel).
+- A field that cannot be read is `null` and the page shows `n/a`; nothing is approximated.
+- The address is read at start (`tailscale ip -4`), so nothing about it is written in the repo.
+- `hanoip-dashboard --data` prints the same JSON once, on the phone, for a check.
+
+Checked on 2026-11-12: answers from the tailnet; refused on the USB address; no answer on the LAN address.
+
 ## Services
 
-All OpenRC, on by default, started by the device package.
+**On Duranium (systemd; written and tested without the phone, not running on it yet):** the device package's mainline subpackage
+installs the units and its preset enables them. `hanoip-charge` (the 75-80 % limit), `hanoip-thermal`, `hanoip-led`, `hanoip-bot`,
+`hanoip-modem` and the tailnet (`tailscaled`) as before; `adguardhome`, `smb` and `syncthing` stay off until `scripts/restore-server`
+has put their data back, and `smb` and `syncthing` also while the NAS disk (`mnt-hd\x2da.mount`, `mnt-hd\x2db.mount`, labels `hd-a`
+and `hd-b`) is away. Time comes from `systemd-timesyncd`, the zram swap from `postmarketos-zram-swap`, and the 4.14's `hanoip-qgd` is
+not needed (the mainline gauge reports the percentage). Switched off: avahi, rtkit, systemd-oomd, the tty1 login, LLMNR and mDNS in
+resolved (its stub stays; AdGuard binds loopback only), core files; the backlight is switched off at boot. `systemctl is-system-running`
+should say `running`. The login user (UID 1001) has sudo-rs; `scripts/restore-server password` and `harden` set that up and then turn root
+login off. The table below is the frozen 4.14 server (OpenRC).
+
+All OpenRC (the frozen 4.14 server), on by default, started by the device package.
 
 | Service | What it does | Check |
 |---|---|---|

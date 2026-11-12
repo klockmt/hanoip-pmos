@@ -7,12 +7,12 @@ deviceinfo_name="Motorola Moto G (60)"
 deviceinfo_manufacturer="Motorola"
 deviceinfo_codename="motorola-hanoip"
 deviceinfo_year="2021"
-deviceinfo_dtb="qcom/sdmmagpie-hanoi-base"
+deviceinfo_dtb_downstream="qcom/sdmmagpie-hanoi-base"
 deviceinfo_append_dtb="false"
 deviceinfo_arch="aarch64"
 # A package update regenerates and flashes boot/vendor_boot. A vendor_boot with console=tty0 hung the phone once
 # (issue #21); the command line below starts with the console that boots (scripts/test-deviceinfo).
-deviceinfo_flash_kernel_on_update="true"
+deviceinfo_flash_kernel_on_update_downstream="true"
 
 # Device related
 deviceinfo_gpu_accelerated="false"
@@ -27,8 +27,8 @@ deviceinfo_flash_method="fastboot"
 # Non-Android options from the stock vendor_boot cmdline. The ABL rewrites every console= to console=null
 # (patch 0004 turns that into tty0); ignore_loglevel shows the whole boot log on the screen. Starts with the console of
 # the vendor_boot that boots: console=tty0 there hung the phone (issue #21, scripts/test-deviceinfo).
-deviceinfo_kernel_cmdline="console=ttyMSM0,115200n8 lpm_levels.sleep_disabled=1 service_locator.enable=1 swiotlb=1 loop.max_part=7 printk.devkmsg=on ignore_loglevel fbcon=font:SUN12x22 hanoip_splashfb.screen_off=1"
-deviceinfo_generate_bootimg="true"
+deviceinfo_kernel_cmdline_downstream="console=ttyMSM0,115200n8 lpm_levels.sleep_disabled=1 service_locator.enable=1 swiotlb=1 loop.max_part=7 printk.devkmsg=on ignore_loglevel fbcon=font:SUN12x22 hanoip_splashfb.screen_off=1"
+deviceinfo_generate_bootimg_downstream="true"
 deviceinfo_bootimg_qcdt="false"
 # The ABL only runs header v3 images; DTB and dtbo stay stock (vendor_boot/dtbo).
 deviceinfo_header_version="3"
@@ -47,3 +47,9 @@ deviceinfo_flash_offset_tags="0x00000100"
 deviceinfo_rootfs_image_sector_size="4096"
 # 1 GB swap file on the rootfs: 3.6 GB of RAM is little for a server running for weeks
 deviceinfo_swap_size_recommended="1024"
+
+# Mainline kernel overrides (EFI path, Duranium)
+deviceinfo_dtb_mainline="qcom/sm7150-motorola-hanoip"
+deviceinfo_kernel_cmdline_mainline="console=ttyMSM0,115200n8 panic=5 oops=panic"
+deviceinfo_generate_bootimg_mainline="false"
+deviceinfo_flash_kernel_on_update_mainline="false"

@@ -1,0 +1,81 @@
+#!/bin/sh
+# Builds the Duranium image for the hanoip with Nura's duranium-build, in its mkosi container (podman, no sudo).
+# It puts this repo's device package into the pmaports checkout that duranium-build reads, and the apks that
+# pmbootstrap built (scripts/pmb build --force device-motorola-hanoip linux-motorola-hanoip-mainline) into
+# duranium-build's mkosi.packages, which mkosi turns into a local apk repository. Nothing here touches the phone.
+# The output is $DURANIUM_DIR/mkosi.output/hanoip_console_edge*/. DRY_RUN=1 only prints.
+# Usage: scripts/duranium-image [mkosi build options]
+set -eu
+. "$(dirname "$0")/env.sh"
+dir=${HANOIP_DURANIUM_DIR:-$HANOIP_SRC_DIR/duranium-build}
+repo=$PMB_WORK/packages/edge/aarch64
+[ -d "$dir/scripts" ] || { echo "no duranium-build checkout in $dir (git clone https://gitlab.nura.eco/nura/duranium-build.git)" >&2; exit 1; }
+
+rel=$(sed -n 's/^pkgrel=//p' "$HANOIP_ROOT/pmaports/device/testing/device-motorola-hanoip/APKBUILD")
+kver=$(sed -n 's/^pkgver=//p' "$HANOIP_ROOT/pmaports/device/testing/linux-motorola-hanoip-mainline/APKBUILD")
+krel=$(sed -n 's/^pkgrel=//p' "$HANOIP_ROOT/pmaports/device/testing/linux-motorola-hanoip-mainline/APKBUILD")
+apks="device-motorola-hanoip-0-r$rel device-motorola-hanoip-kernel-mainline-0-r$rel device-motorola-hanoip-mainline-0-r$rel
+device-motorola-hanoip-modem-0-r$rel linux-motorola-hanoip-mainline-$kver-r$krel"
+
+# The packages come first: an old apk left in mkosi.packages would be installed in place of the new one.
+for a in $apks; do
+	[ -f "$repo/$a.apk" ] || { echo "$repo/$a.apk is missing: build it with scripts/pmb build --force" >&2; exit 1; }
+done
+run rm -rf "$dir/mkosi.packages"
+run mkdir -p "$dir/mkosi.packages"
+for a in $apks; do run cp "$repo/$a.apk" "$dir/mkosi.packages/"; done
+
+# build-image.py resolves the device from this pmaports checkout; git reset --hard keeps untracked directories.
+run mkdir -p "$dir/pmaports/device/testing"
+for p in device-motorola-hanoip linux-motorola-hanoip-mainline; do
+	run rm -rf "$dir/pmaports/device/testing/$p"
+	run cp -r "$HANOIP_ROOT/pmaports/device/testing/$p" "$dir/pmaports/device/testing/$p"
+done
+
+# Headless first boot (the phone's screen is off, so Duranium's on-screen wizard cannot run) and the way in: the login
+# user with the server's key, root by key only (no password hash may sit in the world-readable /usr), /etc/default_user so
+# the wizard is skipped (both under /etc: mkosi.finalize moves /etc into the base confext, and an /etc path under
+# usr/lib/confexts would end up nested one level too deep), and the vendor firmware from the collection. Built from .env into an extra tree that is never
+# committed; nothing private reaches the repository.
+x=$dir/hanoip-extra
+pub=${HANOIP_SSH_KEY:?}.pub
+fw=$HANOIP_COLLECTION_DIR/firmware/vendor/firmware_mnt/image
+[ -f "$pub" ] || { echo "no public key at $pub" >&2; exit 1; }
+[ -d "$fw" ] || { echo "no vendor firmware in $fw" >&2; exit 1; }
+if [ -n "${DRY_RUN:-}" ]; then
+	echo "+ extra tree in $x: user, authorized keys, /etc/default_user, sshd root-by-key, vendor firmware"
+else
+	rm -rf "$x"
+	mkdir -p "$x/usr/lib/sysusers.d" "$x/usr/lib/tmpfiles.d" "$x/usr/share/hanoip" \
+		"$x/etc/ssh/sshd_config.d" \
+		"$x/usr/lib/firmware/qcom/sm7150/motorola/hanoip" "$x/usr/lib/firmware/ath10k/WCN3990/hw1.0"
+	# 1001, not 1000: the 4.14's NAS share user (hdshare) is 1000 and owns files on the disk (hanoip-sysusers.conf).
+	printf 'u %s 1001 "%s" /home/%s /bin/sh\nm %s wheel\n' "$HANOIP_USER" "$HANOIP_USER" "$HANOIP_USER" "$HANOIP_USER" > "$x/usr/lib/sysusers.d/20-hanoip-user.conf"
+	cp "$pub" "$x/usr/share/hanoip/authorized_keys"
+	chmod 644 "$x/usr/share/hanoip/authorized_keys"
+	{
+		# No line for root: a tmpfiles C here copied the key to /root/.ssh at every boot (docs/PITFALLS.md).
+		printf 'd /root 0700 root root -\n'
+		printf 'd /home/%s 0700 %s %s -\nd /home/%s/.ssh 0700 %s %s -\n' "$HANOIP_USER" "$HANOIP_USER" "$HANOIP_USER" "$HANOIP_USER" "$HANOIP_USER" "$HANOIP_USER"
+		printf 'C /home/%s/.ssh/authorized_keys 0600 %s %s - /usr/share/hanoip/authorized_keys\n' "$HANOIP_USER" "$HANOIP_USER" "$HANOIP_USER"
+	} > "$x/usr/lib/tmpfiles.d/20-hanoip-ssh.conf"
+	printf '%s\n' "$HANOIP_USER" > "$x/etc/default_user"
+	printf '# Read before 60-hanoip-keys-only.conf (the first value wins): root by key, never by password.\nPermitRootLogin prohibit-password\n' \
+		> "$x/etc/ssh/sshd_config.d/50-hanoip-root-key.conf"
+	f=$x/usr/lib/firmware/qcom/sm7150/motorola/hanoip
+	# The *.jsn files are the protection-domain maps pd-mapper reads from the same directory as the remoteprocs' firmware: without them it
+	# stops with "no pd maps available" and the system stays degraded.
+	for n in "$fw"/adsp.* "$fw"/modem.* "$fw"/ipa_fws.* "$fw"/wlanmdsp.mbn "$fw"/*.jsn; do cp "$n" "$f/"; done
+	cp "$fw/bdwlan_hanoip_ipa.bin" "$x/usr/lib/firmware/ath10k/WCN3990/hw1.0/board.bin"
+fi
+
+cd "$dir"
+MKOSI=./scripts/mkosi-container
+export MKOSI
+# The UKI carries no DTB of its own: systemd-stub then leaves U-Boot's, the one every mainline boot of this phone ran with
+# (boot_with_embedded_fdt, docs/MAINLINE.md) and the one that carries the ABL's fixups. HANOIP_UKI_DTB=1 keeps the kernel
+# package's DTB in the UKI instead.
+dtb=--remove-files=/usr/lib/modules/*/dtb/qcom/sm7150-motorola-hanoip.dtb
+[ -z "${HANOIP_UKI_DTB:-}" ] || dtb=
+# shellcheck disable=SC2086
+run ./scripts/build-image.py device-motorola-hanoip ui-console --release=edge --extra-tree=hanoip-extra $dtb "$@"

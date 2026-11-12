@@ -1,0 +1,97 @@
+From 036d6fb337fe8db93bfc0a6a5de40abd3a452cc5 Mon Sep 17 00:00:00 2001
+From: hanoip <h@l>
+Date: Tue, 27 Oct 2026 16:18:47 -0300
+Subject: [PATCH 182/194] power: supply: qcom_qg: during charging follow only
+ the coulomb count
+
+Watching a real charge showed that the voltage based estimate cannot be used as
+a target while charging: its bias changes sign between phases. At 440 mA in
+constant current it reads ~7 points high (polarisation), but in taper at 360 mA
+it reads ~5 points low, because the IR subtraction (200 mOhm) is large while
+there is almost no polarisation left.
+
+With the previous logic the reported value either ran ahead (CC) or froze
+(taper, because the estimate sat below the reported value and only a positive
+delta could raise it).
+
+While charging, raise the value by the coulomb budget only, capped at 100. The
+OCV estimate is used at rest, where it is accurate, through the deadband, the
+bounded snap and the slow slew.
+---
+ drivers/power/supply/qcom_qg.c | 45 ++++++++++++++++------------------
+ 1 file changed, 21 insertions(+), 24 deletions(-)
+
+diff --git a/drivers/power/supply/qcom_qg.c b/drivers/power/supply/qcom_qg.c
+index 1507ab49b..07c15ce17 100644
+--- a/drivers/power/supply/qcom_qg.c
++++ b/drivers/power/supply/qcom_qg.c
+@@ -261,12 +261,29 @@ static int qcom_qg_smooth_capacity(struct qcom_qg_chip *chip, int soc,
+ 	else
+ 		chip->coul_jiffies = 0;
+ 
++	/*
++	 * While charging, follow ONLY the charge that really went in. The
++	 * voltage based estimate is biased by polarisation, and the bias even
++	 * changes sign: on this pack it reads ~7 points high during constant
++	 * current (440 mA) and ~5 points LOW in taper (360 mA, little
++	 * polarisation, big IR subtraction). Using it as a target either runs
++	 * the value ahead or freezes it. OCV is only used at rest, below.
++	 */
++	if (charging) {
++		allowed = chip->coul_mpercent / 1000;
++		if (allowed > 0 && chip->msoc < 100) {
++			rise = min_t(unsigned int, allowed, 100 - chip->msoc);
++			chip->msoc += rise;
++			chip->coul_mpercent -= (s64)rise * 1000;
++			chip->msoc_jiffies = now;
++		}
++		return chip->msoc;
++	}
++
+ 	delta = soc - chip->msoc;
+ 
+ 	/*
+-	 * Clearly wrong previous value: adopt the estimate now. Never while
+-	 * charging: there the raw estimate is inflated by polarisation, and
+-	 * adopting it would jump the percentage upwards.
++	 * Clearly wrong previous value: adopt the estimate now.
+ 	 */
+ 	if (!charging && abs(delta) > QG_SOC_SNAP &&
+ 	    abs(delta) <= QG_SOC_SNAP_MAX) {
+@@ -279,32 +296,12 @@ static int qcom_qg_smooth_capacity(struct qcom_qg_chip *chip, int soc,
+ 	if (abs(delta) <= QG_SOC_HYSTERESIS)
+ 		return chip->msoc;
+ 
+-	/* While charging the battery only gains charge, never report a drop. */
+-	if (charging && delta < 0)
+-		return chip->msoc;
+-
+ 	steps = (now - chip->msoc_jiffies) / msecs_to_jiffies(QG_SOC_STEP_MS);
+ 	if (!steps)
+ 		return chip->msoc;
+ 
+ 	if (delta > 0) {
+-		if (charging) {
+-			/*
+-			 * While charging the ONLY limit is the charge that really
+-			 * went in: the terminal voltage is inflated by cell
+-			 * polarisation and would make the value run ahead. The
+-			 * time based step must not cap this, otherwise it becomes
+-			 * the binding limit again (which is what made the earlier
+-			 * version still climb 1% every 2 minutes).
+-			 */
+-			allowed = chip->coul_mpercent / 1000;
+-			if (allowed <= 0)
+-				return chip->msoc;
+-			rise = min_t(unsigned int, delta, (unsigned int)allowed);
+-			chip->coul_mpercent -= (s64)rise * 1000;
+-		} else {
+-			rise = min_t(unsigned int, delta, steps);
+-		}
++		rise = min_t(unsigned int, delta, steps);
+ 		chip->msoc += rise;
+ 	} else {
+ 		chip->msoc += max_t(int, delta, -(int)steps);
+-- 
+2.43.0
+

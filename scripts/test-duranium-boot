@@ -1,0 +1,204 @@
+#!/bin/sh
+# Checks what a Duranium boot of the hanoip depends on, without the phone (docs/DURANIUM.md): the USB gadget script, the
+# boot-health script (marks the slot good once the phone is reachable, reboots when it is not in time) run against
+# stand-ins, and the package wiring (kernel command line, units enabled, qbootctl's early mark masked).
+set -eu
+cd "$(dirname "$0")/.."
+d=pmaports/device/testing/device-motorola-hanoip
+fail() { echo "FAIL: $*" >&2; exit 1; }
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+bin=$tmp/bin calls=$tmp/calls
+mkdir -p "$bin"
+# Stand-ins: they log what they were asked to do. sleep moves the fake uptime forward, so a loop ends.
+for c in ip logger sync reboot qbootctl; do
+	printf '#!/bin/sh\necho "%s $*" >> "%s"\n' "$c" "$calls" > "$bin/$c"
+done
+cat > "$bin/ip" <<EOF2
+#!/bin/sh
+echo "ip \$*" >> "$calls"
+case "\$*" in
+"-4 -o addr show dev usb0") [ -z "\${FAKE_USB:-}" ] || echo "5: usb0    inet 172.16.42.1/24 scope global usb0" ;;
+"-4 -o addr show dev wlan0") [ -z "\${FAKE_WLAN:-}" ] || echo "3: wlan0    inet 192.168.0.9/24 scope global wlan0" ;;
+"-4 -o addr show dev eth0") [ -z "\${FAKE_ETH:-}" ] || echo "4: eth0    inet 192.168.1.20/24 scope global eth0" ;;
+esac
+exit 0
+EOF2
+cat > "$bin/systemctl" <<EOF2
+#!/bin/sh
+echo "systemctl \$*" >> "$calls"
+[ -n "\${FAKE_SSHD:-}" ]
+EOF2
+printf '#!/bin/sh\nn=$(cat "%s"); echo $((n + 100)) > "%s"\n' "$tmp/uptime" "$tmp/uptime" > "$bin/sleep"
+chmod +x "$bin"/*
+export PATH=$bin:$PATH
+
+# --- the gadget: IDs, one NCM function, bound to the first UDC, the server's address on usb0 ---
+mkdir -p "$tmp/udc/a600000.usb" "$tmp/net/usb0"
+: > "$calls"
+HANOIP_CONFIGFS=$tmp/cfg HANOIP_UDC_DIR=$tmp/udc HANOIP_NETDIR=$tmp/net sh "$d/hanoip-usb-gadget" || fail "the gadget script failed"
+g=$tmp/cfg/usb_gadget/hanoip
+[ "$(cat "$g/idVendor")" = 0x18d1 ] && [ "$(cat "$g/idProduct")" = 0xd001 ] || fail "the gadget does not use the IDs of stage 1 (the PC's setup)"
+[ -d "$g/functions/ncm.usb0" ] && [ -L "$g/configs/c.1/ncm.usb0" ] || fail "no NCM function linked into the configuration"
+[ "$(cat "$g/UDC")" = a600000.usb ] || fail "the gadget is not bound to the UDC"
+grep -qx 'ip addr add 172.16.42.1/24 dev usb0' "$calls" && grep -qx 'ip link set usb0 up' "$calls" || fail "usb0 has no address"
+rmdir "$tmp/udc/a600000.usb"
+if HANOIP_WAIT=0 HANOIP_CONFIGFS=$tmp/cfg2 HANOIP_UDC_DIR=$tmp/udc HANOIP_NETDIR=$tmp/net sh "$d/hanoip-usb-gadget" 2>/dev/null; then
+	fail "the gadget script succeeded without a UDC"
+fi
+
+# --- the health script ---
+health() { # health UPTIME  (env FAKE_SSHD FAKE_USB FAKE_WLAN set by the caller)
+	echo "$1" > "$tmp/uptime"; : > "$calls"; rm -f "$tmp/up"
+	HANOIP_UPTIME=$tmp/uptime HANOIP_UP=$tmp/up HANOIP_POLL=1 HANOIP_DEADLINE=600 sh "$d/hanoip-health" >/dev/null 2>&1 || true
+}
+FAKE_SSHD=1 FAKE_USB=1 health 20
+grep -qx 'qbootctl -m' "$calls" && [ -e "$tmp/up" ] && ! grep -q '^reboot' "$calls" || fail "a reachable phone (sshd, usb0) was not marked good"
+FAKE_SSHD=1 FAKE_WLAN=1 health 20
+grep -qx 'qbootctl -m' "$calls" || fail "a phone reachable over Wi-Fi was not marked good"
+# Ethernet through the USB hub is the only way in when Wi-Fi is down (docs/DURANIUM.md): an address on eth0 counts too.
+FAKE_SSHD=1 FAKE_ETH=1 health 20
+grep -qx 'qbootctl -m' "$calls" && [ -e "$tmp/up" ] || fail "a phone reachable over Ethernet only (eth0) was not marked good"
+# The image's command line always says androidboot.slot_suffix=_a, which is what qbootctl takes as the current slot: a boot
+# from slot b would mark slot a, and the ABL would give up on b. The slot comes from the ABL's own arguments instead.
+printf '#!/bin/sh\necho "${FAKE_SLOT:-}"\n' > "$bin/hanoip-ml-abl-slot"; chmod +x "$bin/hanoip-ml-abl-slot"
+FAKE_SLOT=_b FAKE_SSHD=1 FAKE_USB=1 health 20
+grep -qx 'qbootctl -m b' "$calls" || fail "a boot from slot b did not mark slot b good"
+FAKE_SLOT=_a FAKE_SSHD=1 FAKE_USB=1 health 20
+grep -qx 'qbootctl -m a' "$calls" || fail "a boot from slot a did not mark slot a good"
+FAKE_SSHD= FAKE_USB=1 health 20
+! grep -q '^qbootctl' "$calls" && grep -qx 'reboot -f' "$calls" || fail "a phone with no sshd was marked good, or never rebooted"
+FAKE_SSHD=1 FAKE_USB= FAKE_WLAN= FAKE_ETH= health 20
+! grep -q '^qbootctl' "$calls" && grep -qx 'reboot -f' "$calls" && [ ! -e "$tmp/up" ] || fail "a phone with no address was marked good, or never rebooted"
+FAKE_SSHD=1 FAKE_USB= health 700
+grep -qx 'reboot -f' "$calls" || fail "past the deadline at the first look, it did not reboot"
+
+# --- the wiring ---
+cmd=$(cat "$d/kernel-cmdline.mainline.conf")
+for a in clk_ignore_unused panic=5 oops=panic loop.max_part=7 androidboot.slot_suffix=_a; do
+	case " $cmd " in *" $a "*) ;; *) fail "the kernel command line lacks $a" ;; esac
+done
+case $cmd in *watchdog.open_timeout=*) ;; *) fail "no watchdog.open_timeout: a hang before systemd opens the watchdog would never reset" ;; esac
+apk=$d/APKBUILD
+grep -qx '	kernel-cmdline.mainline.conf' "$apk" || fail "kernel-cmdline.mainline.conf is not in source= (devicepkg installs it into the UKI's command line)"
+sed -n '/^kernel_mainline()/,/^}/p' "$apk" | grep -q 'depends=.*\$pkgname-mainline' || fail "the mainline kernel subpackage does not pull in the mainline subpackage (the units)"
+pk=$(sed -n '/^package()/,/^}/p' "$apk")
+# mkosi runs `systemctl preset-all` on the image, which removes the enable links a package leaves in /etc: only a preset
+# survives it (2026-11-09: the first Duranium boot had no usb0 because hanoip-usb-gadget was no longer enabled).
+echo "$pk" | grep -q 'usr/lib/systemd/system-preset/10-hanoip.preset' || fail "package() does not install the preset that enables the units"
+grep -qx '	hanoip.preset' "$apk" || fail "hanoip.preset is not in source="
+for u in hanoip-usb-gadget.service hanoip-health.service hanoip-charge.service hanoip-modem.service; do
+	grep -qx "enable $u" "$d/hanoip.preset" || fail "$u is not enabled by hanoip.preset"
+done
+! echo "$pk" | grep -q 'ln -s .*wants/' || fail "package() still enables units with links in /etc, which preset-all removes"
+echo "$pk" | grep -q 'qbootctl.service' || fail "qbootctl.service (marks the slot good at multi-user.target, before anything is checked) is not masked"
+# mkosi.finalize moves /etc of the image into usr/lib/confexts/duranium-base-config/etc; an /etc path pre-made there by the
+# extra tree makes it land one level too deep (etc/etc), and the confext then carries none of the image's /etc (2026-11-09).
+! grep -v '^[[:space:]]*#' scripts/duranium-image | grep -q 'usr/lib/confexts' || fail "scripts/duranium-image writes under usr/lib/confexts: /etc files go in \$x/etc"
+sed -n '/^mainline()/,/^}/p' "$apk" | sed -n '/depends="/,/"/p' | grep -q '\$pkgname-modem' || fail "the mainline subpackage does not pull in the modem subpackage (the binaries of its units)"
+
+# --- the server's services on systemd (the 4.14 ran them under OpenRC; Alpine ships no units for these three) ---
+# source:destination in the package. A mount unit is named after its path, so the dash of "hd-a" is spelled \x2d.
+for pair in 'adguardhome.service:etc/systemd/system/adguardhome.service' 'smb.service:etc/systemd/system/smb.service' \
+	'syncthing.service:etc/systemd/system/syncthing.service' 'hanoip-mnt-hd-a.mount:etc/systemd/system/mnt-hd\x2da.mount' \
+	'hanoip-mnt-hd-b.mount:etc/systemd/system/mnt-hd\x2db.mount' 'hanoip-sysusers.conf:usr/lib/sysusers.d/20-hanoip-services.conf'; do
+	src=${pair%%:*} dest=${pair#*:}
+	[ -f "$d/$src" ] || fail "$src is missing"
+	grep -qx "	$src" "$apk" || fail "$src is not in source="
+	echo "$pk" | grep -qF "\"\$srcdir/$src\" \"\$pkgdir/$dest\"" || fail "package() does not install $src as $dest"
+	sed -n '/^mainline()/,/^}/p' "$apk" | grep -qF "$(printf '%s' "$dest" | sed 's/\\/\\\\/g')" || fail "mainline() does not move $dest"
+done
+for u in adguardhome.service smb.service syncthing.service 'mnt-hd\x2da.mount' 'mnt-hd\x2db.mount'; do
+	grep -qxF "enable $u" "$d/hanoip.preset" || fail "$u is not enabled by hanoip.preset"
+done
+# What a service must not do before its data is back, or while the disk is away: AdGuard would open its setup page on every
+# interface, Syncthing would invent a new device identity, and Samba or Syncthing would write into the bare mount point.
+grep -qx 'ConditionPathExists=/var/lib/adguardhome/AdGuardHome.yaml' "$d/adguardhome.service" || fail "adguardhome.service starts without its config"
+grep -qx 'ConditionPathExists=/var/lib/syncthing/.local/state/syncthing/config.xml' "$d/syncthing.service" || fail "syncthing.service starts without its identity"
+grep -qx 'RequiresMountsFor=/mnt/hd-a' "$d/syncthing.service" && grep -qx 'RequiresMountsFor=/mnt/hd-b' "$d/smb.service" || fail "Samba or Syncthing can run without its disk"
+grep -qx 'WantedBy=local-fs.target' "$d/hanoip-mnt-hd-a.mount" && ! grep -hv '^#' "$d"/hanoip-mnt-hd-[ab].mount | grep -q 'RequiredBy' || fail "a missing NAS disk would stop the boot (the mounts must be WantedBy, never RequiredBy)"
+# systemd orders a mount before local-fs.target unless it is nofail, and sshd starts after that target: with the disk away
+# SSH came 90 s late at every boot, the device's timeout (seen on the phone, 2026-11-11).
+for x in a b; do
+	grep -qx 'Options=compress=zstd,noatime,nofail' "$d/hanoip-mnt-hd-$x.mount" || fail "hanoip-mnt-hd-$x.mount is not nofail: a missing NAS disk holds sshd for 90 s"
+done
+# hdshare keeps the ID the 4.14 gave it: the NAS disk's share belongs to 1000, so the login user cannot be. syncthing and adguardhome
+# must not ask for the 4.14's numbers (105 and 106): in the image those are chrony and dnsmasq, made by Alpine's package scripts
+# (seen on the running image, 2026-11-09), and a fixed ID that is taken makes systemd-sysusers fail.
+grep -qF 'u hdshare 1000:1000 ' "$d/hanoip-sysusers.conf" || fail "hdshare is not 1000"
+for l in 'u syncthing - ' 'u adguardhome - '; do
+	grep -qF "$l" "$d/hanoip-sysusers.conf" || fail "hanoip-sysusers.conf: '$l' (an ID the image chooses) is missing"
+done
+! grep -v '^#' "$d/hanoip-sysusers.conf" | grep -q -E '^u (syncthing|adguardhome) [0-9]' || fail "syncthing or adguardhome asks for a fixed ID, which the image may already use"
+
+# Heat protection and the LED run as units on Duranium; the bot too (it stays off until its secrets are restored). Stopping the
+# heat protection must lift what it did: the paused charge and the CPU cap.
+for pair in 'hanoip-thermal.service:etc/systemd/system/hanoip-thermal.service' 'hanoip-led.service:etc/systemd/system/hanoip-led.service'; do
+	src=${pair%%:*} dest=${pair#*:}
+	[ -f "$d/$src" ] || fail "$src is missing"
+	grep -qx "	$src" "$apk" || fail "$src is not in source="
+	echo "$pk" | grep -qF "\"\$srcdir/$src\" \"\$pkgdir/$dest\"" || fail "package() does not install $src"
+	sed -n '/^mainline()/,/^}/p' "$apk" | grep -qF "$dest" || fail "mainline() does not move $dest"
+	grep -qx "enable $src" "$d/hanoip.preset" || fail "$src is not enabled by hanoip.preset"
+done
+grep -qx 'enable hanoip-bot.service' "$d/hanoip.preset" || fail "hanoip-bot.service is not enabled by hanoip.preset"
+grep -q 'ExecStopPost=.*hanoip-thermal.hot.*scaling_max_freq' "$d/hanoip-thermal.service" || fail "stopping hanoip-thermal leaves the charge paused or the CPU capped"
+
+# Everything the 4.14 server's world had that is not part of the base image, and the two tools asked for on top (fastfetch,
+# lstopo: the second is in hwloc-tools). The OpenRC pieces (postmarketos-base*, mkinitfs, apk-tools, *-openrc) stay out.
+deps=$(sed -n '/^mainline()/,/^}/p' "$apk" | sed -n '/depends="/,/"/p')
+for p in adguardhome samba-server samba-common-tools syncthing btop btrfs-progs btrfs-progs-extra debootstrap doas fastfetch gcompat \
+	hwloc-tools iperf3 libdrm-tests libstdc++ memtester musl-utils openssl smartmontools stress-ng sudo-rs tar tzdata wget; do
+	echo "$deps" | grep -qw -- "$p" || fail "the mainline subpackage does not depend on $p (the 4.14 server had it)"
+done
+echo "$deps" | grep -q 'openrc\|postmarketos-base\|mkinitfs\|apk-tools' && fail "the mainline subpackage depends on an OpenRC/pmOS 4.14 piece"
+
+# What a headless server must not run or listen on. Nura's preset (80-duranium.preset) enables avahi, rtkit, oomd and getty@;
+# ours is read first, so a disable line here wins. LLMNR (5355) and mDNS (5353) go through resolved's own configuration.
+for u in avahi-daemon.service avahi-daemon.socket rtkit-daemon.service systemd-oomd.service systemd-oomd.socket getty@.service; do
+	grep -qx "disable $u" "$d/hanoip.preset" || fail "$u is not disabled by hanoip.preset"
+done
+# Bluetooth is not used and its firmware is not in the image; pmOS's unit that sets its MAC timed out in one boot of ten and
+# left the system degraded. A preset does not stop a unit udev starts (SYSTEMD_WANTS), and a mask link in /etc did not reach
+# the image (mkosi's preset-all removed it): an empty rules file with the name of pmOS's rule hides that rule.
+echo "$pk" | grep -qF 'install -Dm644 /dev/null "$pkgdir/etc/udev/rules.d/90-bootmac-bluetooth.rules"' && sed -n '/^mainline()/,/^}/p' "$apk" | grep -qF 'etc/udev/rules.d/90-bootmac-bluetooth.rules' || fail "pmOS's udev rule still starts bootmac@bluetooth.service"
+! echo "$pk" | grep -q 'ln -s /dev/null.*bootmac' || fail "bootmac@bluetooth.service is masked with a link, which mkosi's preset-all removes"
+grep -qx 'enable hanoip-screen-off.service' "$d/hanoip.preset" || fail "the backlight is not switched off at boot"
+grep -qx 'LLMNR=no' "$d/hanoip-resolved.conf" && grep -qx 'MulticastDNS=no' "$d/hanoip-resolved.conf" || fail "resolved still answers LLMNR or mDNS"
+grep -qx 'Storage=none' "$d/hanoip-coredump.conf" || fail "core files would be stored on a 4 GB phone"
+grep -q '^SystemMaxUse=' "$d/hanoip-journald.conf" || fail "the journal has no size limit"
+# The kernel may not write this phone's PMIC RTC: once NTP is in sync it retried about 40 times a second, each one a line in
+# the kernel log (50 MB of journal every 40 minutes). Without the driver bound nothing is written; the RTC reads 1974 anyway.
+grep -qx 'w- /sys/bus/platform/drivers/rtc-pm8xxx/unbind - - - - c440000.spmi:pmic@0:rtc@6000' "$d/hanoip-rtc.conf" 2>/dev/null || fail "the PMIC RTC stays bound (the kernel floods the log trying to set it)"
+# Drop-ins of /etc and /usr/lib are read in one list sorted by file name and the last one wins: as 10-hanoip.conf ours lost to
+# pmOS's 10-postmarketos.conf (SystemMaxUse=1G) and the journal reached 500 MB on the phone.
+for pair in hanoip-rtc.conf:etc/tmpfiles.d/hanoip-rtc.conf hanoip-journald.conf:etc/systemd/journald.conf.d/90-hanoip.conf hanoip-resolved.conf:etc/systemd/resolved.conf.d/10-hanoip.conf \
+	hanoip-coredump.conf:etc/systemd/coredump.conf.d/10-hanoip.conf hanoip-screen-off.service:etc/systemd/system/hanoip-screen-off.service; do
+	src=${pair%%:*} dest=${pair#*:}
+	grep -qx "	$src" "$apk" || fail "$src is not in source="
+	echo "$pk" | grep -qF "\"\$srcdir/$src\" \"\$pkgdir/$dest\"" || fail "package() does not install $src"
+	sed -n '/^mainline()/,/^}/p' "$apk" | grep -qF "$dest" || fail "mainline() does not move $dest"
+done
+
+# sudo-rs uses the PAM service "sudo". The image has base-auth and friends in /usr/lib/pam.d but no "sudo", so the fallback
+# "other" denies everyone and the login user could never administer the phone (root login goes off at the end).
+grep -qx 'auth		include		base-auth' "$d/hanoip-pam-sudo" || fail "the sudo PAM service does not use base-auth"
+grep -qx "	hanoip-pam-sudo" "$apk" && echo "$pk" | grep -qF '"$srcdir/hanoip-pam-sudo" "$pkgdir/etc/pam.d/sudo"' || fail "package() does not install the sudo PAM service"
+sed -n '/^mainline()/,/^}/p' "$apk" | grep -qF 'etc/pam.d/sudo' || fail "mainline() does not move etc/pam.d/sudo"
+
+# hdshare (the Samba share's user) is 1000 and owns files on the NAS disk; the login user the image creates must not take that ID.
+grep -q "u %s 1001 " scripts/duranium-image && ! grep -q "u %s 1000 " scripts/duranium-image || fail "the login user is created as 1000, the ID of hdshare"
+
+# hanoip-pd-mapper failed with "no pd maps available" on the first Duranium boots (the system stayed degraded): it reads the
+# *.jsn maps next to the remoteprocs' firmware, which the image did not carry.
+grep -v '^[[:space:]]*#' scripts/duranium-image | grep -q '"\$fw"/\*\.jsn' || fail "scripts/duranium-image does not copy the pd-mapper maps (*.jsn)"
+# Alpine ships /usr/bin/adguardhome as rwxr-xr-- and the image has it as root:root (seen on the running phone, 2026-11-09: "Failed at
+# step EXEC ... Permission denied"): the adguardhome user cannot execute it, only the root group can.
+grep -qx 'Group=root' "$d/adguardhome.service" || fail "adguardhome.service cannot execute the binary (mode 754, root:root): the group must be root"
+# The tailscale package ships its unit disabled; the first Duranium image only had the tailnet because it was enabled by hand, and
+# the rewritten image booted without it (2026-11-10): the phone was reachable over the USB cable only.
+grep -qx 'enable tailscaled.service' "$d/hanoip.preset" || fail "tailscaled.service is not enabled by hanoip.preset"
+# pd-mapper starts before hanoip-modem, which loads the remoteproc modules it needs: it fails at first and must be allowed to retry
+# (2026-11-10: five tries in five seconds, then the system stayed degraded for good).
+grep -qx 'StartLimitIntervalSec=0' "$d/hanoip-pd-mapper.service" || fail "hanoip-pd-mapper.service gives up after five quick failures"
+echo "ok    test-duranium-boot"

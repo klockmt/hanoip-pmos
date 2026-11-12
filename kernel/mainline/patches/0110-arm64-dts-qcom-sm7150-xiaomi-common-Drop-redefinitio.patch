@@ -1,0 +1,54 @@
+From 302d51e2f9f65d35b64ac0eb55f5cf49fd6f4a22 Mon Sep 17 00:00:00 2001
+From: Aelin Reidel <aelin@mainlining.org>
+Date: Wed, 13 May 2026 02:21:44 +0200
+Subject: [PATCH 110/194] arm64: dts: qcom: sm7150-xiaomi-common: Drop
+ redefinition of uart3 active states
+
+---
+ .../boot/dts/qcom/sm7150-xiaomi-common.dtsi   | 30 -------------------
+ 1 file changed, 30 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-common.dtsi b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-common.dtsi
+index 3a3698189..3209faf98 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-common.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-common.dtsi
+@@ -797,36 +797,6 @@ nfc_sleep: nfc-sleep-state {
+ 		bias-disable;
+ 	};
+ 
+-	qup_uart3_default: qup-uart3-default-state {
+-		cts-pins {
+-			pins = "gpio38";
+-			function = "qup03";
+-			drive-strength = <2>;
+-			bias-bus-hold;
+-		};
+-
+-		rts-pins {
+-			pins = "gpio39";
+-			function = "qup03";
+-			drive-strength = <2>;
+-			bias-disable;
+-		};
+-
+-		tx-pins {
+-			pins = "gpio40";
+-			function = "qup03";
+-			drive-strength = <2>;
+-			bias-disable;
+-		};
+-
+-		rx-pins {
+-			pins = "gpio41";
+-			function = "qup03";
+-			drive-strength = <2>;
+-			bias-pull-up;
+-		};
+-	};
+-
+ 	qup_uart3_sleep: qup-uart3-sleep-state {
+ 		cts-pins {
+ 			pins = "gpio38";
+-- 
+2.43.0
+

@@ -1,0 +1,37 @@
+From 7df94eee8a554f110009fbc244674d708cb50f1f Mon Sep 17 00:00:00 2001
+From: Danila Tikhonov <danila@jiaxyga.com>
+Date: Fri, 21 Feb 2025 22:24:59 +0300
+Subject: [PATCH 013/194] FROMLIST: dt-bindings: interconnect: qcom-bwmon: Add
+ the SM7150 compatible
+
+Document the compatibles used to describe the bwmons present on the
+SM7150 platform.
+
+Signed-off-by: Danila Tikhonov <danila@jiaxyga.com>
+---
+ .../devicetree/bindings/interconnect/qcom,msm8998-bwmon.yaml    | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/Documentation/devicetree/bindings/interconnect/qcom,msm8998-bwmon.yaml b/Documentation/devicetree/bindings/interconnect/qcom,msm8998-bwmon.yaml
+index 21b4e0472..503159dc0 100644
+--- a/Documentation/devicetree/bindings/interconnect/qcom,msm8998-bwmon.yaml
++++ b/Documentation/devicetree/bindings/interconnect/qcom,msm8998-bwmon.yaml
+@@ -40,6 +40,7 @@ properties:
+               - qcom,sdm845-cpu-bwmon
+               - qcom,sm6115-cpu-bwmon
+               - qcom,sm6350-llcc-bwmon
++              - qcom,sm7150-cpu-bwmon
+               - qcom,sm8250-cpu-bwmon
+               - qcom,sm8550-cpu-bwmon
+               - qcom,sm8650-cpu-bwmon
+@@ -57,6 +58,7 @@ properties:
+               - qcom,sc8280xp-llcc-bwmon
+               - qcom,shikra-cpu-bwmon
+               - qcom,sm6350-cpu-bwmon
++              - qcom,sm7150-llcc-bwmon
+               - qcom,sm8250-llcc-bwmon
+               - qcom,sm8550-llcc-bwmon
+               - qcom,sm8650-llcc-bwmon
+-- 
+2.43.0
+

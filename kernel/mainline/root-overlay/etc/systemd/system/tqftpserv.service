@@ -1,0 +1,17 @@
+[Unit]
+Description=Qualcomm TFTP server for firmware
+Documentation=man:systemd.service(5)
+DefaultDependencies=no
+Before=network-online.target
+After=hanoip-qrtr-ns.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/hanoip-tqftpserv
+Restart=always
+RestartSec=1
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=basic.target

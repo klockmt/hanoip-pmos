@@ -1,0 +1,28 @@
+From 7d50ca02d3119858ec43bf59dd798110abca1612 Mon Sep 17 00:00:00 2001
+From: Danila Tikhonov <danila@jiaxyga.com>
+Date: Fri, 21 Feb 2025 22:35:04 +0300
+Subject: [PATCH 015/194] FROMLIST: dt-bindings: clock: qcom-rpmhcc: Add the
+ SM7150 compatible
+
+Update the documentation for clock rpmh driver on SM7150 SoCs.
+
+Signed-off-by: Danila Tikhonov <danila@jiaxyga.com>
+---
+ Documentation/devicetree/bindings/clock/qcom,rpmhcc.yaml | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/Documentation/devicetree/bindings/clock/qcom,rpmhcc.yaml b/Documentation/devicetree/bindings/clock/qcom,rpmhcc.yaml
+index 2b446aca5..584a60294 100644
+--- a/Documentation/devicetree/bindings/clock/qcom,rpmhcc.yaml
++++ b/Documentation/devicetree/bindings/clock/qcom,rpmhcc.yaml
+@@ -39,6 +39,7 @@ properties:
+           - qcom,sdx75-rpmh-clk
+           - qcom,sm4450-rpmh-clk
+           - qcom,sm6350-rpmh-clk
++          - qcom,sm7150-rpmh-clk
+           - qcom,sm8150-rpmh-clk
+           - qcom,sm8250-rpmh-clk
+           - qcom,sm8350-rpmh-clk
+-- 
+2.43.0
+

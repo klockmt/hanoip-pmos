@@ -1,0 +1,29 @@
+From ed8b2c9229765d2fa4766b3697c357886bb9f6b7 Mon Sep 17 00:00:00 2001
+From: Danila Tikhonov <danila@jiaxyga.com>
+Date: Sun, 17 Mar 2024 00:43:39 +0300
+Subject: [PATCH 065/194] arm64: dts: qcom: sm7150-xiaomi-common: Enable camss
+
+Signed-off-by: Danila Tikhonov <danila@jiaxyga.com>
+---
+ arch/arm64/boot/dts/qcom/sm7150-xiaomi-common.dtsi | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-common.dtsi b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-common.dtsi
+index 41f163a9e..8562342a8 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150-xiaomi-common.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm7150-xiaomi-common.dtsi
+@@ -434,6 +434,11 @@ vreg_bob: bob {
+ 	};
+ };
+ 
++&camss {
++	vdda-supply = <&vdda_csi0_1p25>;
++	status = "okay";
++};
++
+ &cci0 {
+ 	status = "okay";
+ };
+-- 
+2.43.0
+

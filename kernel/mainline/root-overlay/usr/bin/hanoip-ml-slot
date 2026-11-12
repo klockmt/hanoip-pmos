@@ -1,0 +1,34 @@
+#!/bin/sh
+# Marks slot a successful after a complete boot from slot a (systemd service runs once sshd is active),
+# so the ABL keeps it as a second working slot instead of using up its retries.
+# Approved by the user on 2026-11-08 (AGENTS.md): qbootctl -m a sets the bit on every partition of slot a
+# and writes back the GPT of each disk that holds one (LUN 4, and LUN 2 with xbl_a), as the 4.14 does for
+# slot b at every boot. The guard (hanoip-guard.service) lends qbootctl those whole disks, never a partition,
+# while /run/hanoip-ml-rw-disk names them. A boot from the PC (the ABL says _b, the server's slot) marks nothing.
+run=${HANOIP_ML_RUN:-/run}
+pl=${HANOIP_ML_BYPARTLABEL:-/dev/disk/by-partlabel}
+sb=${HANOIP_ML_SYSBLOCK:-/sys/class/block}
+
+# Check we booted slot a (also checked by ConditionKernelCommandLine, but safe to verify)
+{ tr '\0 ' '\n\n' < "${HANOIP_ML_ABL_ARGS:-/proc/device-tree/chosen/u-boot,abl-bootargs}"; } 2>/dev/null |
+    sed -n 's/^androidboot\.slot_suffix=//p' | head -1 | grep -qx _a || exit 0
+
+# Wait for sshd to be active (systemd ConditionPathExists on /run/sshd.pid is not enough; use systemctl)
+systemctl is-active --quiet sshd || { logger -t hanoip-ml "slot a not marked: sshd is not running"; exit 0; }
+
+# The disks of the partitions qbootctl changes: those that have both an _a and a _b.
+disks=$(for p in "$pl"/*_a; do
+    [ -e "${p%_a}_b" ] || [ -L "${p%_a}_b" ] || continue
+    part=$(readlink -f "$p") || continue
+    basename "$(dirname "$(readlink -f "$sb/${part##*/}")")"
+done | sort -u)
+
+[ -n "$disks" ] || exit 0
+echo "$disks" > "$run/hanoip-ml-rw-disk"
+sleep 3   # past the guard's current pass (every 2 s)
+rc=1 ok=1
+for d in $disks; do blockdev --setrw "/dev/$d" || ok=; done
+[ -n "$ok" ] && { qbootctl -m a; rc=$?; }
+for d in $disks; do blockdev --setro "/dev/$d"; done
+rm -f "$run/hanoip-ml-rw-disk"
+logger -t hanoip-ml "slot a: qbootctl -m a returned $rc, disks lent: $(echo $disks)"

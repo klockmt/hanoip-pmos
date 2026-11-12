@@ -31,4 +31,19 @@ step() {
 step 1 0 kbd-scrolllock 255 - -      # USB port powered: solid
 step 0 1 kbd-scrolllock 255 - -      # USB PD supply powered: solid
 step 0 0 timer - 500 3000            # on the battery: flash, 3 s gap
+# The mainline kernel: the LED is white:status, the cable shows on the PM6150 charger supply, and there is no timer trigger,
+# only oneshot (one write to shot is one flash).
+rm -rf "$dir/led" "$dir/ps"; mkdir -p "$dir/led" "$dir/ps/hanoip-pm6150-monitor-charger"
+export HANOIP_LED_DIR=$dir/led
+ml() { # ml <online> <expected trigger> <expected shot or ->
+	echo "$1" > "$dir/ps/hanoip-pm6150-monitor-charger/online"
+	rm -f "$dir/led/brightness" "$dir/led/shot" "$dir/led/delay_on"; echo "none oneshot heartbeat" > "$dir/led/trigger"
+	{ timeout -s KILL 1 sh "$script" >/dev/null 2>&1 || true; } 2>/dev/null
+	[ "$(cat "$dir/led/trigger")" = "$2" ] || fail "mainline online=$1: trigger '$(cat "$dir/led/trigger")', expected '$2'"
+	if [ "$3" = - ]; then [ ! -e "$dir/led/shot" ] || fail "mainline online=$1: shot was written"
+	else [ "$(cat "$dir/led/shot" 2>/dev/null)" = "$3" ] || fail "mainline online=$1: shot is '$(cat "$dir/led/shot" 2>/dev/null)', expected '$3'"; fi
+}
+ml 1 kbd-scrolllock -   # cable in: solid, no flashing
+ml 0 oneshot 1          # on the battery: oneshot, one flash requested
+[ "$(cat "$dir/led/delay_on")" = 500 ] || fail "mainline flash: on-time not set"
 echo "ok    test-led"

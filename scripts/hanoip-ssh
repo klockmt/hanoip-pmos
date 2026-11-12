@@ -1,8 +1,9 @@
 #!/bin/sh
 # SSH into the device over the USB network, with the dedicated key from .env. E.g.: scripts/hanoip-ssh 'uname -a'
-# HANOIP_SSH_TTY=1 allocates a terminal and allows a password prompt (for sudo, for example).
+# HANOIP_SSH_TTY=1 allocates a terminal and allows a password prompt (for sudo, for example). HANOIP_SSH_OPTS adds ssh
+# options (a new system's host key: -o StrictHostKeyChecking=accept-new); HANOIP_USER=root in the environment wins over .env.
 . "$(dirname "$0")/env.sh"
 if [ -n "${HANOIP_SSH_TTY:-}" ]; then mode="-t"; else mode="-o BatchMode=yes"; fi
 # shellcheck disable=SC2086
-exec ssh -i "$HANOIP_SSH_KEY" -o IdentitiesOnly=yes $mode -o ConnectTimeout=8 \
+exec ssh -i "$HANOIP_SSH_KEY" -o IdentitiesOnly=yes $mode ${HANOIP_SSH_OPTS:-} -o ConnectTimeout=8 \
 	-o ServerAliveInterval=10 "$HANOIP_USER@$HANOIP_HOST" "$@"

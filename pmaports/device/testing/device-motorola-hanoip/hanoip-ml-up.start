@@ -1,0 +1,4 @@
+#!/bin/sh
+# The last local.d step, so every service has started: stage 1's boot deadline (start_deadline in
+# kernel/mainline/super-root-init) reboots a root that has not written this within 5 minutes.
+touch /run/hanoip-ml-up

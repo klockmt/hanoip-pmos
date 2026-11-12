@@ -1,0 +1,27 @@
+# Enabled the way mkosi's `systemctl preset-all` keeps: links left in /etc by package() are removed by it.
+enable hanoip-usb-gadget.service
+enable hanoip-health.service
+enable hanoip-charge.service
+enable hanoip-modem.service
+# The services the 4.14 server ran. Each one waits for its restored data (a Condition in the unit) or for its disk.
+enable adguardhome.service
+enable smb.service
+enable syncthing.service
+enable mnt-hd\x2da.mount
+enable mnt-hd\x2db.mount
+enable hanoip-thermal.service
+enable hanoip-led.service
+enable hanoip-bot.service
+# The status page and its JSON, on the tailnet only (hanoip-dashboard binds to the Tailscale address).
+enable hanoip-dashboard.service
+# A headless server does not need these (the 4.14 ran none of them): mDNS (port 5353), the realtime broker, the userspace OOM
+# killer and a login prompt on a screen that is off. The preset comes before Nura's, so its disable wins.
+enable hanoip-screen-off.service
+disable avahi-daemon.service
+disable avahi-daemon.socket
+disable rtkit-daemon.service
+disable systemd-oomd.service
+disable systemd-oomd.socket
+disable getty@.service
+# The tailnet: the tailscale package ships its unit disabled, and the first Duranium image only had it because it was enabled by hand.
+enable tailscaled.service

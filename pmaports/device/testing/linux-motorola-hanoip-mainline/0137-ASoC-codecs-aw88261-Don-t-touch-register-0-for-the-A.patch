@@ -1,0 +1,32 @@
+From c039bb613c0755241217eca7efb482276b44a248 Mon Sep 17 00:00:00 2001
+From: Aleks <aleks.spv@gmail.com>
+Date: Wed, 21 Oct 2026 10:28:07 +0600
+Subject: [PATCH 137/194] ASoC: codecs: aw88261: Don't touch register 0 for the
+ AIF_RX widget
+
+The AIF_RX widget is declared with register 0 (the chip ID / soft reset
+register), so every DAPM power transition writes into it. The widget
+has no power control bit, mark it SND_SOC_NOPM.
+
+Fixes: 028a2ae25691 ("ASoC: codecs: Add aw88261 amplifier driver")
+Signed-off-by: Aleks <aleks.spv@gmail.com>
+---
+ sound/soc/codecs/aw88261.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/sound/soc/codecs/aw88261.c b/sound/soc/codecs/aw88261.c
+index 5df969e91..d10ed30da 100644
+--- a/sound/soc/codecs/aw88261.c
++++ b/sound/soc/codecs/aw88261.c
+@@ -1054,7 +1054,7 @@ static int aw88261_playback_event(struct snd_soc_dapm_widget *w,
+ 
+ static const struct snd_soc_dapm_widget aw88261_dapm_widgets[] = {
+ 	 /* playback */
+-	SND_SOC_DAPM_AIF_IN_E("AIF_RX", "Speaker_Playback", 0, 0, 0, 0,
++	SND_SOC_DAPM_AIF_IN_E("AIF_RX", "Speaker_Playback", 0, SND_SOC_NOPM, 0, 0,
+ 					aw88261_playback_event,
+ 					SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
+ 	SND_SOC_DAPM_OUTPUT("DAC Output"),
+-- 
+2.43.0
+

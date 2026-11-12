@@ -1,0 +1,89 @@
+From 56e0f383cf4938bfa0421b298480ba7a716e9f59 Mon Sep 17 00:00:00 2001
+From: Aleks <aleks.spv@gmail.com>
+Date: Wed, 21 Oct 2026 20:01:00 +0600
+Subject: [PATCH 133/194] power: supply: qcom_qg: Pick the battery current LSB
+ from the ADC range
+
+The QG peripheral subtype encodes the IBAT ADC range: 0x03 is the 5 A
+range with 152.588 uA/LSB, 0x04 the 10 A range with 305.176 uA/LSB, as
+handled by the downstream qpnp-qg driver (qg_iraw_to_ua()).
+
+PM6150 on the Redmi Note 10 Pro reports 0x04, so current_now and
+current_avg were half the real value. Read the subtype at probe and scale
+accordingly, keeping the old 5 A scale for unknown subtypes.
+
+Signed-off-by: Aleks <aleks.spv@gmail.com>
+---
+ drivers/power/supply/qcom_qg.c | 28 +++++++++++++++++++++++++++-
+ 1 file changed, 27 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/power/supply/qcom_qg.c b/drivers/power/supply/qcom_qg.c
+index 1637c806c..df0826968 100644
+--- a/drivers/power/supply/qcom_qg.c
++++ b/drivers/power/supply/qcom_qg.c
+@@ -21,6 +21,11 @@
+ #define QG_LAST_ADC_V_DATA0_REG		0xc0 /* 2-byte 0xc0-0xc1 */
+ #define QG_LAST_ADC_I_DATA0_REG		0xc2 /* 2-byte 0xc2-0xc3 */
+ 
++/* PERPH offsets */
++#define QG_PERPH_SUBTYPE_REG		0x05
++#define QG_ADC_IBAT_5A			0x03
++#define QG_ADC_IBAT_10A			0x04
++
+ /* SRAM offsets */
+ #define QG_SDAM_OCV_OFFSET		0x4c /* 4-byte 0x4c-0x4f */
+ #define QG_SDAM_LEARNED_CAPACITY_OFFSET	0x68 /* 2-byte 0x68-0x69 */
+@@ -29,6 +34,7 @@ struct qcom_qg_chip {
+ 	struct device *dev;
+ 	struct regmap *regmap;
+ 	unsigned int base;
++	int ibat_lsb_na;
+ 
+ 	struct iio_channel *batt_therm_chan;
+ 
+@@ -51,7 +57,7 @@ static int qcom_qg_get_current(struct qcom_qg_chip *chip, u8 offset, int *val)
+ 	}
+ 
+ 	temp = (s16)(readval[1] << 8 | readval[0]);
+-	*val = div_s64((s64)temp * 152588, 1000);
++	*val = div_s64((s64)temp * chip->ibat_lsb_na, 1000);
+ 
+ 	/*
+ 	 * PSY API expects charging batteries to report a positive current, which is inverted
+@@ -227,6 +233,7 @@ static int qcom_qg_probe(struct platform_device *pdev)
+ {
+ 	struct qcom_qg_chip *chip;
+ 	struct power_supply_config psy_cfg = {};
++	unsigned int subtype;
+ 	int ret;
+ 
+ 	chip = devm_kzalloc(&pdev->dev, sizeof(*chip), GFP_KERNEL);
+@@ -247,6 +254,25 @@ static int qcom_qg_probe(struct platform_device *pdev)
+ 		return dev_err_probe(chip->dev, ret,
+ 				     "Couldn't read base address\n");
+ 
++	/* The subtype tells the IBAT ADC range and thus the current LSB */
++	ret = regmap_read(chip->regmap, chip->base + QG_PERPH_SUBTYPE_REG, &subtype);
++	if (ret)
++		return dev_err_probe(chip->dev, ret,
++				     "Couldn't read subtype\n");
++
++	switch (subtype) {
++	case QG_ADC_IBAT_10A:
++		chip->ibat_lsb_na = 305176;
++		break;
++	default:
++		dev_warn(chip->dev, "Unknown subtype %#x, assuming 5A range\n",
++			 subtype);
++		fallthrough;
++	case QG_ADC_IBAT_5A:
++		chip->ibat_lsb_na = 152588;
++		break;
++	}
++
+ 	/* ADC for thermal channel */
+ 	chip->batt_therm_chan = devm_iio_channel_get(chip->dev, "batt-therm");
+ 	if (IS_ERR(chip->batt_therm_chan))
+-- 
+2.43.0
+

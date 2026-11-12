@@ -1,0 +1,29 @@
+From 79712250413a6aa05bb37555fa10313b64023157 Mon Sep 17 00:00:00 2001
+From: David Wronek <david@mainlining.org>
+Date: Fri, 8 Sep 2023 21:54:20 +0300
+Subject: [PATCH 006/194] FROMLIST: dt-bindings: phy: qcom,qusb2: Add the
+ SM7150 compatible
+
+Add devicetree compatible for the usb phy on SM7150 SoC.
+
+Signed-off-by: David Wronek <david@mainlining.org>
+Signed-off-by: Danila Tikhonov <danila@jiaxyga.com>
+---
+ Documentation/devicetree/bindings/phy/qcom,qusb2-phy.yaml | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/Documentation/devicetree/bindings/phy/qcom,qusb2-phy.yaml b/Documentation/devicetree/bindings/phy/qcom,qusb2-phy.yaml
+index 001fd0ccc..d4375d360 100644
+--- a/Documentation/devicetree/bindings/phy/qcom,qusb2-phy.yaml
++++ b/Documentation/devicetree/bindings/phy/qcom,qusb2-phy.yaml
+@@ -41,6 +41,7 @@ properties:
+               - qcom,sdm670-qusb2-phy
+               - qcom,sdm845-qusb2-phy
+               - qcom,sm6350-qusb2-phy
++              - qcom,sm7150-qusb2-phy
+           - const: qcom,qusb2-v2-phy
+   reg:
+     maxItems: 1
+-- 
+2.43.0
+

@@ -1,0 +1,17 @@
+[Unit]
+Description=Charge limit (75-80 %) on the mainline kernel
+Documentation=man:systemd.service(5)
+DefaultDependencies=no
+After=local-fs.target
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/hanoip-charge-pre
+ExecStart=/usr/bin/hanoip-ml-charge
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=basic.target

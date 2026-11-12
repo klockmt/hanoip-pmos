@@ -1,0 +1,35 @@
+From 3efbdebd7da9c833b1445f0b7d0925c2ebd7fd09 Mon Sep 17 00:00:00 2001
+From: Aleks <aleks.spv@gmail.com>
+Date: Wed, 21 Oct 2026 11:02:40 +0600
+Subject: [PATCH 143/194] ASoC: qcom: q6afe: Don't read status from HW vote
+ response
+
+The AFE_CMD_RSP_REMOTE_LPASS_CORE_HW_VOTE_REQUEST payload carries only
+the client handle, it is not an aprv2_ibasic_rsp_result_t. Reading
+res->status picks up whatever follows the handle, so the vote may be
+reported as failed although the DSP accepted it.
+
+Receiving the response means the vote succeeded, report status 0.
+
+Signed-off-by: Aleks <aleks.spv@gmail.com>
+---
+ sound/soc/qcom/qdsp6/q6afe.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/sound/soc/qcom/qdsp6/q6afe.c b/sound/soc/qcom/qdsp6/q6afe.c
+index 7bf936fe3..16b805cd0 100644
+--- a/sound/soc/qcom/qdsp6/q6afe.c
++++ b/sound/soc/qcom/qdsp6/q6afe.c
+@@ -1056,7 +1056,8 @@ static int q6afe_callback(struct apr_device *adev, const struct apr_resp_pkt *da
+ 		break;
+ 	case AFE_CMD_RSP_REMOTE_LPASS_CORE_HW_VOTE_REQUEST:
+ 		afe->result.opcode = hdr->opcode;
+-		afe->result.status = res->status;
++		/* The payload is only the client handle, there is no status word */
++		afe->result.status = 0;
+ 		//printk(KERN_ERR "%s: hdr->token=%d res->opcode=%d\n", __func__, hdr->token, res->opcode);
+ 		if (hdr->token < Q6AFE_LPASS_CORE_HW_VOTE_MAX) {
+ 			afe->lpass_hw_core_client_hdl[hdr->token] = res->opcode;
+-- 
+2.43.0
+

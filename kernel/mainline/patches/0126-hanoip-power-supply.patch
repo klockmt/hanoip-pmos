@@ -1,0 +1,229 @@
+From c14a8cc3f3c50a83bf5d4e79e860aa3cce997dd0 Mon Sep 17 00:00:00 2001
+From: hanoip <hanoip@localhost>
+Date: Sun, 25 Oct 2026 20:56:34 +0000
+Subject: [PATCH 126/194] hanoip: power-supply
+
+---
+ drivers/power/supply/qcom_qg.c   | 23 +++++++++++---
+ drivers/power/supply/qcom_smbx.c | 53 +++++++++++++++++++++++++++-----
+ 2 files changed, 65 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/power/supply/qcom_qg.c b/drivers/power/supply/qcom_qg.c
+index 18276976c..0bd75196d 100644
+--- a/drivers/power/supply/qcom_qg.c
++++ b/drivers/power/supply/qcom_qg.c
+@@ -13,6 +13,7 @@
+ #include <linux/platform_device.h>
+ #include <linux/power_supply.h>
+ #include <linux/regmap.h>
++#include <linux/unaligned.h>
+ 
+ /* BATT offsets */
+ #define QG_S2_NORMAL_AVG_V_DATA0_REG	0x80 /* 2-byte 0x80-0x81 */
+@@ -127,11 +128,18 @@ static int qcom_qg_get_property(struct power_supply *psy,
+ 				union power_supply_propval *val)
+ {
+ 	struct qcom_qg_chip *chip = power_supply_get_drvdata(psy);
++	u8 data[4];
+ 	int ret;
+ 
++	/* Registration can publish the supply before its battery info is ready. */
++	if (!chip->batt_info)
++		return -EAGAIN;
++
+ 	switch (psp) {
+ 	case POWER_SUPPLY_PROP_STATUS:
+-		val->intval = POWER_SUPPLY_STATUS_UNKNOWN;
++		ret = power_supply_get_property_from_supplier(psy, psp, val);
++		if (ret)
++			val->intval = POWER_SUPPLY_STATUS_UNKNOWN;
+ 		break;
+ 	case POWER_SUPPLY_PROP_TECHNOLOGY:
+ 		val->intval = POWER_SUPPLY_TECHNOLOGY_LION;
+@@ -155,9 +163,10 @@ static int qcom_qg_get_property(struct power_supply *psy,
+ 			return ret;
+ 		break;
+ 	case POWER_SUPPLY_PROP_VOLTAGE_OCV:
+-		ret = nvmem_device_read(chip->sdam, QG_SDAM_OCV_OFFSET, 4, &val->intval);
++		ret = nvmem_device_read(chip->sdam, QG_SDAM_OCV_OFFSET, 4, data);
+ 		if (ret < 0)
+ 			return ret;
++		val->intval = get_unaligned_le32(data);
+ 		break;
+ 	case POWER_SUPPLY_PROP_CURRENT_NOW:
+ 		ret = qcom_qg_get_current(chip,
+@@ -176,10 +185,10 @@ static int qcom_qg_get_property(struct power_supply *psy,
+ 		break;
+ 	case POWER_SUPPLY_PROP_CHARGE_FULL:
+ 		ret = nvmem_device_read(chip->sdam,
+-				QG_SDAM_LEARNED_CAPACITY_OFFSET, 2, &val->intval);
++				QG_SDAM_LEARNED_CAPACITY_OFFSET, 2, data);
+ 		if (ret < 0)
+ 			return ret;
+-		val->intval *= 1000; /* mAh to uAh */
++		val->intval = get_unaligned_le16(data) * 1000; /* mAh to uAh */
+ 		break;
+ 	case POWER_SUPPLY_PROP_CAPACITY:
+ 		ret = qcom_qg_get_capacity(chip, &val->intval);
+@@ -200,12 +209,18 @@ static int qcom_qg_get_property(struct power_supply *psy,
+ 	return 0;
+ }
+ 
++static void qcom_qg_external_power_changed(struct power_supply *psy)
++{
++	power_supply_changed(psy);
++}
++
+ static struct power_supply_desc batt_psy_desc = {
+ 	.name = "qcom_qg",
+ 	.type = POWER_SUPPLY_TYPE_BATTERY,
+ 	.properties = qcom_qg_props,
+ 	.num_properties = ARRAY_SIZE(qcom_qg_props),
+ 	.get_property = qcom_qg_get_property,
++	.external_power_changed = qcom_qg_external_power_changed,
+ };
+ 
+ static int qcom_qg_probe(struct platform_device *pdev)
+diff --git a/drivers/power/supply/qcom_smbx.c b/drivers/power/supply/qcom_smbx.c
+index 0b5cf6c22..973ae476b 100644
+--- a/drivers/power/supply/qcom_smbx.c
++++ b/drivers/power/supply/qcom_smbx.c
+@@ -251,6 +251,7 @@ struct smb_chip {
+ 	struct delayed_work status_change_work;
+ 	int cable_irq;
+ 	bool wakeup_enabled;
++	bool monitor_only;
+ 
+ 	struct iio_channel *usb_in_i_chan;
+ 	struct iio_channel *usb_in_v_chan;
+@@ -265,6 +266,7 @@ struct smb_match_data {
+ 	const struct smb_init_register *init_seq;
+ 	unsigned int current_step_size_ua;
+ 	unsigned int current_limit_max_ua;
++	bool monitor_only;
+ };
+ 
+ static enum power_supply_property smb_properties[] = {
+@@ -372,7 +374,7 @@ static int smbx_ov_status(struct smb_chip *chip)
+ 	if (rc)
+ 		return rc;
+ 
+-	return !!(reg & mask);
++	return !!(val & mask);
+ }
+ 
+ static int smb_get_prop_status(struct smb_chip *chip, int *val)
+@@ -480,7 +482,7 @@ static inline int smb_get_current_now(struct smb_chip *chip,
+ 		return rc;
+ 	}
+ 
+-	if (!smb_is_charging(chip)) {
++	if (!chip->monitor_only && !smb_is_charging(chip)) {
+ 		*val = 0;
+ 		return rc;
+ 	}
+@@ -560,7 +562,7 @@ static void smb_status_change_work(struct work_struct *work)
+ static int smb_get_iio_chan(struct smb_chip *chip, struct iio_channel *chan,
+ 			     int *val)
+ {
+-	if (!smb_is_charging(chip)) {
++	if (!chip->monitor_only && !smb_is_charging(chip)) {
+ 		*val = 0;
+ 		return 0;
+ 	}
+@@ -678,7 +680,7 @@ static int smb_get_property(struct power_supply *psy,
+ 		ret = smb_get_iio_chan(chip, chip->usb_in_v_chan,
+ 					 &val->intval);
+ 		if (!ret) {
+-			if (chip->gen == SMB5)
++			if (chip->gen == SMB5 && !chip->monitor_only)
+ 				val->intval *= 16;
+ 		}
+ 		return ret;
+@@ -1036,6 +1038,16 @@ static int smb_init_irq(struct smb_chip *chip, int *irq, const char *name,
+ 	return 0;
+ }
+ 
++/* Diagnostic monitoring never runs the charger setup or IRQ write paths. */
++static void smb_monitor_work(struct work_struct *work)
++{
++	struct smb_chip *chip = container_of(to_delayed_work(work),
++						  struct smb_chip, status_change_work);
++
++	power_supply_changed(chip->chg_psy);
++	schedule_delayed_work(&chip->status_change_work, msecs_to_jiffies(10000));
++}
++
+ static int smb_probe(struct platform_device *pdev)
+ {
+ 	struct power_supply_config supply_config = {};
+@@ -1075,14 +1087,17 @@ static int smb_probe(struct platform_device *pdev)
+ 	match_data = (const struct smb_match_data *)device_get_match_data(chip->dev);
+ 
+ 	chip->gen = match_data->gen;
++	chip->monitor_only = match_data->monitor_only;
+ 	chip->current_step_size_ua = match_data->current_step_size_ua;
+ 	chip->current_limit_max_ua = match_data->current_limit_max_ua;
+ 
+ 	dev_info(chip->dev, "Generation %s\n", chip->gen == SMB2 ? "SMB2" : "SMB5");
+ 
+-	rc = smb_init_hw(chip, match_data->init_seq, match_data->init_seq_len);
+-	if (rc < 0)
+-		return rc;
++	if (!match_data->monitor_only) {
++		rc = smb_init_hw(chip, match_data->init_seq, match_data->init_seq_len);
++		if (rc < 0)
++			return rc;
++	}
+ 
+ 	supply_config.drv_data = chip;
+ 	supply_config.fwnode = dev_fwnode(&pdev->dev);
+@@ -1096,6 +1111,10 @@ static int smb_probe(struct platform_device *pdev)
+ 			       match_data->name);
+ 	if (!desc->name)
+ 		return -ENOMEM;
++	if (match_data->monitor_only) {
++		desc->set_property = NULL;
++		desc->property_is_writeable = NULL;
++	}
+ 
+ 	chip->chg_psy =
+ 		devm_power_supply_register(chip->dev, desc, &supply_config);
+@@ -1103,6 +1122,17 @@ static int smb_probe(struct platform_device *pdev)
+ 		return dev_err_probe(chip->dev, PTR_ERR(chip->chg_psy),
+ 				     "failed to register power supply\n");
+ 
++	if (match_data->monitor_only) {
++		rc = devm_delayed_work_autocancel(chip->dev, &chip->status_change_work,
++						  smb_monitor_work);
++		if (rc)
++			return rc;
++		platform_set_drvdata(pdev, chip);
++		schedule_delayed_work(&chip->status_change_work, msecs_to_jiffies(10000));
++		dev_info(chip->dev, "SMB5 monitor: charger/Type-C configuration preserved\n");
++		return 0;
++	}
++
+ 	rc = power_supply_get_battery_info(chip->chg_psy, &chip->batt_info);
+ 	if (rc)
+ 		return dev_err_probe(chip->dev, rc,
+@@ -1173,7 +1203,16 @@ static int smb_probe(struct platform_device *pdev)
+ 	return 0;
+ }
+ 
++static const struct smb_match_data hanoip_monitor_match_data = {
++	.name = "hanoip-pm6150-monitor",
++	.gen = SMB5,
++	.current_step_size_ua = 50000,
++	.current_limit_max_ua = 5000000,
++	.monitor_only = true,
++};
++
+ static const struct of_device_id smb_match_id_table[] = {
++	{ .compatible = "motorola,hanoip-smb5-monitor", .data = &hanoip_monitor_match_data },
+ 	{ .compatible = "qcom,pmi8998-charger", .data = &pmi8998_match_data },
+ 	{ .compatible = "qcom,pm660-charger", .data = &pm660_match_data },
+ 	{ .compatible = "qcom,pm7250b-charger", .data = &pm7250b_match_data },
+-- 
+2.43.0
+

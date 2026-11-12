@@ -1,0 +1,23 @@
+#!/sbin/openrc-run
+# Charge limit of the mainline root, see /usr/bin/hanoip-ml-charge. supervise-daemon restarts it; the script switches
+# charging off whenever it stops.
+description="Charge limit (75-80 %) on the mainline kernel"
+command=/usr/bin/hanoip-ml-charge
+supervisor=supervise-daemon
+respawn_delay=10
+respawn_max=0
+
+depend() {
+	need localmount
+	after hanoip-ml-modem
+}
+
+start_pre() {
+	mountpoint -q /sys/kernel/debug || mount -t debugfs none /sys/kernel/debug
+	for m in qcom-spmi-adc5 nvmem_qcom-spmi-sdam qcom_smbx qcom_qg; do modprobe "$m" 2>/dev/null; done
+	i=0
+	while [ ! -e /sys/kernel/debug/hanoip-charge ] || [ ! -e /sys/class/power_supply/qcom_qg/capacity ]; do
+		i=$((i + 1)); [ $i -le 30 ] || { eerror "no charger or gauge"; return 1; }
+		sleep 1
+	done
+}

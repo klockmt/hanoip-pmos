@@ -1,0 +1,112 @@
+From 13de4eb172ef076265773d5d63732a66592a6072 Mon Sep 17 00:00:00 2001
+From: hanoip <h@l>
+Date: Tue, 27 Oct 2026 15:24:35 -0300
+Subject: [PATCH 176/194] power: supply: qcom_qg/qcom_smbx: remove debugfs
+ files on unload
+
+The debugfs files hand the driver state to debugfs as private data, but nothing
+removed them when the module went away. After a modprobe -r / modprobe cycle the
+old file survived pointing at freed memory: reading it returned stale values
+(seen as qcom_qg reporting msoc = 0 while sysfs said 95%) and could crash.
+
+Create the files through small helpers that register a devm action to remove
+them, in both drivers.
+---
+ drivers/power/supply/qcom_qg.c   | 23 ++++++++++++++++++++++-
+ drivers/power/supply/qcom_smbx.c | 31 ++++++++++++++++++++++++++-----
+ 2 files changed, 48 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/power/supply/qcom_qg.c b/drivers/power/supply/qcom_qg.c
+index f23dd10eb..c5bcdd827 100644
+--- a/drivers/power/supply/qcom_qg.c
++++ b/drivers/power/supply/qcom_qg.c
+@@ -504,6 +504,27 @@ static int qcom_qg_state_show(struct seq_file *s, void *unused)
+ 	return 0;
+ }
+ DEFINE_SHOW_ATTRIBUTE(qcom_qg_state);
++
++/*
++ * The file hands a pointer to the driver state to debugfs, so it has to be
++ * removed when the module goes away. Otherwise a read after a reload touches
++ * freed memory (seen as a stale "msoc = 0" while sysfs reported 95%).
++ */
++static void qcom_qg_debugfs_remove(void *data)
++{
++	debugfs_remove(data);
++}
++
++static void qcom_qg_debugfs_init(struct qcom_qg_chip *chip)
++{
++	struct dentry *d;
++
++	d = debugfs_create_file("qcom_qg", 0444, NULL, chip, &qcom_qg_state_fops);
++	if (IS_ERR_OR_NULL(d))
++		return;
++	if (devm_add_action_or_reset(chip->dev, qcom_qg_debugfs_remove, d))
++		dev_warn(chip->dev, "cannot register debugfs cleanup\n");
++}
+ #endif
+ 
+ static int qcom_qg_probe(struct platform_device *pdev)
+@@ -586,7 +607,7 @@ static int qcom_qg_probe(struct platform_device *pdev)
+ 	platform_set_drvdata(pdev, chip);
+ 
+ #ifdef CONFIG_DEBUG_FS
+-	debugfs_create_file("qcom_qg", 0444, NULL, chip, &qcom_qg_state_fops);
++	qcom_qg_debugfs_init(chip);
+ #endif
+ 
+ 	return 0;
+diff --git a/drivers/power/supply/qcom_smbx.c b/drivers/power/supply/qcom_smbx.c
+index b08417d1f..344ceeba2 100644
+--- a/drivers/power/supply/qcom_smbx.c
++++ b/drivers/power/supply/qcom_smbx.c
+@@ -1383,6 +1383,29 @@ static int smb_regs_show(struct seq_file *s, void *unused)
+ DEFINE_SHOW_ATTRIBUTE(smb_regs);
+ #endif /* CONFIG_DEBUG_FS */
+ 
++#ifdef CONFIG_DEBUG_FS
++/*
++ * Same story as in qcom_qg: the files pass the driver state to debugfs and
++ * must not survive a module unload.
++ */
++static void smb_debugfs_remove(void *data)
++{
++	debugfs_remove(data);
++}
++
++static void smb_debugfs_create(struct smb_chip *chip, const char *name,
++			       umode_t mode, const struct file_operations *fops)
++{
++	struct dentry *d;
++
++	d = debugfs_create_file(name, mode, NULL, chip, fops);
++	if (IS_ERR_OR_NULL(d))
++		return;
++	if (devm_add_action_or_reset(chip->dev, smb_debugfs_remove, d))
++		dev_warn(chip->dev, "cannot register debugfs cleanup\n");
++}
++#endif
++
+ static int smb_probe(struct platform_device *pdev)
+ {
+ 	struct power_supply_config supply_config = {};
+@@ -1458,12 +1481,10 @@ static int smb_probe(struct platform_device *pdev)
+ 				     "failed to register power supply\n");
+ 
+ #ifdef CONFIG_DEBUG_FS
+-	debugfs_create_file(chip->name, 0444, NULL, chip, &smb_regs_fops);
++	smb_debugfs_create(chip, chip->name, 0444, &smb_regs_fops);
+ 	if (chip->monitor_only) {
+-		debugfs_create_file("hanoip-charge", 0200, NULL, chip,
+-				    &hanoip_charge_fops);
+-		debugfs_create_file("hanoip-icl", 0200, NULL, chip,
+-				    &hanoip_icl_fops);
++		smb_debugfs_create(chip, "hanoip-charge", 0200, &hanoip_charge_fops);
++		smb_debugfs_create(chip, "hanoip-icl", 0200, &hanoip_icl_fops);
+ 	}
+ #endif
+ 
+-- 
+2.43.0
+

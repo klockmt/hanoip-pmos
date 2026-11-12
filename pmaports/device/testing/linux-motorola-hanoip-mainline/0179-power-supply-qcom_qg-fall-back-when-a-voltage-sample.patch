@@ -1,0 +1,116 @@
+From 9cbdb099ff85ab9a2b9bf0903a381dca346621fb Mon Sep 17 00:00:00 2001
+From: hanoip <h@l>
+Date: Tue, 27 Oct 2026 15:36:55 -0300
+Subject: [PATCH 179/194] power: supply: qcom_qg: fall back when a voltage
+ sample is unusable
+
+The averaged voltage register returns 0 now and then, and the ADC yields
+nonsense right after boot (6.38 V on a 4.45 V pack). After the previous change
+that combination made the driver refuse to report a capacity at all (EAGAIN),
+which is worse than a slightly wrong number.
+
+Pick the first plausible sample instead: averaged, then last ADC, then the OCV
+stored in the SDAM. Only if none is plausible keep the previous value.
+
+The debugfs file is now created after dropping any leftover with the same name,
+so a stale entry from an older module can never be the one being read.
+---
+ drivers/power/supply/qcom_qg.c | 67 ++++++++++++++++++++++++++++------
+ 1 file changed, 56 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/power/supply/qcom_qg.c b/drivers/power/supply/qcom_qg.c
+index d47712a28..cb97de99a 100644
+--- a/drivers/power/supply/qcom_qg.c
++++ b/drivers/power/supply/qcom_qg.c
+@@ -306,6 +306,25 @@ static int qcom_qg_smooth_capacity(struct qcom_qg_chip *chip, int soc,
+  * of the battery and look it up. Otherwise interpolate the average voltage
+  * linearly between the design limits.
+  */
++static bool qcom_qg_voltage_ok(int uv)
++{
++	return uv >= QG_VALID_V_MIN_UV && uv <= QG_VALID_V_MAX_UV;
++}
++
++/* Open circuit voltage kept by the gauge in the SDAM (uV). */
++static int qcom_qg_get_sdam_ocv(struct qcom_qg_chip *chip, int *uv)
++{
++	u8 data[4];
++	int ret;
++
++	ret = nvmem_device_read(chip->sdam, QG_SDAM_OCV_OFFSET, 4, data);
++	if (ret < 0)
++		return ret;
++
++	*uv = get_unaligned_le32(data);
++	return 0;
++}
++
+ static int qcom_qg_get_capacity(struct qcom_qg_chip *chip,
+ 				struct power_supply *psy, int *val)
+ {
+@@ -319,17 +338,32 @@ static int qcom_qg_get_capacity(struct qcom_qg_chip *chip,
+ 	if (ret)
+ 		return ret;
+ 
+-	if (voltage_now < QG_VALID_V_MIN_UV ||
+-	    voltage_now > QG_VALID_V_MAX_UV) {
+-		dev_warn_ratelimited(chip->dev,
+-				     "implausible battery voltage %d uV, keeping the last capacity\n",
+-				     voltage_now);
+-		guard(mutex)(&chip->lock);
+-		if (chip->msoc >= 0) {
+-			*val = chip->msoc;
+-			return 0;
++	/*
++	 * The averaged register reads 0 now and then, and the ADC returns
++	 * nonsense right after boot (6.38 V seen on a 4.45 V pack). Pick the
++	 * first plausible source instead of giving up: averaged sample, then
++	 * the last ADC sample, then the OCV kept in the SDAM.
++	 */
++	if (!qcom_qg_voltage_ok(voltage_now)) {
++		int last_adc = 0, ocv = 0;
++
++		qcom_qg_get_voltage(chip, QG_LAST_ADC_V_DATA0_REG, &last_adc);
++		if (qcom_qg_voltage_ok(last_adc)) {
++			voltage_now = last_adc;
++		} else if (!qcom_qg_get_sdam_ocv(chip, &ocv) &&
++			   qcom_qg_voltage_ok(ocv)) {
++			voltage_now = ocv;
++		} else {
++			dev_warn_ratelimited(chip->dev,
++					     "no plausible battery voltage (avg %d), keeping the last capacity\n",
++					     voltage_now);
++			guard(mutex)(&chip->lock);
++			if (chip->msoc >= 0) {
++				*val = chip->msoc;
++				return 0;
++			}
++			return -EAGAIN;
+ 		}
+-		return -EAGAIN;
+ 	}
+ 
+ 	if (info->ocv_table[0]) {
+@@ -542,7 +576,18 @@ static void qcom_qg_debugfs_remove(void *data)
+ 
+ static bool qcom_qg_debugfs_create(struct qcom_qg_chip *chip)
+ {
+-	struct dentry *d;
++	struct dentry *d, *old;
++
++	/*
++	 * A previous instance may have left the name behind (module reload
++	 * before this cleanup existed). Drop the leftover first: keeping it
++	 * would leave the visible file pointing at freed memory.
++	 */
++	old = debugfs_lookup("qcom_qg", NULL);
++	if (old) {
++		debugfs_remove(old);
++		dput(old);
++	}
+ 
+ 	d = debugfs_create_file("qcom_qg", 0444, NULL, chip, &qcom_qg_state_fops);
+ 	if (IS_ERR_OR_NULL(d))
+-- 
+2.43.0
+

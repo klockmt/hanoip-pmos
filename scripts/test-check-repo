@@ -1,7 +1,9 @@
 #!/bin/sh
 # Checks the private-data scan of scripts/check-repo on a throwaway git repository (no phone, no real data):
-# a 15-digit number (IMEI-like) and the login user from .env, planted in a committable file, must each be
-# reported, and a long hex checksum or a longer word that merely contains the user name must not.
+# a 15-digit number (IMEI-like), the login user and the names in HANOIP_PRIVATE_NAMES from .env, planted in a
+# committable file, must each be reported (without echoing them back), and a long hex checksum or a longer word
+# that merely contains one of them must not. Upstream authors' e-mails in kernel/mainline/patches, and in the kernel
+# package's copies of those patches, are allowed.
 set -eu
 cd "$(dirname "$0")/.."
 src=$PWD/scripts/check-repo
@@ -9,17 +11,19 @@ dir=$(mktemp -d)
 trap 'rm -rf "$dir"' EXIT
 bad=0
 
-# scan <name> <file content> <expected: hit|clean>
+# scan <name> <file content> <expected: hit|clean> [path, default notes.txt]
 scan() {
-	rm -rf "$dir/r"; mkdir -p "$dir/r/scripts"
+	f=${4:-notes.txt}
+	rm -rf "$dir/r"; mkdir -p "$dir/r/scripts" "$dir/r/$(dirname "$f")"
 	cp "$src" "$dir/r/scripts/check-repo"
-	(cd "$dir/r" && git init -q && printf '.env\n' > .gitignore && printf 'HANOIP_USER=planteduser\nHANOIP_HOST=host\n' > .env &&
-		printf '%s\n' "$2" > notes.txt && git add -A)
+	(cd "$dir/r" && git init -q && printf '.env\n' > .gitignore &&
+		printf 'HANOIP_USER=planteduser\nHANOIP_HOST=host\nHANOIP_PRIVATE_NAMES="plantedname other-name"\n' > .env &&
+		printf '%s\n' "$2" > "$f" && git add -A)
 	out=$(cd "$dir/r" && sh scripts/check-repo 2>&1 || true)
-	if echo "$out" | grep -q 'FAIL  private-looking data: notes.txt'; then got=hit; else got=clean; fi
+	if echo "$out" | grep -qF "FAIL  private-looking data: $f"; then got=hit; else got=clean; fi
 	[ "$got" = "$3" ] || { echo "FAIL $1: $got, expected $3" >&2; bad=1; }
-	# the user name must never be echoed back
-	if echo "$out" | grep -q planteduser; then echo "FAIL $1: the report prints the user name" >&2; bad=1; fi
+	# the user name and the private names must never be echoed back
+	if echo "$out" | grep -qiE 'planteduser|plantedname|other-name'; then echo "FAIL $1: the report prints a name" >&2; bad=1; fi
 }
 n15=$(printf "12345%s" 6789012345)
 scan "15-digit number" "serial $n15 here" hit
@@ -30,6 +34,45 @@ scan "nothing private" "an ordinary line, version 4.14.357, 14 digits $(printf "
 scan "longer word with the user name" "planteduser2 and myplanteduser" clean
 scan "sha512 line" "$(printf 'a%.0s' $(seq 1 60))${n15}$(printf 'b%.0s' $(seq 1 60))  file.patch" clean
 scan "16-digit number" "${n15}6" clean
+scan "private name as a word" "made by plantedname here" hit
+scan "private name in capitals" "PLANTEDNAME" hit
+scan "private name with a hyphen" "credit: other-name" hit
+scan "longer word with a private name" "plantednamesake" clean
+# Built at run time, like n15, so this file itself holds no e-mail or MAC for the scan to find.
+em="dev@example"; em="$em.org"; mac=$(printf '12:34:56:%s' '78:9A:BC')
+scan "private name in an upstream patch" "From: plantedname <$em>" hit kernel/mainline/patches/0001-x.patch
+scan "upstream author e-mail in a patch" "From: Kernel Dev <$em>" clean kernel/mainline/patches/0001-x.patch
+scan "the same e-mail anywhere else" "From: Kernel Dev <$em>" hit
+# The kernel package carries copies of those patches (identical, scripts/test-mainline-kernel-package): same rules.
+kp=pmaports/device/testing/linux-motorola-hanoip-mainline
+scan "upstream author e-mail in the kernel package's copy" "From: Kernel Dev <$em>" clean $kp/0001-x.patch
+scan "private name in the kernel package's copy" "From: plantedname <$em>" hit $kp/0001-x.patch
+scan "e-mail in the kernel package's APKBUILD" "maintainer=\"Kernel Dev <$em>\"" hit $kp/APKBUILD
+scan "MAC placeholder" "parse AA:BB:CC:DD:EE:FF here" clean
+scan "MAC-like value" "mac $mac" hit
+# APKBUILD sources: a local file that is missing is reported; a downloaded tarball (.tar.gz, or the kernel's .tar.xz)
+# is not, since it never sits next to the APKBUILD.
+rm -rf "$dir/a"; mkdir -p "$dir/a/scripts" "$dir/a/pmaports/device/testing/x"
+cp "$src" "$dir/a/scripts/check-repo"
+z=$(printf '0%.0s' $(seq 1 128))
+printf 'sha512sums="\n%s  linux-x.tar.xz\n%s  y.tar.gz\n%s  gone.patch\n"\n' "$z" "$z" "$z" > "$dir/a/pmaports/device/testing/x/APKBUILD"
+(cd "$dir/a" && git init -q && printf '.env\n' > .gitignore && printf 'HANOIP_USER=planteduser\n' > .env && git add -A)
+out=$(cd "$dir/a" && sh scripts/check-repo 2>&1 || true)
+echo "$out" | grep -qF 'missing source: pmaports/device/testing/x/gone.patch' || { echo "FAIL: a missing local source is not reported" >&2; bad=1; }
+if echo "$out" | grep -qE 'missing source: .*\.tar\.(gz|xz)'; then echo "FAIL: a downloaded tarball is reported as a missing source" >&2; bad=1; fi
+# A source that sits next to the APKBUILD but was never committed builds on this PC and fails on a clean clone.
+rm -rf "$dir/t"; mkdir -p "$dir/t/scripts" "$dir/t/pmaports/device/testing/y"
+cp "$src" "$dir/t/scripts/check-repo"
+printf 'a line\n' > "$dir/t/pmaports/device/testing/y/tracked.patch"
+printf 'a line\n' > "$dir/t/pmaports/device/testing/y/untracked.patch"
+sum=$(sha512sum "$dir/t/pmaports/device/testing/y/tracked.patch" | cut -d' ' -f1)
+printf 'sha512sums="\n%s  tracked.patch\n%s  untracked.patch\n"\n' "$sum" "$sum" > "$dir/t/pmaports/device/testing/y/APKBUILD"
+(cd "$dir/t" && git init -q && printf '.env\n' > .gitignore &&
+	git add .gitignore pmaports/device/testing/y/APKBUILD pmaports/device/testing/y/tracked.patch)
+out=$(cd "$dir/t" && sh scripts/check-repo 2>&1 || true)
+echo "$out" | grep -qF 'untracked source: pmaports/device/testing/y/untracked.patch' ||
+	{ echo "FAIL: a source git does not track is not reported" >&2; bad=1; }
+if echo "$out" | grep -qE '(^|[^a-z])tracked\.patch'; then echo "FAIL: a tracked source is reported" >&2; bad=1; fi
 # The real .gitignore: what must stay out, and what must stay in (.env.example is the template for .env). Git runs
 # without the user's global ignore file, which would hide a missing pattern.
 rm -rf "$dir/g"; mkdir -p "$dir/g"; cp .gitignore "$dir/g/"; (cd "$dir/g" && git init -q)

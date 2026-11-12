@@ -1,0 +1,56 @@
+#!/bin/sh
+# Checks the status dashboard page without a browser or the phone: one self-contained file, no CDN or web font,
+# every field of the /api/status contract that it reads, the 5 s poll, the visibility handling and the single
+# fixed fetch. Its script must at least parse (node is used when installed).
+set -eu
+cd "$(dirname "$0")/.."
+page=pmaports/device/testing/device-motorola-hanoip/dashboard/index.html
+fail() { echo "FAIL: $*" >&2; exit 1; }
+
+[ -f "$page" ] || fail "$page is missing"
+
+# one self-contained file: no external script, style, font or image
+ext=$(grep -cE 'https?://' "$page" || true)
+[ "$ext" = 0 ] || fail "$ext line(s) with an http(s) URL (the page must not load anything from the network)"
+proto=$(grep -cE '(src|href)=["'\'']?//|url\(["'\'']?//' "$page" || true)
+[ "$proto" = 0 ] || fail "protocol-relative external reference"
+
+# every field of the contract the page reads, as the path it uses
+for f in system.uptime_s system.reboots system.oom_kills system.ram system.zram \
+	used_pct used_gb total_gb size_gb \
+	boot.slot boot.slot_successful \
+	storage.nas storage.nas.mounted storage.scrub.state storage.scrub.finished_at storage.scrub.errors \
+	network.wifi.up network.wifi.ssid network.tailscale.up network.samba_tailnet.active \
+	services.sshd services.samba services.bot services.containers.running services.containers.names \
+	watchdog.last_feed_s_ago watchdog.resets version.kernel version.pkgrel status_text; do
+	grep -qF "$f" "$page" || fail "contract field not read: $f"
+done
+
+# poll every 5 s, and only while visible
+grep -qF 'PERIOD_MS = 5000' "$page" || fail "poll period is not 5000 ms"
+grep -qF 'setInterval(poll, PERIOD_MS)' "$page" || fail "the poll does not use setInterval"
+grep -qF "addEventListener('visibilitychange'" "$page" || fail "no visibilitychange handler"
+grep -qF 'document.hidden' "$page" || fail "document.hidden is not checked"
+grep -qF 'clearInterval(timer)' "$page" || fail "the poll is not stopped when hidden"
+
+# the one fetch goes to the fixed path; no request or user data in a URL
+calls=$(grep -c 'fetch(' "$page" || true)
+fixed=$(grep -c "fetch('/api/status'," "$page" || true)
+[ "$calls" = "$fixed" ] && [ "$calls" -ge 1 ] || fail "a fetch() call is not the fixed '/api/status'"
+
+# values go in with textContent only
+grep -q 'innerHTML' "$page" && fail "innerHTML is used; values must go in with textContent" || true
+
+# the script parses
+if command -v node >/dev/null 2>&1; then
+	dir=$(mktemp -d)
+	trap 'rm -rf "$dir"' EXIT
+	js=$dir/script.js
+	sed -n '/^<script>$/,/^<\/script>$/p' "$page" | sed '1d;$d' > "$js"
+	node --check "$js" || fail "the inline script does not parse"
+	echo "node --check: script parses"
+else
+	echo "node not installed: the inline script was not parsed"
+fi
+
+echo "dashboard page: ok"

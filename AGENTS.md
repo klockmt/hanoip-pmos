@@ -2,16 +2,18 @@
 
 postmarketOS on the Moto G60 (hanoip, SM7150), run as a **headless server reached over SSH**. The repo is public.
 
-The rules are here. Before touching anything read `docs/STATUS.md` (what works), then `NOTES.md` (the log of the investigations); `docs/PITFALLS.md` and `docs/HOMELAB.md` say what broke and how the phone is run.
+The rules are here. Before touching anything read `docs/STATUS.md` (what works), then `NOTES.md` (the log of the investigations); `docs/PITFALLS.md` and `docs/HOMELAB.md` say what broke and how the phone is run. The Duranium work follows `docs/DURANIUM.md`.
 
 ## Rules that always apply
 - The repo check is `scripts/check-repo`: run it before every commit and push.
 - Local paths and personal data live in `.env` (copy of `.env.example`). Scripts source `scripts/env.sh`; docs use `$HANOIP_*` variables. To resolve one, read `.env`.
+- People who asked not to be named never appear in a tracked file or a commit message; their names are in `HANOIP_PRIVATE_NAMES` (`.env`) and `scripts/check-repo` refuses them.
 - Never write an IMEI, serial, MAC, battery id, home path or the user name in any tracked file, test fixture, log or commit message. Device dumps and partition backups stay in `$HANOIP_BACKUP_DIR` / `$HANOIP_COLLECTION_DIR`, outside the repo.
 - Keep `README.md` honest about which scripts were run end to end.
 - Do not flash partitions beyond what the user asked for, never wipe or factory reset. Inspect the target and compare with `SHA256SUMS` first. `fastboot set_active b` + `reboot` is pre-authorized only to recover the A/B slot (see below).
 - `pmbootstrap` asks for the `sudo` password and needs interactive input, so **the user runs it**: hand over ready-made commands and wait. It is not on PATH; use `$PMBOOTSTRAP`.
 - When zeroing the in-use slot's `dtbo` for a test, restore the backup right afterwards, before `fastboot continue` or any reboot.
+- The mainline development root lives only in the unallocated region of `super` (`sdb23`): offset 1120 MiB, 2400 MiB (approved by the user on 2026-11-07). Write it only through a loop device bounded by that offset and size, hash `super` outside the region before and after every write, and never write the LP metadata, the Android volumes or any other partition from a mainline boot. One exception (approved by the user on 2026-11-08, so that slot a is a second working slot): after a complete boot from slot a, `qbootctl -m a` (`98-hanoip-ml-slot.start`) marks every partition of slot a and writes back the GPT of each disk that holds one, LUN 4 and LUN 2 (`xbl_a`), as the 4.14 does for slot b at every boot; the guard lends it those whole disks only. `qbootctl` with no arguments is not read-only either.
 
 ## Working over SSH, securely
 - Use `scripts/hanoip-ssh '<cmd>'`. It uses the dedicated key from `.env` with `IdentitiesOnly` and `BatchMode`; `HANOIP_SSH_TTY=1` only when a password prompt is needed.
@@ -26,7 +28,7 @@ The rules are here. Before touching anything read `docs/STATUS.md` (what works),
 - The screen is off by design and only comes back with a reboot on an image built without `hanoip_splashfb.screen_off=1`. Do not use `fb0/blank` (`docs/HOMELAB.md`).
 - Services (OpenRC): `hanoip-qgd` (battery percentage, see below), `hanoip-charge-limit` (needs `hanoip-qgd`), `hanoip-bot`, `hanoip-thermal`, `hanoip-modem` (Wi-Fi), Tailscale. `qbootctl -m` runs from `/etc/local.d` (keep `local` in `default`).
 - Pending: `systemd-tmpfiles`/`sysusers` cannot read their `.d` directories on 4.14 (`openat2`), which is harmless here (`NOTES.md`). Open work lives in the GitHub issues (roadmap #20).
-- Kernel direction (2026-11-02): our own hardened 4.14 kernel, forked from the pinned cool585 tree, with our own patches; mainline is parked (`docs/STATUS.md`, section 5). Enforce every hardening option in `scripts/test-kernel-config`.
+- Kernel direction (2026-11-07): mainline is the goal again: make it boot, then make it the server (`docs/STATUS.md`, section 5). Meanwhile the downstream 4.14 server stays on slot `b`, frozen as v0.2.2; enforce its hardening options in `scripts/test-kernel-config`. **The mainline kernel is Linux from kernel.org**, always: the release tarball (checked against `sha256sums.asc`) or the git tag of that release, with only this project's patches, configs and board diffs on top, in `kernel/mainline` (`patches/`, `config-7.3-hanoip`, `uboot/base/`). Forks (`sm7150-mainline/linux`, fuyuki's tree, the pmOS packages) are sources for patches and references, never the base, and no kernel is built from one. Nothing is downloaded but the upstream sources. Never name anyone as the author of that base: it is this project's work. Mainline tests are RAM-only and never mount `userdata` until the user approves a flash. systemd packages are fine; Nura's Duranium is the long-term target.
 - A package update flashes `boot` and `vendor_boot` (`deviceinfo_flash_kernel_on_update="true"`): the 2026-10-30 hang was `console=tty0` in the command line, and `scripts/test-deviceinfo` keeps `console=ttyMSM0,115200n8` first (`NOTES.md`). Never flash by hand `boot`/`vendor_boot` without a backup on the PC (`$HANOIP_BACKUP_DIR`).
 
 ## Bugs found, and what to remember
@@ -37,3 +39,14 @@ Prefer extending the matching `scripts/test-*` (they run without the phone); cre
 
 ## Commits and releases
 Before pushing, check the contributors with `gh api repos/klockmt/hanoip-pmos/contributors`: only `klockmt` may show. The beta branch is `beta`.
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- When graphify-out/graph.json exists, run `graphify query "<question>"` before your first grep, search or source-file read for a codebase question, and put this rule in every subagent prompt that explores code. Read raw files only for lines the graph or an earlier read already located. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+- A committed graphify-out/graph.json is rewritten whole on every build, so a large diff to it in a pull request is expected. Do not flag it as churn or suggest skipping the graph rebuild or its hooks.

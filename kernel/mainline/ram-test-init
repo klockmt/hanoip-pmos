@@ -1,0 +1,57 @@
+#!/bin/busybox sh
+# Bring-up initramfs for a mainline kernel on the hanoip, RAM-only test.
+# - every block device is forced read-only, the whole time, before anything else runs;
+# - nothing is mounted from the disk and there is no switch_root;
+# - USB gadget: NCM network (phone 172.16.42.1, the PC sets .2 by hand) plus an ACM serial console;
+# - a shell on 172.16.42.1:2323 through nc (USB cable only, RAM-only test);
+# - dead man: reboots by itself after 10 minutes unless /tmp/keep exists (touch it after logging in).
+/bin/busybox --install -s /bin
+mkdir -p /proc /sys /dev /tmp /run /etc
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev 2>/dev/null
+mkdir -p /dev/pts
+mount -t devpts devpts /dev/pts
+mount -t configfs none /sys/kernel/config
+log() { echo "[hanoip-ml] $*" > /dev/kmsg; }
+log "init started, kernel $(uname -r)"
+
+lock_all() {
+	for d in /sys/class/block/*; do
+		n=${d##*/}
+		[ -e "$d/ro" ] || continue
+		[ "$(cat "$d/ro")" = 1 ] || blockdev --setro "/dev/$n" 2>/dev/null
+	done
+}
+lock_all
+# The UFS LUNs probe late: keep locking whatever shows up.
+( while :; do lock_all; sleep 1; done ) &
+
+( sleep 600; [ -e /tmp/keep ] || { log "dead man: nobody logged in, rebooting"; sync; reboot -f; } ) &
+
+G=/sys/kernel/config/usb_gadget/hanoip
+mkdir -p $G/strings/0x409 $G/configs/c.1/strings/0x409
+echo 0x18d1 > $G/idVendor
+echo 0xd001 > $G/idProduct
+echo "hanoip-mainline-test" > $G/strings/0x409/serialnumber
+echo "hanoip mainline test" > $G/strings/0x409/product
+echo "ncm+acm" > $G/configs/c.1/strings/0x409/configuration
+mkdir -p $G/functions/ncm.usb0 $G/functions/acm.usb0
+ln -s $G/functions/ncm.usb0 $G/configs/c.1/
+ln -s $G/functions/acm.usb0 $G/configs/c.1/
+i=0
+while [ -z "$(ls /sys/class/udc 2>/dev/null)" ] && [ $i -lt 60 ]; do sleep 1; i=$((i+1)); done
+udc=$(ls /sys/class/udc | head -1)
+echo "$udc" > $G/UDC && log "gadget bound to $udc"
+
+i=0
+while [ ! -d /sys/class/net/usb0 ] && [ $i -lt 30 ]; do sleep 1; i=$((i+1)); done
+ifconfig usb0 172.16.42.1 netmask 255.255.255.0 up
+# This busybox has no telnetd/udhcpd: a persistent nc shell on the USB address only; the PC sets 172.16.42.2 by hand.
+( while :; do nc -lk -s 172.16.42.1 -p 2323 -e /bin/sh; sleep 1; done ) &
+log "shell on 172.16.42.1:2323 (nc)"
+
+# Serial shell on the ACM function too.
+( while :; do [ -c /dev/ttyGS0 ] && setsid sh -c 'exec sh </dev/ttyGS0 >/dev/ttyGS0 2>&1'; sleep 2; done ) &
+
+while :; do sleep 3600; done
