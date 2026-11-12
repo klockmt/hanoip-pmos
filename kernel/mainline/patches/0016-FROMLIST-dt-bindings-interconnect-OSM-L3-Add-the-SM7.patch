@@ -1,0 +1,28 @@
+From 5c3af4170db31f5c85cac9b513d7049859768238 Mon Sep 17 00:00:00 2001
+From: Danila Tikhonov <danila@jiaxyga.com>
+Date: Fri, 21 Feb 2025 22:46:26 +0300
+Subject: [PATCH 016/194] FROMLIST: dt-bindings: interconnect: OSM L3: Add the
+ SM7150 compatible
+
+Document the OSM L3 found in the Qualcomm SM7150 platform.
+
+Signed-off-by: Danila Tikhonov <danila@jiaxyga.com>
+---
+ Documentation/devicetree/bindings/interconnect/qcom,osm-l3.yaml | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/Documentation/devicetree/bindings/interconnect/qcom,osm-l3.yaml b/Documentation/devicetree/bindings/interconnect/qcom,osm-l3.yaml
+index 3b8ebe17a..e5e14899f 100644
+--- a/Documentation/devicetree/bindings/interconnect/qcom,osm-l3.yaml
++++ b/Documentation/devicetree/bindings/interconnect/qcom,osm-l3.yaml
+@@ -26,6 +26,7 @@ properties:
+               - qcom,sdm670-osm-l3
+               - qcom,sdm845-osm-l3
+               - qcom,sm6350-osm-l3
++              - qcom,sm7150-osm-l3
+               - qcom,sm8150-osm-l3
+           - const: qcom,osm-l3
+       - items:
+-- 
+2.43.0
+

@@ -1,0 +1,27 @@
+From 9641e300f423e772a498be64baa33008f8e81fd5 Mon Sep 17 00:00:00 2001
+From: Jens Reidel <adrian@mainlining.org>
+Date: Sun, 21 Sep 2025 10:11:30 +0200
+Subject: [PATCH 081/194] sound: soc-dai: Avoid a nullptr deref if driver has
+ no ops set
+
+Signed-off-by: Jens Reidel <adrian@mainlining.org>
+---
+ include/sound/soc-dai.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/include/sound/soc-dai.h b/include/sound/soc-dai.h
+index ba3ae56c6..f935458ce 100644
+--- a/include/sound/soc-dai.h
++++ b/include/sound/soc-dai.h
+@@ -579,7 +579,7 @@ static inline void *snd_soc_dai_get_drvdata(struct snd_soc_dai *dai)
+ static inline int snd_soc_dai_set_stream(struct snd_soc_dai *dai,
+ 					 void *stream, int direction)
+ {
+-	if (dai->driver->ops->set_stream)
++	if (dai->driver->ops && dai->driver->ops->set_stream)
+ 		return dai->driver->ops->set_stream(dai, stream, direction);
+ 	else
+ 		return -ENOTSUPP;
+-- 
+2.43.0
+

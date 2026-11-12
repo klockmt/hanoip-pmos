@@ -1,0 +1,119 @@
+From 8fb37511dab90813a69b5f4ad95d2cebdb3cd3f0 Mon Sep 17 00:00:00 2001
+From: hanoip <h@l>
+Date: Tue, 27 Oct 2026 15:31:49 -0300
+Subject: [PATCH 177/194] power: supply: qcom_qg: reject implausible voltage
+ samples at boot
+
+The gauge ADC returns nonsense for the first samples after a power-on (measured
+6.38 V on a pack whose design maximum is 4.45 V). That sample was taken as the
+initial estimate and reported 100% for the rest of the session.
+
+Ignore voltages outside 2.5-4.8 V and keep the previous reported value.
+
+While here, create the debugfs file from a delayed work with retries: the driver
+probes at ~1.5 s, before systemd mounts debugfs, so the file silently never
+appeared and only existed after a manual reload.
+---
+ drivers/power/supply/qcom_qg.c | 52 +++++++++++++++++++++++++++++++---
+ 1 file changed, 48 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/power/supply/qcom_qg.c b/drivers/power/supply/qcom_qg.c
+index c5bcdd827..d47712a28 100644
+--- a/drivers/power/supply/qcom_qg.c
++++ b/drivers/power/supply/qcom_qg.c
+@@ -51,6 +51,14 @@
+  */
+ #define QG_SOC_SNAP			10
+ 
++/*
++ * The gauge ADC returns implausible values right after boot (measured 6.38 V
++ * on a 4.45 V pack), which would push the reported capacity to 100%. Ignore
++ * anything outside this window and keep the previous value.
++ */
++#define QG_VALID_V_MIN_UV		2500000
++#define QG_VALID_V_MAX_UV		4800000
++
+ /* Coulomb counter: ignore gaps longer than this and cap the wind-up. */
+ #define QG_COUL_MAX_DT_S		600
+ #define QG_COUL_MAX_MPCT		2000	/* libera no maximo 2% por vez */
+@@ -81,6 +89,10 @@ struct qcom_qg_chip {
+ 	s64 coul_mpercent;
+ 	unsigned long coul_jiffies;
+ 
++	/* debugfs may not be mounted yet when the driver probes */
++	struct delayed_work dbg_work;
++	int dbg_tries;
++
+ 	struct iio_channel *batt_therm_chan;
+ 
+ 	struct nvmem_device *sdam;
+@@ -307,6 +319,19 @@ static int qcom_qg_get_capacity(struct qcom_qg_chip *chip,
+ 	if (ret)
+ 		return ret;
+ 
++	if (voltage_now < QG_VALID_V_MIN_UV ||
++	    voltage_now > QG_VALID_V_MAX_UV) {
++		dev_warn_ratelimited(chip->dev,
++				     "implausible battery voltage %d uV, keeping the last capacity\n",
++				     voltage_now);
++		guard(mutex)(&chip->lock);
++		if (chip->msoc >= 0) {
++			*val = chip->msoc;
++			return 0;
++		}
++		return -EAGAIN;
++	}
++
+ 	if (info->ocv_table[0]) {
+ 		/*
+ 		 * Use the hardware averaged samples: the "last ADC" values move
+@@ -515,15 +540,33 @@ static void qcom_qg_debugfs_remove(void *data)
+ 	debugfs_remove(data);
+ }
+ 
+-static void qcom_qg_debugfs_init(struct qcom_qg_chip *chip)
++static bool qcom_qg_debugfs_create(struct qcom_qg_chip *chip)
+ {
+ 	struct dentry *d;
+ 
+ 	d = debugfs_create_file("qcom_qg", 0444, NULL, chip, &qcom_qg_state_fops);
+ 	if (IS_ERR_OR_NULL(d))
+-		return;
++		return false;
+ 	if (devm_add_action_or_reset(chip->dev, qcom_qg_debugfs_remove, d))
+-		dev_warn(chip->dev, "cannot register debugfs cleanup\n");
++		return false;
++
++	return true;
++}
++
++/*
++ * The driver probes at ~1.5 s, long before systemd mounts debugfs on
++ * /sys/kernel/debug, so creating the file in probe silently fails and it never
++ * shows up. Retry from a delayed work until it works.
++ */
++static void qcom_qg_debugfs_work(struct work_struct *work)
++{
++	struct qcom_qg_chip *chip = container_of(to_delayed_work(work),
++						 struct qcom_qg_chip, dbg_work);
++
++	if (qcom_qg_debugfs_create(chip))
++		return;
++	if (chip->dbg_tries++ < 8)
++		schedule_delayed_work(&chip->dbg_work, msecs_to_jiffies(5000));
+ }
+ #endif
+ 
+@@ -607,7 +650,8 @@ static int qcom_qg_probe(struct platform_device *pdev)
+ 	platform_set_drvdata(pdev, chip);
+ 
+ #ifdef CONFIG_DEBUG_FS
+-	qcom_qg_debugfs_init(chip);
++	INIT_DELAYED_WORK(&chip->dbg_work, qcom_qg_debugfs_work);
++	schedule_delayed_work(&chip->dbg_work, msecs_to_jiffies(8000));
+ #endif
+ 
+ 	return 0;
+-- 
+2.43.0
+

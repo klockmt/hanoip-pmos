@@ -1,0 +1,32 @@
+From cb9f21e8c063b9d5b292524182fc598849c19440 Mon Sep 17 00:00:00 2001
+From: Danila Tikhonov <danila@jiaxyga.com>
+Date: Thu, 7 Mar 2024 17:09:23 +0300
+Subject: [PATCH 059/194] dts: qcom: pm6150: Add missing bat_therm ADC
+
+Signed-off-by: Danila Tikhonov <danila@jiaxyga.com>
+---
+ arch/arm64/boot/dts/qcom/pm6150.dtsi | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/pm6150.dtsi b/arch/arm64/boot/dts/qcom/pm6150.dtsi
+index 59524609f..6f7009ccb 100644
+--- a/arch/arm64/boot/dts/qcom/pm6150.dtsi
++++ b/arch/arm64/boot/dts/qcom/pm6150.dtsi
+@@ -130,6 +130,14 @@ channel@6 {
+ 				reg = <ADC5_DIE_TEMP>;
+ 				label = "die_temp";
+ 			};
++
++			bat_therm@4a {
++				reg = <ADC5_BAT_THERM_100K_PU>;
++				label = "bat_therm";
++				qcom,ratiometric;
++				qcom,hw-settle-time = <200>;
++				qcom,pre-scaling = <1 1>;
++			};
+ 		};
+ 
+ 		pm6150_adc_tm: adc-tm@3500 {
+-- 
+2.43.0
+

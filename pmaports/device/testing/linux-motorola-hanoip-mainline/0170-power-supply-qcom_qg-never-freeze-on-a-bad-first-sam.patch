@@ -1,0 +1,74 @@
+From 94d0f44587d194a39991860e8026f02bc1881f24 Mon Sep 17 00:00:00 2001
+From: hanoip <h@l>
+Date: Tue, 27 Oct 2026 12:27:43 -0300
+Subject: [PATCH 170/194] power: supply: qcom_qg: never freeze on a bad first
+ sample
+
+Two problems showed up on the hanoip once charging started:
+
+1. The direction hint used current_now > 0, but the QGauge current register
+   flips sign at random (measured -311 mA and +442 mA seconds apart while
+   charging at 500 mA). A positive sample froze the reported capacity for as
+   long as the guard matched; after a boot with a bad first reading the value
+   stayed at 100% for tens of minutes. Use the charger status instead, which
+   is stable.
+
+2. The 1% per two minutes walker is meant for noise, not for a wrong starting
+   value. Snap to the estimate when the gap is larger than QG_SOC_SNAP, so a
+   bad first sample is corrected on the next read.
+---
+ drivers/power/supply/qcom_qg.c | 24 ++++++++++++++++++++++--
+ 1 file changed, 22 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/power/supply/qcom_qg.c b/drivers/power/supply/qcom_qg.c
+index 938085fa6..cf6d521c3 100644
+--- a/drivers/power/supply/qcom_qg.c
++++ b/drivers/power/supply/qcom_qg.c
+@@ -44,6 +44,13 @@
+ /* Fastest drift of the reported capacity: 1% per QG_SOC_STEP_MS. */
+ #define QG_SOC_STEP_MS			120000
+ 
++/*
++ * A gap this large is not noise: it means the previous value was wrong (for
++ * example a bad first sample right after probe). Adopt the estimate at once
++ * instead of walking 1% per two minutes towards it.
++ */
++#define QG_SOC_SNAP			10
++
+ struct qcom_qg_chip {
+ 	struct device *dev;
+ 	struct regmap *regmap;
+@@ -156,6 +163,13 @@ static int qcom_qg_smooth_capacity(struct qcom_qg_chip *chip, int soc,
+ 
+ 	delta = soc - chip->msoc;
+ 
++	/* Clearly wrong previous value: adopt the estimate now. */
++	if (abs(delta) > QG_SOC_SNAP) {
++		chip->msoc = soc;
++		chip->msoc_jiffies = now;
++		return soc;
++	}
++
+ 	/* Inside the deadband: keep what we are showing. */
+ 	if (abs(delta) <= QG_SOC_HYSTERESIS)
+ 		return chip->msoc;
+@@ -246,8 +260,14 @@ static int qcom_qg_get_capacity(struct qcom_qg_chip *chip,
+ 
+ 	soc = clamp(soc, 0, 100);
+ 
+-	*val = qcom_qg_smooth_capacity(chip, soc, current_now > 0 ||
+-					status == POWER_SUPPLY_STATUS_FULL);
++	/*
++	 * Use the charger status, not current_now: the QGauge current register
++	 * flips sign randomly (measured -311 mA and +442 mA seconds apart while
++	 * charging at 500 mA), which used to freeze the reported capacity.
++	 */
++	*val = qcom_qg_smooth_capacity(chip, soc,
++				       status == POWER_SUPPLY_STATUS_CHARGING ||
++				       status == POWER_SUPPLY_STATUS_FULL);
+ 
+ 	return 0;
+ }
+-- 
+2.43.0
+

@@ -1,0 +1,13 @@
+#!/bin/sh
+# Pre-start for charge limit: mount debugfs and load charger modules.
+mountpoint -q /sys/kernel/debug || mount -t debugfs none /sys/kernel/debug
+for m in qcom-spmi-adc5 nvmem_qcom-spmi-sdam qcom_smbx qcom_qg; do
+    modprobe "$m" 2>/dev/null
+done
+# Wait for charger and gauge to appear
+i=0
+while [ ! -e /sys/kernel/debug/hanoip-charge ] || [ ! -e /sys/class/power_supply/qcom_qg/capacity ]; do
+    i=$((i + 1))
+    [ $i -le 30 ] || { logger -t hanoip-charge "no charger or gauge"; exit 1; }
+    sleep 1
+done

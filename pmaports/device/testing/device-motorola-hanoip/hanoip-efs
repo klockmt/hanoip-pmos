@@ -1,0 +1,18 @@
+#!/bin/sh
+# Copy modem EFS partitions to /run/efs, served read-only by rmtfs.
+# Partitions: modemst1, modemst2, fsg, fsc (by partlabel).
+# fsg only exists per slot (fsg_a, fsg_b: identical copies); the 4.14 links fsg to the active one.
+mkdir -p /run/efs /var/lib/tqftpserv
+for p in modemst1:modem_fs1 modemst2:modem_fs2 fsg:modem_fsg fsc:modem_fsc; do
+    src=/dev/disk/by-partlabel/${p%%:*}
+    if [ ! -e "$src" ] && [ "${p%%:*}" = fsg ]; then
+        for s in fsg_b fsg_a; do
+            [ -e "/dev/disk/by-partlabel/$s" ] && { src=/dev/disk/by-partlabel/$s; break; }
+        done
+    fi
+    if ! dd if="$src" of="/run/efs/${p##*:}" bs=1M 2>/dev/null; then
+        logger -t hanoip-efs "cannot read ${p%%:*}"
+        exit 1
+    fi
+done
+logger -t hanoip-efs "EFS copied to /run/efs"

@@ -1,0 +1,34 @@
+diff --git a/arch/arm/mach-snapdragon/board.c b/arch/arm/mach-snapdragon/board.c
+index b8f8d25f..2a70af14 100644
+--- a/arch/arm/mach-snapdragon/board.c
++++ b/arch/arm/mach-snapdragon/board.c
+@@ -858,8 +858,12 @@ static void usb_shutdown_for_kernel(void)
+ 
+ void board_preboot_os(void)
+ {
+-	wdt_stop_all();
++	/*
++	 * hanoip-pmos: the watchdog is left running. The kernel's qcom_wdt finds it
++	 * running and pings it (WDOG_HW_RUNNING) until userspace opens
++	 * /dev/watchdog, so a hang anywhere before that resets the phone.
++	 */
+ 	ufs_shutdown_for_kernel();
+ 	usb_shutdown_for_kernel();
+-	printf("QCOM: stopped watchdogs before kernel handoff\n");
++	printf("QCOM: watchdog left running for the kernel\n");
+ }
+diff --git a/drivers/fastboot/fb_common.c b/drivers/fastboot/fb_common.c
+index 3781ede6..72c083cd 100644
+--- a/drivers/fastboot/fb_common.c
++++ b/drivers/fastboot/fb_common.c
+@@ -172,9 +172,7 @@ void fastboot_boot(void)
+ 		 */
+ 		env_set("boot_with_embedded_fdt", "1");
+ 
+-		/* Stop the boot watchdog so the kernel is not reset after handoff */
+-		wdt_stop_all();
+-		printf("QCOM fastboot: stopped watchdogs\n");
++		/* hanoip-pmos: the watchdog is left running for the kernel, see board_preboot_os() */
+ 
+ 		do_bootm(NULL, 0, 2, bootm_args);
+ 

@@ -1,0 +1,40 @@
+From 0eadcbdc5c99d338c78efa028797afc33e34464b Mon Sep 17 00:00:00 2001
+From: Aleks <aleks.spv@gmail.com>
+Date: Wed, 21 Oct 2026 11:02:40 +0600
+Subject: [PATCH 147/194] arm64: configs: sm7150: Enable QRTR_SMD and LPASS VA
+ macro
+
+With QRTR_SMD as a module the ADSP sometimes comes up before the
+transport is loaded and its services never show up on QRTR, leaving
+the sound card without APR. Build it in.
+
+The VA macro provides the fsgen clock to the TX and RX macros.
+
+Signed-off-by: Aleks <aleks.spv@gmail.com>
+---
+ arch/arm64/configs/sm7150.config | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/arch/arm64/configs/sm7150.config b/arch/arm64/configs/sm7150.config
+index 36dd58506..23d24af27 100644
+--- a/arch/arm64/configs/sm7150.config
++++ b/arch/arm64/configs/sm7150.config
+@@ -175,6 +175,7 @@ CONFIG_INPUT_JOYDEV=m
+ CONFIG_SND_SOC_WCD937X_SDW=m
+ CONFIG_SND_SOC_LPASS_RX_MACRO=m
+ CONFIG_SND_SOC_LPASS_TX_MACRO=m
++CONFIG_SND_SOC_LPASS_VA_MACRO=m
+ 
+ # LED Triggers
+ CONFIG_LEDS_TRIGGER_ONESHOT=y
+@@ -191,6 +192,7 @@ CONFIG_QFMT_V2=y
+ 
+ # WLAN
+ CONFIG_QRTR=y
++CONFIG_QRTR_SMD=y
+ 
+ # Infrared
+ CONFIG_LIRC=y
+-- 
+2.43.0
+

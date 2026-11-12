@@ -1,0 +1,116 @@
+From e416fb16fda16f8375bcc65a9a2af088d2e7b285 Mon Sep 17 00:00:00 2001
+From: hanoip <hanoip@localhost>
+Date: Sun, 25 Oct 2026 20:56:32 +0000
+Subject: [PATCH 118/194] hanoip: pinctrl-clk-soc
+
+---
+ drivers/clk/qcom/gcc-sm7150.c         |  1 +
+ drivers/pinctrl/qcom/pinctrl-msm.c    |  4 ++++
+ drivers/pinctrl/qcom/pinctrl-sm7150.c | 26 ++++++++++++++++++++++++--
+ drivers/soc/qcom/ice.c                | 11 +++++++++++
+ 4 files changed, 40 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/clk/qcom/gcc-sm7150.c b/drivers/clk/qcom/gcc-sm7150.c
+index dcb5d82a1..505344ba6 100644
+--- a/drivers/clk/qcom/gcc-sm7150.c
++++ b/drivers/clk/qcom/gcc-sm7150.c
+@@ -2674,6 +2674,7 @@ static struct gdsc ufs_phy_gdsc = {
+ 		.name = "ufs_phy_gdsc",
+ 	},
+ 	.pwrsts = PWRSTS_OFF_ON,
++	.flags = ALWAYS_ON,
+ };
+ 
+ static struct gdsc usb30_prim_gdsc = {
+diff --git a/drivers/pinctrl/qcom/pinctrl-msm.c b/drivers/pinctrl/qcom/pinctrl-msm.c
+index 27f06bbc1..85fc3d639 100644
+--- a/drivers/pinctrl/qcom/pinctrl-msm.c
++++ b/drivers/pinctrl/qcom/pinctrl-msm.c
+@@ -607,6 +607,10 @@ static int msm_gpio_get_direction(struct gpio_chip *chip, unsigned int offset)
+ 	u32 val;
+ 
+ 	g = &pctrl->soc->groups[offset];
++	if (offset == 4 &&
++	    of_device_is_compatible(pctrl->dev->of_node, "motorola,hanoip-tlmm"))
++		dev_info(pctrl->dev, "hanoip GPIO4 direction read: tile=%u ctl=%#x base=%p\n",
++			 g->tile, g->ctl_reg, pctrl->regs[g->tile]);
+ 
+ 	val = msm_readl_ctl(pctrl, g);
+ 
+diff --git a/drivers/pinctrl/qcom/pinctrl-sm7150.c b/drivers/pinctrl/qcom/pinctrl-sm7150.c
+index a01437c37..29781638c 100644
+--- a/drivers/pinctrl/qcom/pinctrl-sm7150.c
++++ b/drivers/pinctrl/qcom/pinctrl-sm7150.c
+@@ -1219,7 +1219,27 @@ static const struct msm_gpio_wakeirq_map sm7150_pdc_map[] = {
+ 	{98, 77}, {101, 78}, {104, 99}, {109, 104}, {110, 79}, {113, 85},
+ };
+ 
++static const int hanoip_reserved_gpios[] = {
++	0, 1, 2, 3,
++	-1,
++};
++
+ static const struct msm_pinctrl_soc_data sm7150_tlmm = {
++	.pins = sm7150_pins,
++	.npins = ARRAY_SIZE(sm7150_pins),
++	.functions = sm7150_functions,
++	.nfunctions = ARRAY_SIZE(sm7150_functions),
++	.groups = sm7150_groups,
++	.ngroups = ARRAY_SIZE(sm7150_groups),
++	.ngpios = 119,
++	.tiles = sm7150_tiles,
++	.ntiles = ARRAY_SIZE(sm7150_tiles),
++	.wakeirq_map = sm7150_pdc_map,
++	.nwakeirq_map = ARRAY_SIZE(sm7150_pdc_map),
++	.wakeirq_dual_edge_errata = true,
++};
++
++static const struct msm_pinctrl_soc_data hanoip_tlmm = {
+ 	.pins = sm7150_pins,
+ 	.npins = ARRAY_SIZE(sm7150_pins),
+ 	.functions = sm7150_functions,
+@@ -1232,15 +1252,17 @@ static const struct msm_pinctrl_soc_data sm7150_tlmm = {
+ 	.wakeirq_map = sm7150_pdc_map,
+ 	.nwakeirq_map = ARRAY_SIZE(sm7150_pdc_map),
+ 	.wakeirq_dual_edge_errata = true,
++	.reserved_gpios = hanoip_reserved_gpios,
+ };
+ 
+ static int sm7150_tlmm_probe(struct platform_device *pdev)
+ {
+-	return msm_pinctrl_probe(pdev, &sm7150_tlmm);
++	return msm_pinctrl_probe(pdev, device_get_match_data(&pdev->dev));
+ }
+ 
+ static const struct of_device_id sm7150_tlmm_of_match[] = {
+-	{ .compatible = "qcom,sm7150-tlmm", },
++	{ .compatible = "motorola,hanoip-tlmm", .data = &hanoip_tlmm },
++	{ .compatible = "qcom,sm7150-tlmm", .data = &sm7150_tlmm },
+ 	{ },
+ };
+ MODULE_DEVICE_TABLE(of, sm7150_tlmm_of_match);
+diff --git a/drivers/soc/qcom/ice.c b/drivers/soc/qcom/ice.c
+index e256595b9..e957774e0 100644
+--- a/drivers/soc/qcom/ice.c
++++ b/drivers/soc/qcom/ice.c
+@@ -601,6 +601,17 @@ static struct qcom_ice *qcom_ice_create(struct device *dev,
+ 	if (IS_ERR(engine->iface_clk))
+ 		return ERR_CAST(engine->iface_clk);
+ 
++	/*
++	 * Program the UFS ICE core RCG (gcc_ufs_phy_ice_core_clk_src) to
++	 * 300 MHz. The DT provides qcom,op-freq-hz = 300MHz, but the mainline
++	 * driver never calls clk_set_rate, leaving the RCG at the XO default
++	 * (19.2 MHz) - which, combined with a U-Boot handoff that leaves the
++	 * UFS clock block in reset, makes the branch halt check fail with
++	 * "stuck at off" (-EBUSY). Mirror the downstream ice driver.
++	 */
++	if (!IS_ERR(engine->core_clk))
++		clk_set_rate(engine->core_clk, 300000000);
++
+ 	if (!qcom_ice_check_supported(engine))
+ 		return ERR_PTR(-EOPNOTSUPP);
+ 
+-- 
+2.43.0
+

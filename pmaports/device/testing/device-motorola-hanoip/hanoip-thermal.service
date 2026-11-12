@@ -1,0 +1,13 @@
+[Unit]
+Description=Battery heat protection (pause charging at 40 C, cap the CPU at 45 C, power off at 55 C)
+Documentation=man:systemd.service(5)
+
+[Service]
+ExecStart=/usr/bin/hanoip-thermal
+# Stopping must not leave the charge paused or the CPU capped.
+ExecStopPost=/bin/sh -c 'rm -f /run/hanoip-thermal.hot; for p in /sys/devices/system/cpu/cpu[0-9]*/cpufreq; do cat "$$p/cpuinfo_max_freq" > "$$p/scaling_max_freq"; done'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

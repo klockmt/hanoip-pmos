@@ -1,0 +1,441 @@
+From 49a3bddaa02868f0fbeae54258e51ae46accc4f1 Mon Sep 17 00:00:00 2001
+From: hanoip <hanoip@localhost>
+Date: Sun, 25 Oct 2026 20:56:34 +0000
+Subject: [PATCH 124/194] hanoip: msm-display
+
+---
+ drivers/clk/qcom/dispcc-sm7150.c        | 13 ++---
+ drivers/gpu/drm/msm/disp/dpu1/dpu_kms.c |  4 ++
+ drivers/gpu/drm/msm/disp/dpu1/dpu_kms.h |  1 +
+ drivers/gpu/drm/msm/dsi/dsi_host.c      | 69 +++++++++++++++++++++++++
+ drivers/gpu/drm/msm/dsi/dsi_manager.c   | 30 +++++++++++
+ drivers/gpu/drm/msm/msm_drv.c           |  5 ++
+ drivers/gpu/drm/msm/msm_iommu.c         | 32 ++++++++++++
+ drivers/gpu/drm/msm/msm_kms.c           |  6 ++-
+ drivers/gpu/drm/msm/msm_mdss.c          |  4 ++
+ drivers/gpu/drm/msm/msm_mmu.h           |  3 ++
+ 10 files changed, 157 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/clk/qcom/dispcc-sm7150.c b/drivers/clk/qcom/dispcc-sm7150.c
+index b9df6153e..1b238c75a 100644
+--- a/drivers/clk/qcom/dispcc-sm7150.c
++++ b/drivers/clk/qcom/dispcc-sm7150.c
+@@ -343,7 +343,7 @@ static struct clk_rcg2 dispcc_mdss_mdp_clk_src = {
+ 		.parent_data = dispcc_parent_data_3,
+ 		.num_parents = ARRAY_SIZE(dispcc_parent_data_3),
+ 		.flags = CLK_SET_RATE_PARENT,
+-		.ops = &clk_rcg2_shared_ops,
++		.ops = &clk_rcg2_shared_no_init_park_ops,
+ 	},
+ };
+ 
+@@ -967,10 +967,10 @@ static const struct qcom_cc_desc dispcc_sm7150_desc = {
+ 	.config = &dispcc_sm7150_regmap_config,
+ 	.clks = dispcc_sm7150_clocks,
+ 	.num_clks = ARRAY_SIZE(dispcc_sm7150_clocks),
+-	.gdscs = dispcc_sm7150_gdscs,
+-	.num_gdscs = ARRAY_SIZE(dispcc_sm7150_gdscs),
+ 	.resets = dispcc_sm7150_resets,
+ 	.num_resets = ARRAY_SIZE(dispcc_sm7150_resets),
++	.gdscs = dispcc_sm7150_gdscs,
++	.num_gdscs = ARRAY_SIZE(dispcc_sm7150_gdscs),
+ };
+ 
+ static const struct of_device_id dispcc_sm7150_match_table[] = {
+@@ -987,12 +987,7 @@ static int dispcc_sm7150_probe(struct platform_device *pdev)
+ 	if (IS_ERR(regmap))
+ 		return PTR_ERR(regmap);
+ 
+-	clk_fabia_pll_configure(&dispcc_pll0, regmap, &dispcc_pll0_config);
+-	/* Enable clock gating for DSI and MDP clocks */
+-	regmap_update_bits(regmap, 0x8000, 0x7f0, 0x7f0);
+-
+-	/* Keep some clocks always-on */
+-	qcom_branch_set_clk_en(regmap, 0x605c); /* DISPCC_XO_CLK */
++	/* Preserve the PLL and clock gating state inherited from U-Boot. */
+ 
+ 	return qcom_cc_really_probe(&pdev->dev, &dispcc_sm7150_desc, regmap);
+ }
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_kms.c b/drivers/gpu/drm/msm/disp/dpu1/dpu_kms.c
+index da3556eb6..b21d60d30 100644
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_kms.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_kms.c
+@@ -402,7 +402,10 @@ static const struct drm_private_state_funcs dpu_kms_global_state_funcs = {
+ 
+ static void dpu_kms_global_obj_fini(struct dpu_kms *dpu_kms)
+ {
++	if (!dpu_kms->global_state_initialized)
++		return;
+ 	drm_atomic_private_obj_fini(&dpu_kms->global_state);
++	dpu_kms->global_state_initialized = false;
+ }
+ 
+ static int dpu_kms_parse_data_bus_icc_path(struct dpu_kms *dpu_kms)
+@@ -1156,6 +1159,7 @@ static int dpu_kms_hw_init(struct msm_kms *kms)
+ 
+ 	drm_atomic_private_obj_init(dpu_kms->dev, &dpu_kms->global_state,
+ 				    &dpu_kms_global_state_funcs);
++	dpu_kms->global_state_initialized = true;
+ 
+ 	atomic_set(&dpu_kms->bandwidth_ref, 0);
+ 
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_kms.h b/drivers/gpu/drm/msm/disp/dpu1/dpu_kms.h
+index e39831a39..d9f2034d6 100644
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_kms.h
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_kms.h
+@@ -78,6 +78,7 @@ struct dpu_kms {
+ 	 * dpu_kms_global_get_state()
+ 	 */
+ 	struct drm_private_obj global_state;
++	bool global_state_initialized;
+ 
+ 	struct dpu_rm rm;
+ 
+diff --git a/drivers/gpu/drm/msm/dsi/dsi_host.c b/drivers/gpu/drm/msm/dsi/dsi_host.c
+index b292dfd26..3c3266f39 100644
+--- a/drivers/gpu/drm/msm/dsi/dsi_host.c
++++ b/drivers/gpu/drm/msm/dsi/dsi_host.c
+@@ -147,6 +147,11 @@ struct msm_dsi_host {
+ 	spinlock_t intr_lock; /* Protect interrupt ctrl register */
+ 
+ 	u32 err_work_state;
++	/* Cached hanoip diagnostics; reading sysfs never transmits DSI commands. */
++	bool diag_enabled;
++	u32 diag_count;
++	u32 diag_first[6], diag_last[6], diag_or[6];
++	u32 diag_pre_ctrl, diag_pre_status, diag_post_ctrl, diag_post_status;
+ 	struct work_struct err_work;
+ 	struct workqueue_struct *workqueue;
+ 
+@@ -1668,8 +1673,26 @@ static void dsi_clk_status(struct msm_dsi_host *msm_host)
+ 
+ static void dsi_error(struct msm_dsi_host *msm_host)
+ {
++	static const u32 regs[] = {
++		REG_DSI_ACK_ERR_STATUS, REG_DSI_FIFO_STATUS,
++		REG_DSI_TIMEOUT_STATUS, REG_DSI_DLN0_PHY_ERR,
++		REG_DSI_STATUS0, REG_DSI_CLK_STATUS,
++	};
++	unsigned int i;
++
+ 	/* disable dsi error interrupt */
+ 	dsi_intr_ctrl(msm_host, DSI_IRQ_MASK_ERROR, 0);
++	if (msm_host->diag_enabled) {
++		for (i = 0; i < ARRAY_SIZE(regs); i++) {
++			u32 value = dsi_read(msm_host, regs[i]);
++
++			if (!msm_host->diag_count)
++				msm_host->diag_first[i] = value;
++			msm_host->diag_last[i] = value;
++			msm_host->diag_or[i] |= value;
++		}
++		msm_host->diag_count++;
++	}
+ 
+ 	dsi_clk_status(msm_host);
+ 	dsi_fifo_status(msm_host);
+@@ -2002,6 +2025,34 @@ static int dsi_host_get_id(struct msm_dsi_host *msm_host)
+ 	return -EINVAL;
+ }
+ 
++static ssize_t error_snapshot_show(struct device *dev,
++				  struct device_attribute *attr, char *buf)
++{
++	struct msm_dsi *dsi = dev_get_drvdata(dev);
++	struct msm_dsi_host *host;
++
++	if (!dsi || !dsi->host)
++		return -ENODEV;
++	host = to_msm_dsi_host(dsi->host);
++	return sysfs_emit(buf,
++		"irqs=%u order=ack,fifo,timeout,phy,status0,clk first=%#x,%#x,%#x,%#x,%#x,%#x last=%#x,%#x,%#x,%#x,%#x,%#x or=%#x,%#x,%#x,%#x,%#x,%#x pre_ctrl=%#x pre_status=%#x post_ctrl=%#x post_status=%#x\n",
++		READ_ONCE(host->diag_count),
++		READ_ONCE(host->diag_first[0]), READ_ONCE(host->diag_first[1]),
++		READ_ONCE(host->diag_first[2]), READ_ONCE(host->diag_first[3]),
++		READ_ONCE(host->diag_first[4]), READ_ONCE(host->diag_first[5]),
++		READ_ONCE(host->diag_last[0]), READ_ONCE(host->diag_last[1]),
++		READ_ONCE(host->diag_last[2]), READ_ONCE(host->diag_last[3]),
++		READ_ONCE(host->diag_last[4]), READ_ONCE(host->diag_last[5]),
++		READ_ONCE(host->diag_or[0]), READ_ONCE(host->diag_or[1]),
++		READ_ONCE(host->diag_or[2]), READ_ONCE(host->diag_or[3]),
++		READ_ONCE(host->diag_or[4]), READ_ONCE(host->diag_or[5]),
++		READ_ONCE(host->diag_pre_ctrl), READ_ONCE(host->diag_pre_status),
++		READ_ONCE(host->diag_post_ctrl), READ_ONCE(host->diag_post_status));
++}
++static DEVICE_ATTR_RO(error_snapshot);
++static struct attribute *dsi_diag_attrs[] = { &dev_attr_error_snapshot.attr, NULL };
++static const struct attribute_group dsi_diag_group = { .attrs = dsi_diag_attrs };
++
+ int msm_dsi_host_init(struct msm_dsi *msm_dsi)
+ {
+ 	struct msm_dsi_host *msm_host = NULL;
+@@ -2092,6 +2143,12 @@ int msm_dsi_host_init(struct msm_dsi *msm_dsi)
+ 	INIT_WORK(&msm_host->err_work, dsi_err_worker);
+ 
+ 	msm_dsi->id = msm_host->id;
++	msm_host->diag_enabled = of_machine_is_compatible("motorola,hanoip");
++	if (msm_host->diag_enabled) {
++		ret = devm_device_add_group(&pdev->dev, &dsi_diag_group);
++		if (ret)
++			return ret;
++	}
+ 
+ 	DBG("Dsi Host %d initialized", msm_host->id);
+ 	return 0;
+@@ -2528,9 +2585,21 @@ int msm_dsi_host_power_on(struct mipi_dsi_host *host,
+ 		goto fail_disable_clk;
+ 	}
+ 
++	if (msm_host->diag_enabled) {
++		msm_host->diag_pre_ctrl = dsi_read(msm_host, REG_DSI_CTRL);
++		msm_host->diag_pre_status = dsi_read(msm_host, REG_DSI_STATUS0);
++	}
++	/* Do not resurrect ABL's active video engine inside dsi_sw_reset(). */
++	if (msm_host->diag_enabled && msm_host->dsc &&
++	    (msm_host->mode_flags & MIPI_DSI_MODE_VIDEO))
++		dsi_op_mode_config(msm_host, false, false);
+ 	dsi_timing_setup(msm_host, is_bonded_dsi);
+ 	dsi_sw_reset(msm_host);
+ 	dsi_ctrl_enable(msm_host, phy_shared_timings, phy);
++	if (msm_host->diag_enabled) {
++		msm_host->diag_post_ctrl = dsi_read(msm_host, REG_DSI_CTRL);
++		msm_host->diag_post_status = dsi_read(msm_host, REG_DSI_STATUS0);
++	}
+ 
+ 	msm_host->power_on = true;
+ 	mutex_unlock(&msm_host->dev_mutex);
+diff --git a/drivers/gpu/drm/msm/dsi/dsi_manager.c b/drivers/gpu/drm/msm/dsi/dsi_manager.c
+index 959daa88b..4c1675b80 100644
+--- a/drivers/gpu/drm/msm/dsi/dsi_manager.c
++++ b/drivers/gpu/drm/msm/dsi/dsi_manager.c
+@@ -198,6 +198,7 @@ static void dsi_mgr_phy_disable(int id)
+ struct dsi_bridge {
+ 	struct drm_bridge base;
+ 	int id;
++	bool video_deferred;
+ };
+ 
+ #define to_dsi_bridge(x) container_of(x, struct dsi_bridge, base)
+@@ -297,6 +298,16 @@ static void dsi_mgr_bridge_pre_enable(struct drm_bridge *bridge,
+ 		return;
+ 	}
+ 
++	/* Keep command transport ready, but don't feed DSC video during reset/PPS. */
++	if (!is_bonded_dsi && of_machine_is_compatible("motorola,hanoip") &&
++	    msm_dsi->next_bridge &&
++	    of_device_is_compatible(msm_dsi->next_bridge->of_node,
++				    "tianma,ili7807s-hanoip") &&
++	    (msm_dsi_host_get_mode_flags(host) & MIPI_DSI_MODE_VIDEO)) {
++		to_dsi_bridge(bridge)->video_deferred = true;
++		return;
++	}
++
+ 	ret = msm_dsi_host_enable(host);
+ 	if (ret) {
+ 		pr_err("%s: enable host %d failed, %d\n", __func__, id, ret);
+@@ -319,6 +330,23 @@ static void dsi_mgr_bridge_pre_enable(struct drm_bridge *bridge,
+ 	dsi_mgr_bridge_power_off(bridge);
+ }
+ 
++static void dsi_mgr_bridge_enable(struct drm_bridge *bridge,
++				  struct drm_atomic_commit *commit)
++{
++	struct dsi_bridge *dsi_bridge = to_dsi_bridge(bridge);
++	struct msm_dsi *dsi = dsi_mgr_get_dsi(dsi_bridge->id);
++	int ret;
++
++	if (!dsi_bridge->video_deferred)
++		return;
++	dsi_bridge->video_deferred = false;
++	ret = msm_dsi_host_enable(dsi->host);
++	if (ret) {
++		dev_err(&dsi->pdev->dev, "HANOIP: late video enable failed: %d\n", ret);
++		dsi_mgr_bridge_power_off(bridge);
++	}
++}
++
+ void msm_dsi_manager_tpg_enable(void)
+ {
+ 	struct msm_dsi *m_dsi = dsi_mgr_get_dsi(DSI_0);
+@@ -342,6 +370,7 @@ static void dsi_mgr_bridge_post_disable(struct drm_bridge *bridge,
+ 	bool is_bonded_dsi = IS_BONDED_DSI();
+ 	int ret;
+ 
++	to_dsi_bridge(bridge)->video_deferred = false;
+ 	DBG("id=%d", id);
+ 
+ 	/*
+@@ -452,6 +481,7 @@ static const struct drm_bridge_funcs dsi_mgr_bridge_funcs = {
+ 	.atomic_duplicate_state = drm_atomic_helper_bridge_duplicate_state,
+ 	.attach = dsi_mgr_bridge_attach,
+ 	.atomic_pre_enable = dsi_mgr_bridge_pre_enable,
++	.atomic_enable = dsi_mgr_bridge_enable,
+ 	.atomic_post_disable = dsi_mgr_bridge_post_disable,
+ 	.mode_set = dsi_mgr_bridge_mode_set,
+ 	.mode_valid = dsi_mgr_bridge_mode_valid,
+diff --git a/drivers/gpu/drm/msm/msm_drv.c b/drivers/gpu/drm/msm/msm_drv.c
+index f3d2eaa04..c238b2274 100644
+--- a/drivers/gpu/drm/msm/msm_drv.c
++++ b/drivers/gpu/drm/msm/msm_drv.c
+@@ -1133,14 +1133,19 @@ static int __init msm_drm_register(void)
+ 		return -EINVAL;
+ 
+ 	DBG("init");
++	pr_info("HANOIP DRM: register MDP/DPU\n");
+ 	msm_mdp_register();
+ 	msm_dpu_register();
++	pr_info("HANOIP DRM: register DSI\n");
+ 	msm_dsi_register();
+ 	msm_hdmi_register();
+ 	msm_dp_register();
++	pr_info("HANOIP DRM: register Adreno\n");
+ 	adreno_register();
+ 	msm_mdp4_register();
++	pr_info("HANOIP DRM: register MDSS\n");
+ 	msm_mdss_register();
++	pr_info("HANOIP DRM: registration complete\n");
+ 
+ 	return 0;
+ }
+diff --git a/drivers/gpu/drm/msm/msm_iommu.c b/drivers/gpu/drm/msm/msm_iommu.c
+index da6782fca..8ad6e7ebb 100644
+--- a/drivers/gpu/drm/msm/msm_iommu.c
++++ b/drivers/gpu/drm/msm/msm_iommu.c
+@@ -7,6 +7,7 @@
+ #include <linux/adreno-smmu-priv.h>
+ #include <linux/io-pgtable.h>
+ #include <linux/kmemleak.h>
++#include <linux/of_address.h>
+ 
+ #if defined(CONFIG_ARM_DMA_USE_IOMMU)
+ #include <asm/dma-iommu.h>
+@@ -732,6 +733,30 @@ static const struct msm_mmu_funcs funcs = {
+ 		.set_stall = msm_iommu_set_stall,
+ };
+ 
++static int msm_iommu_hanoip_firmware_reserve(struct msm_iommu *iommu, struct device *dev)
++{
++	struct device_node *memory;
++	struct resource region;
++	int ret;
++
++	if (!of_machine_is_compatible("motorola,hanoip") ||
++	    !of_device_is_compatible(dev->of_node, "qcom,sm7150-mdss"))
++		return 0;
++	memory = of_parse_phandle(dev->of_node, "memory-region", 0);
++	if (!memory)
++		return 0;
++	ret = of_address_to_resource(memory, 0, &region);
++	of_node_put(memory);
++	if (ret)
++		return ret;
++	/* Only the separately reserved, collected hanoip splash range is allowed. */
++	if (region.start != 0x9c000000 || resource_size(&region) != 0x1700000)
++		return -EINVAL;
++	/* The SMMU attach hook maps this after its page tables are ready. */
++	iommu->base.firmware_start = region.start;
++	return 0;
++}
++
+ struct msm_mmu *msm_iommu_new(struct device *dev, unsigned long quirks)
+ {
+ 	struct iommu_domain *domain;
+@@ -771,6 +796,13 @@ struct msm_mmu *msm_iommu_new(struct device *dev, unsigned long quirks)
+ 		}
+ 	}
+ 
++	ret = msm_iommu_hanoip_firmware_reserve(iommu, dev);
++	if (ret) {
++		iommu_domain_free(domain);
++		kfree(iommu);
++		return ERR_PTR(ret);
++	}
++
+ 	ret = iommu_attach_device(iommu->domain, dev);
+ 	if (ret) {
+ 		iommu_domain_free(domain);
+diff --git a/drivers/gpu/drm/msm/msm_kms.c b/drivers/gpu/drm/msm/msm_kms.c
+index e5d0ea629..e43fc0908 100644
+--- a/drivers/gpu/drm/msm/msm_kms.c
++++ b/drivers/gpu/drm/msm/msm_kms.c
+@@ -185,6 +185,7 @@ struct drm_gpuvm *msm_kms_init_vm(struct drm_device *dev, struct device *mdss_de
+ 	struct msm_drm_private *priv = dev->dev_private;
+ 	struct msm_kms *kms = priv->kms;
+ 	struct device *iommu_dev;
++	u64 iova_size = 0x100000000ULL - 0x1000;
+ 
+ 	/*
+ 	 * IOMMUs can be a part of MDSS device tree binding, or the
+@@ -203,8 +204,11 @@ struct drm_gpuvm *msm_kms_init_vm(struct drm_device *dev, struct device *mdss_de
+ 	if (IS_ERR(mmu))
+ 		return ERR_CAST(mmu);
+ 
++	/* Keep allocations below the reserved firmware scanout mapping. */
++	if (mmu->firmware_start)
++		iova_size = mmu->firmware_start - 0x1000;
+ 	vm = msm_gem_vm_create(dev, mmu, "mdp_kms",
+-			       0x1000, 0x100000000 - 0x1000, true);
++			       0x1000, iova_size, true);
+ 	if (IS_ERR(vm)) {
+ 		dev_err(mdp_dev, "vm create, error %pe\n", vm);
+ 		mmu->funcs->destroy(mmu);
+diff --git a/drivers/gpu/drm/msm/msm_mdss.c b/drivers/gpu/drm/msm/msm_mdss.c
+index 9087c4b29..c721064d5 100644
+--- a/drivers/gpu/drm/msm/msm_mdss.c
++++ b/drivers/gpu/drm/msm/msm_mdss.c
+@@ -319,6 +319,7 @@ static int msm_mdss_reset(struct device *dev)
+ 				     "failed to acquire mdss reset\n");
+ 	}
+ 
++	dev_info(dev, "HANOIP MDSS: asserting reset\n");
+ 	reset_control_assert(reset);
+ 	/*
+ 	 * Tests indicate that reset has to be held for some period of time,
+@@ -326,6 +327,7 @@ static int msm_mdss_reset(struct device *dev)
+ 	 */
+ 	msleep(20);
+ 	reset_control_deassert(reset);
++	dev_info(dev, "HANOIP MDSS: reset released\n");
+ 
+ 	reset_control_put(reset);
+ 
+@@ -473,6 +475,7 @@ static int mdss_probe(struct platform_device *pdev)
+ 	struct device *dev = &pdev->dev;
+ 	int ret;
+ 
++	dev_info(dev, "HANOIP MDSS: probe entered\n");
+ 	mdss = msm_mdss_init(pdev, is_mdp5);
+ 	if (IS_ERR(mdss))
+ 		return PTR_ERR(mdss);
+@@ -485,6 +488,7 @@ static int mdss_probe(struct platform_device *pdev)
+ 	 * Populate the children devices, find the MDP5/DPU node, and then add
+ 	 * the interfaces to our components list.
+ 	 */
++	dev_info(dev, "HANOIP MDSS: populating children\n");
+ 	ret = of_platform_populate(dev->of_node, NULL, NULL, dev);
+ 	if (ret) {
+ 		DRM_DEV_ERROR(dev, "failed to populate children devices\n");
+diff --git a/drivers/gpu/drm/msm/msm_mmu.h b/drivers/gpu/drm/msm/msm_mmu.h
+index 8915662fb..d36e9c12b 100644
+--- a/drivers/gpu/drm/msm/msm_mmu.h
++++ b/drivers/gpu/drm/msm/msm_mmu.h
+@@ -56,6 +56,8 @@ struct msm_mmu {
+ 	int (*handler)(void *arg, unsigned long iova, int flags, void *data);
+ 	void *arg;
+ 	enum msm_mmu_type type;
++	/* Optional firmware scanout mapping, excluded from display allocations. */
++	u64 firmware_start;
+ 
+ 	/**
+ 	 * @prealloc: pre-allocated pages for pgtable
+@@ -72,6 +74,7 @@ static inline void msm_mmu_init(struct msm_mmu *mmu, struct device *dev,
+ 	mmu->dev = dev;
+ 	mmu->funcs = funcs;
+ 	mmu->type = type;
++	mmu->firmware_start = 0;
+ }
+ 
+ struct msm_mmu *msm_iommu_new(struct device *dev, unsigned long quirks);
+-- 
+2.43.0
+

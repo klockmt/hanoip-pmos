@@ -1,0 +1,5 @@
+#!/bin/sh
+# The USB gadget (NCM) is set up by the initramfs / U-Boot; give it the server's address and hand the PC 172.16.42.2.
+ip addr add 172.16.42.1/24 dev usb0 2>/dev/null; ip link set usb0 up
+( unudhcpd -i usb0 -s 172.16.42.1 -c 172.16.42.2 >/dev/null 2>&1 & )
+logger -t hanoip-usb-net "USB NCM up on 172.16.42.1/24"

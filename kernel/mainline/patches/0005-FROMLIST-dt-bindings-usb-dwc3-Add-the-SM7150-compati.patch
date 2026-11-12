@@ -1,0 +1,45 @@
+From 217c0ead387ce8567ef3f6c85d232d17842dd8e7 Mon Sep 17 00:00:00 2001
+From: David Wronek <david@mainlining.org>
+Date: Fri, 8 Sep 2023 21:57:06 +0300
+Subject: [PATCH 005/194] FROMLIST: dt-bindings: usb: dwc3: Add the SM7150
+ compatible
+
+Document the SM7150 dwc3 compatible.
+
+Signed-off-by: David Wronek <david@mainlining.org>
+Signed-off-by: Danila Tikhonov <danila@jiaxyga.com>
+---
+ Documentation/devicetree/bindings/usb/qcom,dwc3.yaml | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/Documentation/devicetree/bindings/usb/qcom,dwc3.yaml b/Documentation/devicetree/bindings/usb/qcom,dwc3.yaml
+index 90daee616..7a317dfbb 100644
+--- a/Documentation/devicetree/bindings/usb/qcom,dwc3.yaml
++++ b/Documentation/devicetree/bindings/usb/qcom,dwc3.yaml
+@@ -60,6 +60,7 @@ properties:
+           - qcom,sm6125-dwc3
+           - qcom,sm6350-dwc3
+           - qcom,sm6375-dwc3
++          - qcom,sm7150-dwc3
+           - qcom,sm8150-dwc3
+           - qcom,sm8250-dwc3
+           - qcom,sm8350-dwc3
+@@ -227,6 +228,7 @@ allOf:
+               - qcom,sdx65-dwc3
+               - qcom,sdx75-dwc3
+               - qcom,sm6350-dwc3
++              - qcom,sm7150-dwc3
+     then:
+       properties:
+         clocks:
+@@ -504,6 +506,7 @@ allOf:
+               - qcom,sdx75-dwc3
+               - qcom,sm4250-dwc3
+               - qcom,sm6350-dwc3
++              - qcom,sm7150-dwc3
+               - qcom,sm8150-dwc3
+               - qcom,sm8250-dwc3
+               - qcom,sm8350-dwc3
+-- 
+2.43.0
+

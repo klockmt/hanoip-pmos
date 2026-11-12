@@ -1,0 +1,29 @@
+From cd9dcad0d7f9e5bcc2495c20af834a8d5d21892d Mon Sep 17 00:00:00 2001
+From: Danila Tikhonov <danila@jiaxyga.com>
+Date: Wed, 5 Apr 2023 18:37:07 +0300
+Subject: [PATCH 021/194] FROMLIST: cpufreq: Add SM7150 to cpufreq-dt-platdev
+ blocklist
+
+The Qualcomm SM7150 platform uses the qcom-cpufreq-hw driver, so add
+it to the cpufreq-dt-platdev driver's blocklist.
+
+Signed-off-by: Danila Tikhonov <danila@jiaxyga.com>
+---
+ drivers/cpufreq/cpufreq-dt-platdev.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/cpufreq/cpufreq-dt-platdev.c b/drivers/cpufreq/cpufreq-dt-platdev.c
+index 371ca1fe9..a4904f9da 100644
+--- a/drivers/cpufreq/cpufreq-dt-platdev.c
++++ b/drivers/cpufreq/cpufreq-dt-platdev.c
+@@ -179,6 +179,7 @@ static const struct of_device_id blocklist[] __initconst = {
+ 	{ .compatible = "qcom,sm6350", },
+ 	{ .compatible = "qcom,sm6375", },
+ 	{ .compatible = "qcom,sm7125", },
++	{ .compatible = "qcom,sm7150", },
+ 	{ .compatible = "qcom,sm7225", },
+ 	{ .compatible = "qcom,sm7325", },
+ 	{ .compatible = "qcom,sm8150", },
+-- 
+2.43.0
+

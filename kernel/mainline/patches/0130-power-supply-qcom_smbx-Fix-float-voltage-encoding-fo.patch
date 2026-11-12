@@ -1,0 +1,123 @@
+From 0949eb545e8a1bca196e7e7c6e7199e628976ddb Mon Sep 17 00:00:00 2001
+From: Aleks <aleks.spv@gmail.com>
+Date: Wed, 21 Oct 2026 18:00:00 +0600
+Subject: [PATCH 130/194] power: supply: qcom_smbx: Fix float voltage encoding
+ for SMB5
+
+FLOAT_VOLTAGE_CFG is encoded differently on the two generations:
+SMB2 starts at 3487.5 mV with 7.5 mV steps, SMB5 starts at 3600 mV
+with 10 mV steps. The driver always used the SMB2 formula (plus an
+off-by-one), so a 4.4 V battery got selector 0x7a, which SMB5 decodes
+as 4.82 V.
+
+Describe the encoding per generation in the match data, drop the
+off-by-one and leave the hardware setting untouched when the battery
+voltage is missing or out of range.
+
+Seen on PM6150 (Xiaomi Redmi Note 10 Pro): 0x1070 read 0x7a, now 0x50.
+
+Signed-off-by: Aleks <aleks.spv@gmail.com>
+---
+ drivers/power/supply/qcom_smbx.c | 37 ++++++++++++++++++++++++++------
+ 1 file changed, 31 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/power/supply/qcom_smbx.c b/drivers/power/supply/qcom_smbx.c
+index bbd07a176..735624f2f 100644
+--- a/drivers/power/supply/qcom_smbx.c
++++ b/drivers/power/supply/qcom_smbx.c
+@@ -267,6 +267,9 @@ struct smb_match_data {
+ 	unsigned int current_step_size_ua;
+ 	unsigned int current_limit_max_ua;
+ 	bool monitor_only;
++	int fv_min_uv;
++	int fv_max_uv;
++	int fv_step_uv;
+ };
+ 
+ static enum power_supply_property smb_properties[] = {
+@@ -967,6 +970,9 @@ struct smb_match_data pmi8998_match_data = {
+ 	.gen = SMB2,
+ 	.current_step_size_ua = 25000,
+ 	.current_limit_max_ua = 4800000,
++	.fv_min_uv = 3487500,
++	.fv_max_uv = 4920000,
++	.fv_step_uv = 7500,
+ };
+ 
+ struct smb_match_data pm660_match_data = {
+@@ -976,6 +982,9 @@ struct smb_match_data pm660_match_data = {
+ 	.gen = SMB2,
+ 	.current_step_size_ua = 25000,
+ 	.current_limit_max_ua = 4800000,
++	.fv_min_uv = 3487500,
++	.fv_max_uv = 4920000,
++	.fv_step_uv = 7500,
+ };
+ 
+ struct smb_match_data pm8150b_match_data = {
+@@ -985,6 +994,9 @@ struct smb_match_data pm8150b_match_data = {
+ 	.gen = SMB5,
+ 	.current_step_size_ua = 50000,
+ 	.current_limit_max_ua = 5000000,
++	.fv_min_uv = 3600000,
++	.fv_max_uv = 4790000,
++	.fv_step_uv = 10000,
+ };
+ 
+ struct smb_match_data pm7250b_match_data = {
+@@ -994,6 +1006,9 @@ struct smb_match_data pm7250b_match_data = {
+ 	.gen = SMB5,
+ 	.current_step_size_ua = 50000,
+ 	.current_limit_max_ua = 5000000,
++	.fv_min_uv = 3600000,
++	.fv_max_uv = 4790000,
++	.fv_step_uv = 10000,
+ };
+ 
+ 
+@@ -1054,7 +1069,7 @@ static int smb_probe(struct platform_device *pdev)
+ 	struct power_supply_desc *desc;
+ 	struct smb_chip *chip;
+ 	const struct smb_match_data *match_data;
+-	int rc, irq;
++	int rc, irq, fv_uv;
+ 
+ 	chip = devm_kzalloc(&pdev->dev, sizeof(*chip), GFP_KERNEL);
+ 	if (!chip)
+@@ -1146,11 +1161,18 @@ static int smb_probe(struct platform_device *pdev)
+ 		return dev_err_probe(chip->dev, rc,
+ 				     "Failed to init status change work\n");
+ 
+-	rc = (chip->batt_info->voltage_max_design_uv - 3487500) / 7500 + 1;
+-	rc = regmap_update_bits(chip->regmap, chip->base + FLOAT_VOLTAGE_CFG,
+-				FLOAT_VOLTAGE_SETTING_MASK, rc);
+-	if (rc < 0)
+-		return dev_err_probe(chip->dev, rc, "Couldn't set vbat max\n");
++	fv_uv = chip->batt_info->voltage_max_design_uv;
++	if (fv_uv < match_data->fv_min_uv || fv_uv > match_data->fv_max_uv) {
++		dev_warn(chip->dev,
++			 "Battery max voltage %d uV out of range, preserving hardware setting\n",
++			 fv_uv);
++	} else {
++		rc = regmap_update_bits(chip->regmap, chip->base + FLOAT_VOLTAGE_CFG,
++					FLOAT_VOLTAGE_SETTING_MASK,
++					(fv_uv - match_data->fv_min_uv) / match_data->fv_step_uv);
++		if (rc < 0)
++			return dev_err_probe(chip->dev, rc, "Couldn't set vbat max\n");
++	}
+ 
+ 	rc = smb_init_irq(chip, &irq, "bat-ov", smb_handle_batt_overvoltage);
+ 	if (rc < 0)
+@@ -1208,6 +1230,9 @@ static const struct smb_match_data hanoip_monitor_match_data = {
+ 	.gen = SMB5,
+ 	.current_step_size_ua = 50000,
+ 	.current_limit_max_ua = 5000000,
++	.fv_min_uv = 3600000,
++	.fv_max_uv = 4790000,
++	.fv_step_uv = 10000,
+ 	.monitor_only = true,
+ };
+ 
+-- 
+2.43.0
+

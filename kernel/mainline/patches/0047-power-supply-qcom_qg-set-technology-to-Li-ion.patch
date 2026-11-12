@@ -1,0 +1,27 @@
+From 88129634ba6ea763efbb4bb69249c2b0b0ec1426 Mon Sep 17 00:00:00 2001
+From: Luca Weiss <luca.weiss@fairphone.com>
+Date: Fri, 20 Dec 2024 15:15:18 +0100
+Subject: [PATCH 047/194] power: supply: qcom_qg: set technology to Li-ion
+
+While PM7250B appears to also support Li-polymer batteries, it's
+primarily for Li-ion batteries.
+---
+ drivers/power/supply/qcom_qg.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/power/supply/qcom_qg.c b/drivers/power/supply/qcom_qg.c
+index db502b487..4683cbe22 100644
+--- a/drivers/power/supply/qcom_qg.c
++++ b/drivers/power/supply/qcom_qg.c
+@@ -128,7 +128,7 @@ static int qcom_qg_get_property(struct power_supply *psy,
+ 		val->intval = POWER_SUPPLY_STATUS_UNKNOWN;
+ 		break;
+ 	case POWER_SUPPLY_PROP_TECHNOLOGY:
+-		val->intval = POWER_SUPPLY_TECHNOLOGY_LIPO;
++		val->intval = POWER_SUPPLY_TECHNOLOGY_LION;
+ 		break;
+ 	case POWER_SUPPLY_PROP_VOLTAGE_MAX_DESIGN:
+ 		val->intval = chip->batt_info->voltage_max_design_uv;
+-- 
+2.43.0
+

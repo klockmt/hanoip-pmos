@@ -1,0 +1,548 @@
+From eafd585e30d54eaa761d9bcbff4dfec0220bcdb7 Mon Sep 17 00:00:00 2001
+From: hanoip <hanoip@localhost>
+Date: Sun, 25 Oct 2026 20:56:34 +0000
+Subject: [PATCH 125/194] hanoip: touch
+
+---
+ drivers/input/touchscreen/Kconfig             |   9 +
+ drivers/input/touchscreen/Makefile            |   1 +
+ drivers/input/touchscreen/ilitek-hanoip-spi.c | 495 ++++++++++++++++++
+ 3 files changed, 505 insertions(+)
+ create mode 100644 drivers/input/touchscreen/ilitek-hanoip-spi.c
+
+diff --git a/drivers/input/touchscreen/Kconfig b/drivers/input/touchscreen/Kconfig
+index 80f47b313..9a9e4de06 100644
+--- a/drivers/input/touchscreen/Kconfig
++++ b/drivers/input/touchscreen/Kconfig
+@@ -518,6 +518,15 @@ config TOUCHSCREEN_ILI210X
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called ili210x.
+ 
++config TOUCHSCREEN_HANOIP_ILITEK_SPI
++	tristate "Experimental Moto G60 Ilitek ILI7807 SPI touchscreen"
++	depends on SPI && OF && GPIOLIB
++	select CRC32
++	help
++	  Minimal hanoip SPI bring-up with the collected stock firmware loaded
++	  and verified in the controller's internal RAM. No controller flash
++	  programming, factory interfaces, gestures or suspend support.
++
+ config TOUCHSCREEN_ILITEK
+ 	tristate "Ilitek I2C 213X/23XX/25XX/Lego Series Touch ICs"
+ 	depends on I2C
+diff --git a/drivers/input/touchscreen/Makefile b/drivers/input/touchscreen/Makefile
+index 9e4c36f03..942464d4a 100644
+--- a/drivers/input/touchscreen/Makefile
++++ b/drivers/input/touchscreen/Makefile
+@@ -56,6 +56,7 @@ obj-$(CONFIG_TOUCHSCREEN_HYNITRON_CSTXXX)	+= hynitron_cstxxx.o
+ obj-$(CONFIG_TOUCHSCREEN_HYNITRON_CST816X)	+= hynitron-cst816x.o
+ obj-$(CONFIG_TOUCHSCREEN_ILI210X)	+= ili210x.o
+ obj-$(CONFIG_TOUCHSCREEN_ILITEK)	+= ilitek_ts_i2c.o
++obj-$(CONFIG_TOUCHSCREEN_HANOIP_ILITEK_SPI)	+= ilitek-hanoip-spi.o
+ obj-$(CONFIG_TOUCHSCREEN_IMAGIS)	+= imagis.o
+ obj-$(CONFIG_TOUCHSCREEN_IMX6UL_TSC)	+= imx6ul_tsc.o
+ obj-$(CONFIG_TOUCHSCREEN_INEXIO)	+= inexio.o
+diff --git a/drivers/input/touchscreen/ilitek-hanoip-spi.c b/drivers/input/touchscreen/ilitek-hanoip-spi.c
+new file mode 100644
+index 000000000..a23edec73
+--- /dev/null
++++ b/drivers/input/touchscreen/ilitek-hanoip-spi.c
+@@ -0,0 +1,495 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++/*
++ * Experimental Moto G60 Ilitek ILI7807 SPI input driver.
++ * Protocol/IRAM sequence derived from Ilitek's GPL ilitek_v3_mmi driver:
++ * Copyright (C) 2011 ILI Technology Corporation.
++ * Original author: Dicky Chiang <dicky_chiang@ilitek.com>
++ *
++ * Only the verified hanoip AP/DATA/TUNING image is accepted. No controller
++ * flash programming, factory interfaces, filesystem writes or gestures.
++ */
++#include <linux/crc32.h>
++#include <linux/delay.h>
++#include <linux/firmware.h>
++#include <linux/gpio/consumer.h>
++#include <linux/input.h>
++#include <linux/input/mt.h>
++#include <linux/interrupt.h>
++#include <linux/module.h>
++#include <linux/spi/spi.h>
++#include <linux/unaligned.h>
++#include <linux/workqueue.h>
++#include <drm/drm_panel.h>
++
++#define ILI_FIRMWARE "ilitek/hanoip-7807-iram.bin"
++#define ILI_CHIP 0x7807
++#define ILI_SLOTS 10
++#define ILI_REPORT 43
++#define ILI_CHUNK 2048
++#define ILI_XFER (ILI_CHUNK + 8)
++#define ILI_HEADER 40
++#define ILI_ENTRY 20
++#define ILI_BLOCKS 3
++
++struct ili_hanoip {
++	struct spi_device *spi;
++	struct gpio_desc *reset;
++	struct input_dev *input;
++	u8 *tx, *rx;
++	bool ice;
++	unsigned long irqs, reports, rejected, restarts;
++	/* The TDDI loses its IRAM image whenever the panel powers off. */
++	const struct firmware *fw;
++	struct drm_panel_follower follower;
++	struct work_struct restart_work;
++	bool irq_enabled;
++};
++
++static int ili_transfer(struct ili_hanoip *ts, size_t txlen, size_t rxlen)
++{
++	size_t offset = ts->ice ? 1 : 3;
++	size_t length = rxlen ? offset + rxlen : txlen;
++	struct spi_transfer transfer = {
++		.tx_buf = ts->tx,
++		.rx_buf = rxlen ? ts->rx : NULL,
++		.len = length,
++	};
++	int ret;
++
++	if (length > ILI_XFER || txlen > length)
++		return -EINVAL;
++	memset(ts->tx + txlen, 0, length - txlen);
++	ret = spi_sync_transfer(ts->spi, &transfer, 1);
++	if (ret)
++		return ret;
++	if (rxlen && !ts->ice && ts->rx[1] != 0xa3)
++		return -EIO;
++	return 0;
++}
++
++static int ili_read(struct ili_hanoip *ts, void *data, size_t size)
++{
++	int ret;
++
++	ts->tx[0] = 0x83;
++	ret = ili_transfer(ts, 1, size);
++	if (!ret)
++		memcpy(data, ts->rx + (ts->ice ? 1 : 3), size);
++	return ret;
++}
++
++static int ili_ice_control(struct ili_hanoip *ts, bool enable)
++{
++	int ret;
++
++	ts->tx[0] = 0x82;
++	ts->tx[1] = enable ? 0x25 : 0x1b;
++	ts->tx[2] = 0x62;
++	ts->tx[3] = 0x10;
++	ts->tx[4] = 0x18;
++	ret = ili_transfer(ts, 5, 0);
++	if (!ret) {
++		ts->ice = enable;
++		usleep_range(1000, 2000);
++	}
++	return ret;
++}
++
++static int ili_ice_address(struct ili_hanoip *ts, u32 address)
++{
++	ts->tx[0] = 0x82;
++	ts->tx[1] = 0x25;
++	ts->tx[2] = address;
++	ts->tx[3] = address >> 8;
++	ts->tx[4] = address >> 16;
++	return ili_transfer(ts, 5, 0);
++}
++
++static int ili_ice_read(struct ili_hanoip *ts, u32 address, void *data, size_t size)
++{
++	int ret = ili_ice_address(ts, address);
++
++	return ret ? ret : ili_read(ts, data, size);
++}
++
++static int ili_ice_write(struct ili_hanoip *ts, u32 address,
++			 const void *data, size_t size)
++{
++	if (size > ILI_CHUNK)
++		return -EINVAL;
++	ts->tx[0] = 0x82;
++	ts->tx[1] = 0x25;
++	ts->tx[2] = address;
++	ts->tx[3] = address >> 8;
++	ts->tx[4] = address >> 16;
++	memcpy(ts->tx + 5, data, size);
++	return ili_transfer(ts, size + 5, 0);
++}
++
++static int ili_command(struct ili_hanoip *ts, const u8 *data, size_t size)
++{
++	if (size > ILI_CHUNK)
++		return -EINVAL;
++	ts->tx[0] = 0x82;
++	ts->tx[1] = size >> 8;
++	ts->tx[2] = size;
++	memcpy(ts->tx + 3, data, size);
++	return ili_transfer(ts, size + 3, 0);
++}
++
++static int ili_validate_firmware(const struct firmware *fw)
++{
++	static const u32 destinations[] = { 0, 0x20870, 0x20670 };
++	static const u32 sizes[] = { 0x14000, 0x2000, 0x200 };
++	size_t offset = ILI_HEADER + ILI_BLOCKS * ILI_ENTRY;
++	int i;
++
++	if (fw->size < offset || memcmp(fw->data, "HNOIRAM1", 8) ||
++	    get_unaligned_le32(fw->data + 8) != ILI_CHIP ||
++	    get_unaligned_le32(fw->data + 12) != ILI_BLOCKS ||
++	    get_unaligned_le32(fw->data + 16) != 1080 ||
++	    get_unaligned_le32(fw->data + 20) != 2460 ||
++	    get_unaligned_le32(fw->data + 24) != 2048 ||
++	    get_unaligned_le32(fw->data + 28) != 0x10000a00 ||
++	    get_unaligned_le32(fw->data + 32) != 0x01040608 ||
++	    get_unaligned_le32(fw->data + 36) != 0)
++		return -EINVAL;
++	for (i = 0; i < ILI_BLOCKS; i++) {
++		const u8 *entry = fw->data + ILI_HEADER + i * ILI_ENTRY;
++		u32 size = get_unaligned_le32(entry + 8);
++		u32 crc = get_unaligned_le32(entry + 12);
++
++		if (get_unaligned_le32(entry) != i + 1 ||
++		    get_unaligned_le32(entry + 4) != destinations[i] ||
++		    size != sizes[i] || get_unaligned_le32(entry + 16) != offset ||
++		    size > fw->size - offset)
++			return -EINVAL;
++		if (crc32_be(~0U, fw->data + offset, size - 4) != crc ||
++		    get_unaligned_be32(fw->data + offset + size - 4) != crc)
++			return -EBADMSG;
++		offset += size;
++	}
++	return offset == fw->size ? 0 : -EINVAL;
++}
++
++static int ili_load_iram(struct ili_hanoip *ts, const struct firmware *fw)
++{
++	u8 verify[256], pid[4], code_reset = 0xae;
++	int i, ret;
++
++	/* GPIO_ACTIVE_LOW: high 1 ms, low 5 ms, high 10 ms. */
++	gpiod_set_value_cansleep(ts->reset, 0);
++	usleep_range(1000, 2000);
++	gpiod_set_value_cansleep(ts->reset, 1);
++	usleep_range(5000, 6000);
++	gpiod_set_value_cansleep(ts->reset, 0);
++	usleep_range(10000, 11000);
++	ret = ili_ice_control(ts, true);
++	if (ret)
++		return ret;
++	ret = ili_ice_read(ts, 0x4009c, pid, sizeof(pid));
++	if (ret)
++		goto out;
++	dev_info(&ts->spi->dev, "Ilitek PID %#08x\n", get_unaligned_le32(pid));
++	if (get_unaligned_le32(pid) >> 16 != ILI_CHIP) {
++		ret = -ENODEV;
++		goto out;
++	}
++	for (i = 0; i < ILI_BLOCKS; i++) {
++		const u8 *entry = fw->data + ILI_HEADER + i * ILI_ENTRY;
++		u32 address = get_unaligned_le32(entry + 4);
++		u32 size = get_unaligned_le32(entry + 8);
++		const u8 *data = fw->data + get_unaligned_le32(entry + 16);
++		u32 done;
++
++		for (done = 0; done < size; done += ILI_CHUNK) {
++			ret = ili_ice_write(ts, address + done, data + done,
++					    min_t(u32, ILI_CHUNK, size - done));
++			if (ret)
++				goto out;
++		}
++		/* Verify every downloaded byte, without touching flash/CRC registers. */
++		for (done = 0; done < size; done += sizeof(verify)) {
++			u32 count = min_t(u32, sizeof(verify), size - done);
++
++			ret = ili_ice_read(ts, address + done, verify, count);
++			if (ret)
++				goto out;
++			if (memcmp(verify, data + done, count)) {
++				dev_err(&ts->spi->dev, "IRAM readback mismatch at %#x\n", address + done);
++				ret = -EBADMSG;
++				goto out;
++			}
++		}
++		dev_info(&ts->spi->dev, "IRAM block %d: %u bytes verified at %#x\n",
++			 i + 1, size, address);
++	}
++	ret = ili_ice_write(ts, 0x40040, &code_reset, 1);
++out:
++	if (ts->ice) {
++		int exit_ret = ili_ice_control(ts, false);
++
++		if (!ret)
++			ret = exit_ret;
++	}
++	msleep(20);
++	return ret;
++}
++
++static int ili_check_running_firmware(struct ili_hanoip *ts)
++{
++	const u8 pre[] = { 0xf6, 0x21 }, command = 0x21;
++	const u8 demo[] = { 0xf0, 0x00 };
++	u8 version[9];
++	int ret;
++
++	ret = ili_command(ts, pre, sizeof(pre));
++	if (ret)
++		return ret;
++	usleep_range(1000, 2000);
++	ret = ili_command(ts, &command, 1);
++	if (ret)
++		return ret;
++	msleep(20);
++	ret = ili_read(ts, version, sizeof(version));
++	if (ret)
++		return ret;
++	dev_info(&ts->spi->dev, "FW response %*ph\n", (int)sizeof(version), version);
++	if (version[0] != 0x21 || get_unaligned_be32(version + 1) != 0x10000a00)
++		return -EBADMSG;
++	ret = ili_command(ts, demo, sizeof(demo));
++	msleep(20);
++	return ret;
++}
++
++static irqreturn_t ili_irq(int irq, void *data)
++{
++	struct ili_hanoip *ts = data;
++	u8 report[ILI_REPORT], checksum = 0;
++	int i, ret;
++
++	ts->irqs++;
++	ret = ili_read(ts, report, sizeof(report));
++	if (ret)
++		goto reject;
++	for (i = 0; i < sizeof(report); i++)
++		checksum += report[i];
++	if (checksum || report[0] != 0x5a)
++		goto reject;
++	/* Validate the complete frame before changing any input slots. */
++	for (i = 0; i < ILI_SLOTS; i++) {
++		const u8 *p = report + 1 + i * 4;
++		unsigned int x = ((p[0] & 0xf0) << 4) | p[1];
++		unsigned int y = ((p[0] & 0x0f) << 8) | p[2];
++
++		if (p[0] == 0xff && p[1] == 0xff && p[2] == 0xff)
++			continue;
++		if (x >= 2048 || y >= 2048)
++			goto reject;
++	}
++	for (i = 0; i < ILI_SLOTS; i++) {
++		const u8 *p = report + 1 + i * 4;
++		bool active = !(p[0] == 0xff && p[1] == 0xff && p[2] == 0xff);
++
++		input_mt_slot(ts->input, i);
++		input_mt_report_slot_state(ts->input, MT_TOOL_FINGER, active);
++		if (active) {
++			unsigned int x = (((p[0] & 0xf0) << 4) | p[1]) * 1080 / 2048;
++			unsigned int y = (((p[0] & 0x0f) << 8) | p[2]) * 2460 / 2048;
++
++			input_report_abs(ts->input, ABS_MT_POSITION_X, x);
++			input_report_abs(ts->input, ABS_MT_POSITION_Y, y);
++		}
++	}
++	input_mt_sync_frame(ts->input);
++	input_sync(ts->input);
++	ts->reports++;
++	return IRQ_HANDLED;
++reject:
++	ts->rejected++;
++	return IRQ_HANDLED;
++}
++
++static ssize_t stats_show(struct device *dev, struct device_attribute *attr, char *buf)
++{
++	struct ili_hanoip *ts = spi_get_drvdata(to_spi_device(dev));
++
++	return sysfs_emit(buf, "irqs=%lu reports=%lu rejected=%lu restarts=%lu\n",
++			 READ_ONCE(ts->irqs), READ_ONCE(ts->reports), READ_ONCE(ts->rejected),
++			 READ_ONCE(ts->restarts));
++}
++static DEVICE_ATTR_RO(stats);
++static struct attribute *ili_attrs[] = { &dev_attr_stats.attr, NULL };
++ATTRIBUTE_GROUPS(ili);
++
++static int ili_start(struct ili_hanoip *ts)
++{
++	int ret = ili_load_iram(ts, ts->fw);
++
++	if (ret)
++		return ret;
++	return ili_check_running_firmware(ts);
++}
++
++static void ili_release_slots(struct ili_hanoip *ts)
++{
++	int i;
++
++	for (i = 0; i < ILI_SLOTS; i++) {
++		input_mt_slot(ts->input, i);
++		input_mt_report_slot_inactive(ts->input);
++	}
++	input_mt_sync_frame(ts->input);
++	input_sync(ts->input);
++}
++
++static void ili_restart_work(struct work_struct *work)
++{
++	struct ili_hanoip *ts = container_of(work, struct ili_hanoip, restart_work);
++	int ret;
++
++	if (ts->irq_enabled) {
++		disable_irq(ts->spi->irq);
++		ts->irq_enabled = false;
++	}
++	ret = ili_start(ts);
++	if (ret) {
++		dev_err(&ts->spi->dev, "IRAM reload after panel power-on failed: %d\n", ret);
++		return;
++	}
++	ts->restarts++;
++	ts->irq_enabled = true;
++	enable_irq(ts->spi->irq);
++	dev_info(&ts->spi->dev, "IRAM reloaded after panel power-on\n");
++}
++
++static int ili_panel_enabled(struct drm_panel_follower *follower)
++{
++	struct ili_hanoip *ts = container_of(follower, struct ili_hanoip, follower);
++
++	/* The download takes ~300 ms; keep it out of the modeset path. */
++	schedule_work(&ts->restart_work);
++	return 0;
++}
++
++static int ili_panel_disabling(struct drm_panel_follower *follower)
++{
++	struct ili_hanoip *ts = container_of(follower, struct ili_hanoip, follower);
++
++	cancel_work_sync(&ts->restart_work);
++	if (ts->irq_enabled) {
++		disable_irq(ts->spi->irq);
++		ts->irq_enabled = false;
++		ili_release_slots(ts);
++	}
++	return 0;
++}
++
++static const struct drm_panel_follower_funcs ili_follower_funcs = {
++	.panel_enabled = ili_panel_enabled,
++	.panel_disabling = ili_panel_disabling,
++};
++
++static void ili_cleanup(void *data)
++{
++	struct ili_hanoip *ts = data;
++
++	cancel_work_sync(&ts->restart_work);
++	release_firmware(ts->fw);
++}
++
++static int ili_probe(struct spi_device *spi)
++{
++	struct device *dev = &spi->dev;
++	bool follower = drm_is_panel_follower(dev);
++	struct ili_hanoip *ts;
++	int ret;
++
++	if (spi->irq <= 0)
++		return dev_err_probe(dev, -EINVAL, "Missing touch IRQ\n");
++	ts = devm_kzalloc(dev, sizeof(*ts), GFP_KERNEL);
++	if (!ts)
++		return -ENOMEM;
++	ts->tx = devm_kzalloc(dev, ILI_XFER, GFP_KERNEL);
++	ts->rx = devm_kzalloc(dev, ILI_XFER, GFP_KERNEL);
++	if (!ts->tx || !ts->rx)
++		return -ENOMEM;
++	ts->spi = spi;
++	spi_set_drvdata(spi, ts);
++	spi->mode = SPI_MODE_0;
++	spi->bits_per_word = 8;
++	spi->max_speed_hz = min(spi->max_speed_hz, 10000000U);
++	ret = spi_setup(spi);
++	if (ret)
++		return dev_err_probe(dev, ret, "SPI setup failed\n");
++	INIT_WORK(&ts->restart_work, ili_restart_work);
++	ret = request_firmware(&ts->fw, ILI_FIRMWARE, dev);
++	if (ret)
++		return dev_err_probe(dev, ret, "Missing RAM firmware\n");
++	ret = devm_add_action_or_reset(dev, ili_cleanup, ts);
++	if (ret)
++		return ret;
++	ret = ili_validate_firmware(ts->fw);
++	if (ret)
++		return dev_err_probe(dev, ret, "Invalid RAM firmware\n");
++	ts->reset = devm_gpiod_get(dev, "reset", GPIOD_OUT_LOW);
++	if (IS_ERR(ts->reset))
++		return dev_err_probe(dev, PTR_ERR(ts->reset), "Missing reset GPIO\n");
++	/* As a panel follower the IRAM is loaded each time the panel is enabled. */
++	if (!follower) {
++		ret = ili_start(ts);
++		if (ret)
++			return dev_err_probe(dev, ret, "IRAM initialization failed\n");
++	}
++	ts->input = devm_input_allocate_device(dev);
++	if (!ts->input)
++		return -ENOMEM;
++	ts->input->name = "Hanoip Ilitek ILI7807 SPI";
++	ts->input->id.bustype = BUS_SPI;
++	input_set_abs_params(ts->input, ABS_MT_POSITION_X, 0, 1079, 0, 0);
++	input_set_abs_params(ts->input, ABS_MT_POSITION_Y, 0, 2459, 0, 0);
++	ret = input_mt_init_slots(ts->input, ILI_SLOTS, INPUT_MT_DIRECT);
++	if (ret)
++		return ret;
++	ret = input_register_device(ts->input);
++	if (ret)
++		return ret;
++	ret = devm_request_threaded_irq(dev, spi->irq, NULL, ili_irq,
++				       IRQF_ONESHOT | IRQF_TRIGGER_FALLING |
++				       (follower ? IRQF_NO_AUTOEN : 0), dev_name(dev), ts);
++	if (ret)
++		return dev_err_probe(dev, ret, "Touch IRQ setup failed\n");
++	ts->irq_enabled = !follower;
++	if (follower) {
++		ts->follower.funcs = &ili_follower_funcs;
++		ret = devm_drm_panel_add_follower(dev, &ts->follower);
++		if (ret)
++			return dev_err_probe(dev, ret, "Panel follower setup failed\n");
++	}
++	dev_info(dev, "ILI7807 ready: 1080x2460, 10 slots, IRAM only%s\n",
++		 follower ? ", follows panel power" : "");
++	return 0;
++}
++
++static const struct of_device_id ili_of_match[] = {
++	{ .compatible = "tchip,ilitek" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, ili_of_match);
++
++static const struct spi_device_id ili_ids[] = { { "ilitek", 0 }, { } };
++MODULE_DEVICE_TABLE(spi, ili_ids);
++
++static struct spi_driver ili_driver = {
++	.driver = {
++		.name = "hanoip-ilitek-spi",
++		.of_match_table = ili_of_match,
++		.dev_groups = ili_groups,
++	},
++	.probe = ili_probe,
++	.id_table = ili_ids,
++};
++module_spi_driver(ili_driver);
++MODULE_FIRMWARE(ILI_FIRMWARE);
++MODULE_DESCRIPTION("Hanoip Ilitek ILI7807 SPI input with verified RAM-only firmware");
++MODULE_LICENSE("GPL");
+-- 
+2.43.0
+

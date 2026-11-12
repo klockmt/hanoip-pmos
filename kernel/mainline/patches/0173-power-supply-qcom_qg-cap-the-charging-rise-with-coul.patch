@@ -1,0 +1,186 @@
+From 6c75d8531b5030cef01126c3db2442167c35b5db Mon Sep 17 00:00:00 2001
+From: hanoip <h@l>
+Date: Tue, 27 Oct 2026 14:20:14 -0300
+Subject: [PATCH 173/194] power: supply: qcom_qg: cap the charging rise with
+ coulomb counting
+
+While charging, the terminal voltage sits tens of mV above the open circuit
+voltage of the same state (cell polarisation), so the voltage based estimate
+rises several times faster than the energy actually delivered. Measured on the
+hanoip: the reported capacity climbed 32%/h where 435 mA into a 4939 mAh pack
+is 8.8%/h, and the raw estimate reached 91% while the real state was ~84%.
+
+Integrate the measured battery current (magnitude, gated by the charger
+status, which is stable) into a budget of milli-percent of the learned full
+capacity, and only let the reported value rise by that budget. The budget is
+capped to avoid wind-up and ignores gaps longer than 10 minutes.
+
+Also stop adopting large jumps while charging: those are the polarisation
+bias, not a real step.
+---
+ drivers/power/supply/qcom_qg.c | 108 ++++++++++++++++++++++++++++++---
+ 1 file changed, 99 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/power/supply/qcom_qg.c b/drivers/power/supply/qcom_qg.c
+index cf6d521c3..abc8c8654 100644
+--- a/drivers/power/supply/qcom_qg.c
++++ b/drivers/power/supply/qcom_qg.c
+@@ -51,6 +51,10 @@
+  */
+ #define QG_SOC_SNAP			10
+ 
++/* Coulomb counter: ignore gaps longer than this and cap the wind-up. */
++#define QG_COUL_MAX_DT_S		600
++#define QG_COUL_MAX_MPCT		5000
++
+ struct qcom_qg_chip {
+ 	struct device *dev;
+ 	struct regmap *regmap;
+@@ -62,6 +66,16 @@ struct qcom_qg_chip {
+ 	int msoc;
+ 	unsigned long msoc_jiffies;
+ 
++	/*
++	 * Charge really moved in/out of the battery since the last update,
++	 * in milli-percent, and when it was last sampled. A voltage based
++	 * estimate rises far too fast while charging (cell polarisation adds
++	 * tens of mV on top of the ohmic drop), so the rise is capped by the
++	 * energy that actually went in.
++	 */
++	s64 coul_mpercent;
++	unsigned long coul_jiffies;
++
+ 	struct iio_channel *batt_therm_chan;
+ 
+ 	struct nvmem_device *sdam;
+@@ -146,12 +160,64 @@ static int qcom_qg_get_status(struct qcom_qg_chip *chip,
+  * Report only changes that are clearly outside the noise, and drift towards
+  * them slowly, so the percentage does not flicker.
+  */
++/*
++ * Full capacity actually available, as learned by the fuel gauge and kept in
++ * the SDAM (the same value exposed through POWER_SUPPLY_PROP_CHARGE_FULL).
++ * Falls back to the design value.
++ */
++static int qcom_qg_batt_full_uah(struct qcom_qg_chip *chip, int *uah)
++{
++	u8 data[2];
++	int ret;
++
++	ret = nvmem_device_read(chip->sdam, QG_SDAM_LEARNED_CAPACITY_OFFSET, 2, data);
++	if (ret < 0)
++		return ret;
++
++	*uah = get_unaligned_le16(data) * 1000;	/* mAh -> uAh */
++	if (*uah <= 0)
++		*uah = chip->batt_info->charge_full_design_uah;
++
++	return 0;
++}
++
++/* Add the charge that moved during dt to the coulomb budget (milli-percent). */
++static void qcom_qg_coul_update(struct qcom_qg_chip *chip, int current_ua,
++				unsigned long now)
++{
++	unsigned long dt;
++	s64 add;
++	int full = 0;
++
++	if (!chip->coul_jiffies) {
++		chip->coul_jiffies = now;
++		return;
++	}
++
++	dt = (now - chip->coul_jiffies) / HZ;
++	chip->coul_jiffies = now;
++	if (!dt)
++		return;
++	if (dt > QG_COUL_MAX_DT_S)
++		dt = QG_COUL_MAX_DT_S;
++
++	if (qcom_qg_batt_full_uah(chip, &full) || full <= 0)
++		return;
++
++	/* |I| * dt in uA*s -> milli-percent of the full capacity */
++	add = div_s64((s64)abs(current_ua) * dt * 100000, 3600LL * full);
++
++	chip->coul_mpercent += add;
++	if (chip->coul_mpercent > QG_COUL_MAX_MPCT)
++		chip->coul_mpercent = QG_COUL_MAX_MPCT;
++}
++
+ static int qcom_qg_smooth_capacity(struct qcom_qg_chip *chip, int soc,
+-				   bool charging)
++				   bool charging, int current_ua)
+ {
+ 	unsigned long now = jiffies;
+-	unsigned int steps;
+-	int delta;
++	unsigned int steps, rise;
++	int delta, allowed;
+ 
+ 	guard(mutex)(&chip->lock);
+ 
+@@ -161,10 +227,19 @@ static int qcom_qg_smooth_capacity(struct qcom_qg_chip *chip, int soc,
+ 		return soc;
+ 	}
+ 
++	if (charging)
++		qcom_qg_coul_update(chip, current_ua, now);
++	else
++		chip->coul_jiffies = 0;
++
+ 	delta = soc - chip->msoc;
+ 
+-	/* Clearly wrong previous value: adopt the estimate now. */
+-	if (abs(delta) > QG_SOC_SNAP) {
++	/*
++	 * Clearly wrong previous value: adopt the estimate now. Never while
++	 * charging: there the raw estimate is inflated by polarisation, and
++	 * adopting it would jump the percentage upwards.
++	 */
++	if (!charging && abs(delta) > QG_SOC_SNAP) {
+ 		chip->msoc = soc;
+ 		chip->msoc_jiffies = now;
+ 		return soc;
+@@ -182,10 +257,24 @@ static int qcom_qg_smooth_capacity(struct qcom_qg_chip *chip, int soc,
+ 	if (!steps)
+ 		return chip->msoc;
+ 
+-	if (delta > 0)
+-		chip->msoc += min_t(unsigned int, delta, steps);
+-	else
++	if (delta > 0) {
++		rise = min_t(unsigned int, delta, steps);
++		if (charging) {
++			/*
++			 * Only let it rise by the charge that actually went in
++			 * since the last update (physical rate), instead of the
++			 * rate the inflated terminal voltage suggests.
++			 */
++			allowed = chip->coul_mpercent / 1000;
++			if (allowed <= 0)
++				return chip->msoc;
++			rise = min_t(unsigned int, rise, (unsigned int)allowed);
++			chip->coul_mpercent -= (s64)rise * 1000;
++		}
++		chip->msoc += rise;
++	} else {
+ 		chip->msoc += max_t(int, delta, -(int)steps);
++	}
+ 	chip->msoc_jiffies = now;
+ 
+ 	return chip->msoc;
+@@ -267,7 +356,8 @@ static int qcom_qg_get_capacity(struct qcom_qg_chip *chip,
+ 	 */
+ 	*val = qcom_qg_smooth_capacity(chip, soc,
+ 				       status == POWER_SUPPLY_STATUS_CHARGING ||
+-				       status == POWER_SUPPLY_STATUS_FULL);
++				       status == POWER_SUPPLY_STATUS_FULL,
++				       current_now);
+ 
+ 	return 0;
+ }
+-- 
+2.43.0
+

@@ -1,0 +1,99 @@
+From 5d5ac568afa6e6b0594b2ac78db6ac321843cfe6 Mon Sep 17 00:00:00 2001
+From: hanoip <h@l>
+Date: Tue, 27 Oct 2026 15:06:11 -0300
+Subject: [PATCH 174/194] power: supply: qcom_qg: limit the charging rise only
+ by coulomb counting
+
+The previous version still capped the rise with the 1% per two minutes time
+step, so whenever the coulomb budget had room the time step became the binding
+limit again and the percentage kept climbing 1% every 2 minutes (measured
+13.4%/h where 420 mA into a 4939 mAh pack is 8.5%/h).
+
+While charging, use only the coulomb budget as the limit. Expose the internal
+state (learned full capacity, reported value and remaining budget) through
+/sys/kernel/debug/qcom_qg so the behaviour can be verified without guessing.
+---
+ drivers/power/supply/qcom_qg.c | 39 +++++++++++++++++++++++++++++-----
+ 1 file changed, 34 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/power/supply/qcom_qg.c b/drivers/power/supply/qcom_qg.c
+index abc8c8654..39cd82038 100644
+--- a/drivers/power/supply/qcom_qg.c
++++ b/drivers/power/supply/qcom_qg.c
+@@ -55,6 +55,11 @@
+ #define QG_COUL_MAX_DT_S		600
+ #define QG_COUL_MAX_MPCT		5000
+ 
++#ifdef CONFIG_DEBUG_FS
++#include <linux/debugfs.h>
++#include <linux/seq_file.h>
++#endif
++
+ struct qcom_qg_chip {
+ 	struct device *dev;
+ 	struct regmap *regmap;
+@@ -258,18 +263,22 @@ static int qcom_qg_smooth_capacity(struct qcom_qg_chip *chip, int soc,
+ 		return chip->msoc;
+ 
+ 	if (delta > 0) {
+-		rise = min_t(unsigned int, delta, steps);
+ 		if (charging) {
+ 			/*
+-			 * Only let it rise by the charge that actually went in
+-			 * since the last update (physical rate), instead of the
+-			 * rate the inflated terminal voltage suggests.
++			 * While charging the ONLY limit is the charge that really
++			 * went in: the terminal voltage is inflated by cell
++			 * polarisation and would make the value run ahead. The
++			 * time based step must not cap this, otherwise it becomes
++			 * the binding limit again (which is what made the earlier
++			 * version still climb 1% every 2 minutes).
+ 			 */
+ 			allowed = chip->coul_mpercent / 1000;
+ 			if (allowed <= 0)
+ 				return chip->msoc;
+-			rise = min_t(unsigned int, rise, (unsigned int)allowed);
++			rise = min_t(unsigned int, delta, (unsigned int)allowed);
+ 			chip->coul_mpercent -= (s64)rise * 1000;
++		} else {
++			rise = min_t(unsigned int, delta, steps);
+ 		}
+ 		chip->msoc += rise;
+ 	} else {
+@@ -473,6 +482,22 @@ static struct power_supply_desc batt_psy_desc = {
+ 	.external_power_changed = power_supply_changed,
+ };
+ 
++#ifdef CONFIG_DEBUG_FS
++static int qcom_qg_state_show(struct seq_file *s, void *unused)
++{
++	struct qcom_qg_chip *chip = s->private;
++	int full = 0;
++
++	if (!qcom_qg_batt_full_uah(chip, &full))
++		seq_printf(s, "capacidade cheia (SDAM) = %d uAh\n", full);
++	seq_printf(s, "cap reportada (msoc)   = %d %%\n", chip->msoc);
++	seq_printf(s, "orcamento coulomb      = %lld mili-%%  (=%lld%%)\n",
++		   chip->coul_mpercent, chip->coul_mpercent / 1000);
++	return 0;
++}
++DEFINE_SHOW_ATTRIBUTE(qcom_qg_state);
++#endif
++
+ static int qcom_qg_probe(struct platform_device *pdev)
+ {
+ 	struct qcom_qg_chip *chip;
+@@ -552,6 +577,10 @@ static int qcom_qg_probe(struct platform_device *pdev)
+ 
+ 	platform_set_drvdata(pdev, chip);
+ 
++#ifdef CONFIG_DEBUG_FS
++	debugfs_create_file("qcom_qg", 0444, NULL, chip, &qcom_qg_state_fops);
++#endif
++
+ 	return 0;
+ }
+ 
+-- 
+2.43.0
+

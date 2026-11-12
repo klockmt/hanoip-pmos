@@ -1,0 +1,46 @@
+From b687085276365a03cd2254660c500a2aa7fd4d9d Mon Sep 17 00:00:00 2001
+From: Aleks <aleks.spv@gmail.com>
+Date: Wed, 21 Oct 2026 20:00:00 +0600
+Subject: [PATCH 131/194] power: supply: qcom_smbx: Don't scale USBIN voltage
+ twice on SMB5
+
+The USB_IN_V_16 ADC channel is described with qcom,pre-scaling = <1 16>
+in pm6150.dtsi and pm7250b.dtsi, so the processed IIO value already is
+the real VBUS voltage. Multiplying it by 16 once more makes voltage_now
+report ~77 V for a 4.8 V input. Drop the extra scaling.
+
+Signed-off-by: Aleks <aleks.spv@gmail.com>
+---
+ drivers/power/supply/qcom_smbx.c | 9 +--------
+ 1 file changed, 1 insertion(+), 8 deletions(-)
+
+diff --git a/drivers/power/supply/qcom_smbx.c b/drivers/power/supply/qcom_smbx.c
+index 735624f2f..019b983fd 100644
+--- a/drivers/power/supply/qcom_smbx.c
++++ b/drivers/power/supply/qcom_smbx.c
+@@ -666,7 +666,6 @@ static int smb_get_property(struct power_supply *psy,
+ 			     union power_supply_propval *val)
+ {
+ 	struct smb_chip *chip = power_supply_get_drvdata(psy);
+-	int ret;
+ 
+ 	switch (psp) {
+ 	case POWER_SUPPLY_PROP_MANUFACTURER:
+@@ -680,13 +679,7 @@ static int smb_get_property(struct power_supply *psy,
+ 	case POWER_SUPPLY_PROP_CURRENT_NOW:
+ 		return smb_get_current_now(chip, &val->intval);
+ 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
+-		ret = smb_get_iio_chan(chip, chip->usb_in_v_chan,
+-					 &val->intval);
+-		if (!ret) {
+-			if (chip->gen == SMB5 && !chip->monitor_only)
+-				val->intval *= 16;
+-		}
+-		return ret;
++		return smb_get_iio_chan(chip, chip->usb_in_v_chan, &val->intval);
+ 	case POWER_SUPPLY_PROP_ONLINE:
+ 		return smb_get_prop_usb_online(chip, &val->intval);
+ 	case POWER_SUPPLY_PROP_STATUS:
+-- 
+2.43.0
+

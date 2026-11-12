@@ -1,0 +1,2899 @@
+diff -ruN fork/arch/arm/mach-snapdragon/Makefile ours/arch/arm/mach-snapdragon/Makefile
+--- fork/arch/arm/mach-snapdragon/Makefile	2025-12-02 16:51:18
++++ ours/arch/arm/mach-snapdragon/Makefile	2026-10-25 11:57:58
+@@ -5,3 +5,4 @@
+ obj-y += board.o
+ obj-$(CONFIG_EFI_HAVE_CAPSULE_SUPPORT) += capsule_update.o
+ obj-$(CONFIG_OF_LIVE) += of_fixup.o
++obj-$(CONFIG_OF_BOARD_SETUP) += abl_identity.o
+diff -ruN fork/arch/arm/mach-snapdragon/abl_identity.c ours/arch/arm/mach-snapdragon/abl_identity.c
+--- fork/arch/arm/mach-snapdragon/abl_identity.c	1969-12-31 21:00:00
++++ ours/arch/arm/mach-snapdragon/abl_identity.c	2026-10-25 11:58:39
+@@ -0,0 +1,130 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Carry device identity from the Android bootloader (ABL) to Linux.
++ *
++ * When U-Boot is chainloaded by ABL and boots Linux with its own built-in
++ * devicetree, the identity ABL generated (androidboot.* arguments, serial
++ * number and hardware revision in /chosen) would otherwise be lost. Copy
++ * it into the Linux devicetree, and turn the Bluetooth and Wi-Fi addresses
++ * into the standard local-bd-address and local-mac-address properties.
++ * Nothing is done when no valid ABL devicetree was handed over.
++ */
++
++#define pr_fmt(fmt) "abl_identity: " fmt
++
++#include <fdt_support.h>
++#include <hexdump.h>
++#include <init.h>
++#include <log.h>
++#include <linux/ctype.h>
++#include <linux/errno.h>
++#include <linux/libfdt.h>
++#include <linux/string.h>
++
++int qcom_fixup_abl_identity(void *blob);
++
++static const char * const abl_chosen_u32_props[] = {
++	"linux,seriallow",
++	"linux,serialhigh",
++	"linux,hwrev",
++	"mmi,powerup_reason",
++};
++
++/* Find "key" in a space separated command line, return its value length. */
++static int abl_cmdline_value(const char *cmdline, const char *key, const char **value)
++{
++	size_t keylen = strlen(key);
++	const char *p = cmdline;
++
++	while ((p = strstr(p, key))) {
++		if (p == cmdline || p[-1] == ' ') {
++			*value = p + keylen;
++			return strcspn(*value, " ");
++		}
++		p += keylen;
++	}
++
++	return -ENOENT;
++}
++
++/* Parse "AA:BB:CC:DD:EE:FF" (the first address of a comma separated list). */
++static int abl_parse_mac(const char *str, int len, u8 mac[6])
++{
++	int i;
++
++	if (len < 17)
++		return -EINVAL;
++
++	for (i = 0; i < 6; i++) {
++		const char *h = str + i * 3;
++
++		if (!isxdigit(h[0]) || !isxdigit(h[1]) || (i < 5 && h[2] != ':'))
++			return -EINVAL;
++		mac[i] = (hex_to_bin(h[0]) << 4) | hex_to_bin(h[1]);
++	}
++
++	return 0;
++}
++
++static void abl_set_addr(void *blob, const char *compatible, const char *prop,
++			 const u8 *addr)
++{
++	int node = fdt_node_offset_by_compatible(blob, -1, compatible);
++	int ret;
++
++	if (node < 0)
++		return;
++
++	ret = fdt_setprop(blob, node, prop, addr, 6);
++	if (ret)
++		log_warning("failed to set %s on %s: %s\n", prop, compatible,
++			    fdt_strerror(ret));
++}
++
++int qcom_fixup_abl_identity(void *blob)
++{
++	const void *abl = (const void *)get_prev_bl_fdt_addr();
++	const char *cmdline, *value;
++	int abl_chosen, chosen, len, i;
++	u8 addr[6], rev[6];
++
++	if (!abl || fdt_check_header(abl))
++		return 0;
++
++	abl_chosen = fdt_path_offset(abl, "/chosen");
++	if (abl_chosen < 0)
++		return 0;
++
++	chosen = fdt_find_or_add_subnode(blob, 0, "chosen");
++	if (chosen < 0)
++		return chosen;
++
++	for (i = 0; i < ARRAY_SIZE(abl_chosen_u32_props); i++) {
++		const void *val = fdt_getprop(abl, abl_chosen,
++					      abl_chosen_u32_props[i], &len);
++
++		if (val && len == sizeof(u32))
++			fdt_setprop(blob, chosen, abl_chosen_u32_props[i], val, len);
++	}
++
++	cmdline = fdt_getprop(abl, abl_chosen, "bootargs", &len);
++	if (!cmdline || len <= 1)
++		return 0;
++
++	fdt_setprop_string(blob, chosen, "u-boot,abl-bootargs", cmdline);
++
++	len = abl_cmdline_value(cmdline, "androidboot.btmacaddr=", &value);
++	if (len > 0 && !abl_parse_mac(value, len, addr)) {
++		/* The Bluetooth binding stores the address in reverse order. */
++		for (i = 0; i < 6; i++)
++			rev[i] = addr[5 - i];
++		abl_set_addr(blob, "qcom,wcn3990-bt", "local-bd-address", rev);
++	}
++
++	len = abl_cmdline_value(cmdline, "wifimacaddr=", &value);
++	if (len > 0 && !abl_parse_mac(value, len, addr))
++		abl_set_addr(blob, "qcom,wcn3990-wifi", "local-mac-address", addr);
++
++	log_info("ABL identity copied to the Linux devicetree\n");
++	return 0;
++}
+diff -ruN fork/arch/arm/mach-snapdragon/board.c ours/arch/arm/mach-snapdragon/board.c
+--- fork/arch/arm/mach-snapdragon/board.c	2025-12-02 16:51:18
++++ ours/arch/arm/mach-snapdragon/board.c	2026-10-24 14:00:12
+@@ -22,6 +22,7 @@
+ #include <env.h>
+ #include <fdt_support.h>
+ #include <init.h>
++#include <wdt.h>
+ #include <linux/arm-smccc.h>
+ #include <linux/bug.h>
+ #include <linux/psci.h>
+@@ -32,6 +33,8 @@
+ #include <usb.h>
+ #include <sort.h>
+ #include <time.h>
++#include <generic-phy.h>
++#include <reset.h>
+ 
+ #include "qcom-priv.h"
+ 
+@@ -748,4 +751,115 @@
+ 		debug("carveout time: %lums\n", get_timer(carveout_start));
+ 	}
+ 	dcache_enable();
++}
++
++
++/*
++ * Stop all watchdogs before handing over to the kernel.
++ *
++ * The QCOM WDT is started and serviced by U-Boot (CONFIG_WATCHDOG_AUTOSTART).
++ * Once U-Boot jumps to the kernel it no longer services the WDT, and a
++ * mainline kernel without a userspace watchdog daemon will get reset after
++ * the WDT timeout.  Stop it here so the kernel is not reset out from under
++ * it during early boot.
++ */
++static void ufs_shutdown_for_kernel(void)
++{
++	struct udevice *dev;
++	int ret;
++
++	/*
++	 * Power down the UFS PHY and put the host controller in reset so
++	 * the mainline kernel can re-initialize them cleanly. U-Boot leaves
++	 * the PHY powered and calibrated (it reads the boot partitions),
++	 * which the kernel QMP UFS PHY driver is unable to recover from.
++	 */
++	for (uclass_find_first_device(UCLASS_UFS, &dev);
++	     dev;
++	     uclass_find_next_device(&dev)) {
++		struct reset_ctl reset;
++		struct phy phy;
++
++		if (!device_active(dev))
++			continue;
++
++		ret = generic_phy_get_by_name(dev, "ufsphy", &phy);
++		if (!ret) {
++			generic_phy_power_off(&phy);
++			generic_phy_exit(&phy);
++		}
++
++		ret = reset_get_by_name(dev, "rst", &reset);
++		if (!ret) {
++			/*
++			 * Reset the UFS block then immediately deassert so the
++			 * mainline kernel's ICE clock probe (gcc_ufs_phy_ice_core_clk)
++			 * does not see the whole UFS clock block stuck in reset
++			 * (BRANCH_HALT never clears -> "stuck at off" -EBUSY).
++			 * The kernel re-asserts/deasserts the BCR itself during
++			 * ufs_qcom_power_up_sequence().
++			 */
++			reset_assert(&reset);
++			reset_deassert(&reset);
++		}
++	}
++
++	printf("QCOM: UFS powered down before kernel handoff\n");
++}
++
++static void usb_shutdown_for_kernel(void)
++{
++	struct udevice *dev;
++	int ret;
++
++	/*
++	 * Power down the USB PHY(s) and put the DWC3 controller in reset so
++	 * the mainline kernel can re-initialize them cleanly. U-Boot leaves
++	 * the QUSB2 PHY powered and calibrated (it ran the fastboot gadget),
++	 * which the kernel dwc3-qcom/qusb2 drivers are unable to recover
++	 * from.
++	 */
++	for (uclass_find_first_device(UCLASS_USB_GADGET_GENERIC, &dev);
++	     dev;
++	     uclass_find_next_device(&dev)) {
++		struct reset_ctl reset;
++		struct phy phy;
++
++		if (!device_active(dev))
++			continue;
++
++		/*
++		 * Power off + exit the high-speed (and super-speed, if
++		 * present) PHY. Powering off the QUSB2 PHY also asserts its
++		 * own reset (GCC_QUSB2PHY_PRIM_BCR).
++		 */
++		ret = generic_phy_get_by_name(dev, "usb2-phy", &phy);
++		if (ret)
++			ret = generic_phy_get_by_name(dev, "usb3-phy", &phy);
++		if (!ret) {
++			generic_phy_power_off(&phy);
++			generic_phy_exit(&phy);
++		}
++
++		/*
++		 * The dwc3 glue (qcom,dwc3) is the parent device and owns
++		 * the GCC_USB30_PRIM_BCR reset. Assert it so the kernel
++		 * dwc3-qcom glue sees a clean, reset controller.
++		 */
++		if (dev->parent) {
++			ret = reset_get_by_index(dev->parent, 0, &reset);
++			if (!ret)
++				reset_assert(&reset);
++		}
++	}
++
++	printf("QCOM: USB powered down before kernel handoff\n");
++}
++
++void board_preboot_os(void)
++{
++	wdt_stop_all();
++	ufs_shutdown_for_kernel();
++	usb_shutdown_for_kernel();
++	printf("QCOM: stopped watchdogs before kernel handoff\n");
+ }
+diff -ruN fork/arch/arm/mach-snapdragon/of_fixup.c ours/arch/arm/mach-snapdragon/of_fixup.c
+--- fork/arch/arm/mach-snapdragon/of_fixup.c	2025-12-02 16:51:18
++++ ours/arch/arm/mach-snapdragon/of_fixup.c	2026-10-25 11:58:39
+@@ -165,7 +165,9 @@
+ 
+ EVENT_SPY_FULL(EVT_OF_LIVE_BUILT, qcom_of_fixup_nodes);
+ 
+-int ft_board_setup(void __maybe_unused *blob, struct bd_info __maybe_unused *bd)
++int qcom_fixup_abl_identity(void *blob);
++
++int ft_board_setup(void *blob, struct bd_info __maybe_unused *bd)
+ {
+-	return 0;
++	return qcom_fixup_abl_identity(blob);
+ }
+diff -ruN fork/board/qualcomm/hanoip-diagnostic.env ours/board/qualcomm/hanoip-diagnostic.env
+--- fork/board/qualcomm/hanoip-diagnostic.env	1969-12-31 21:00:00
++++ ours/board/qualcomm/hanoip-diagnostic.env	2026-10-24 14:26:02
+@@ -0,0 +1,18 @@
++# Volatile diagnostic boot only. No bootflow scan, UMS or persistent env.
++bootdelay=0
++bootretry=1
++stdin=serial,button-kbd
++stdout=serial,vidconsole
++stderr=serial,vidconsole
++fastboot=fastboot -l $fastboot_addr_r usb 0
++preboot=
++bootcmd=run fastboot
++serial_gadget=setenv stdin serial,button-kbd,usbacm; setenv stdout serial,vidconsole,usbacm; setenv stderr serial,vidconsole,usbacm; setenv bootretry -1
++menucmd=bootmenu -1
++bootmenu_0=Enable fastboot (RAM boot only)=run fastboot
++bootmenu_1=Enable serial console gadget=run serial_gadget
++bootmenu_2=Board info=bdinfo; pause
++bootmenu_3=Dump bootargs=fdt print /chosen bootargs; pause
++bootmenu_4=Reset device=reset
++button_cmd_0_name=Volume Down
++button_cmd_0=run menucmd
+diff -ruN fork/board/qualcomm/qcom-phone.env ours/board/qualcomm/qcom-phone.env
+--- fork/board/qualcomm/qcom-phone.env	2025-12-02 16:51:18
++++ ours/board/qualcomm/qcom-phone.env	2026-10-24 14:00:12
+@@ -17,7 +17,7 @@
+ # bootretry will run this command over and over, if we fail once
+ # then bail out to the boot menu instead (with a pause to read
+ # the error message)
+-bootcmd=bootefi bootmgr; pause; run menucmd
++bootcmd=bootflow scan -lb; pause; run menucmd
+ 
+ # When entering the menu (either from button press or failed boot)
+ # remap bootcmd so it will re-open the menu and we won't get stuck
+@@ -25,7 +25,7 @@
+ menucmd=setenv bootcmd run menucmd; bootmenu -1
+ 
+ # Pause is used so the output can be read on the display
+-bootmenu_0=Boot=bootefi bootmgr; pause
++bootmenu_0=Boot=bootflow scan -lb; pause
+ bootmenu_1=Enable serial console gadget=run serial_gadget
+ bootmenu_2=Enable USB mass storage=echo "Press any key to exit UMS mode"; ums 0 scsi 0
+ bootmenu_3=Enable fastboot mode=run fastboot
+--- fork/boot/bootflow.c	2025-12-02 16:51:18
++++ ours/boot/bootflow.c	2026-10-24 14:00:12
+@@ -752,7 +752,7 @@
+ 	enum uclass_id id = device_get_uclass_id(media);
+ 
+ 	log_debug("uclass %d: %s\n", id, uclass_get_name(id));
+-	if (id == UCLASS_MMC)
++	if (id == UCLASS_MMC || id == UCLASS_SCSI)
+ 		return 0;
+ 
+ 	return -ENOTSUPP;
+--- fork/boot/image-fdt.c	2025-12-02 16:51:18
++++ ours/boot/image-fdt.c	2026-10-24 14:00:12
+@@ -516,7 +516,16 @@
+ 		 * Firstly check if this android boot image has dtb field.
+ 		 */
+ 		dtb_idx = (u32)env_get_ulong("adtb_idx", 10, 0);
+-		if (android_image_get_dtb_by_index((ulong)hdr, get_avendor_bootimg_addr(),
++		if (env_get("boot_with_embedded_fdt")) {
++			/* hanoip: use the U-Boot embedded FDT instead of the
++			 * one from the Android boot image (mkbootimg often
++			 * fails to set dtb_size in the header).
++			 */
++			fdt_blob = (char *)gd->fdt_blob;
++			if (fdt_check_header(fdt_blob))
++				goto no_fdt;
++			printf("## Using embedded FDT\n");
++		} else if (android_image_get_dtb_by_index((ulong)hdr, get_avendor_bootimg_addr(),
+ 						   dtb_idx, &fdt_addr, &fdt_size)) {
+ 			fdt_blob = (char *)map_sysmem(fdt_addr, 0);
+ 			if (fdt_check_header(fdt_blob))
+diff -ruN fork/drivers/fastboot/fb_common.c ours/drivers/fastboot/fb_common.c
+--- fork/drivers/fastboot/fb_common.c	2025-12-02 16:51:18
++++ ours/drivers/fastboot/fb_common.c	2026-10-24 14:00:13
+@@ -14,6 +14,8 @@
+ #include <command.h>
+ #include <env.h>
+ #include <fastboot.h>
++#include <wdt.h>
++#include <image.h>
+ #include <net.h>
+ #include <vsprintf.h>
+ 
+@@ -156,6 +158,23 @@
+ 		snprintf(boot_addr_start, sizeof(boot_addr_start) - 1,
+ 			 "0x%p", fastboot_buf_addr);
+ 		printf("Booting kernel at %s...\n\n\n", boot_addr_start);
++
++		/* Tell the Android bootm path where the boot image is,
++		 * otherwise it uses image_load_addr which is wrong when
++		 * booting via fastboot.
++		 */
++		if (IS_ENABLED(CONFIG_CMD_ABOOTIMG))
++			set_abootimg_addr((ulong)fastboot_buf_addr);
++
++		/* hanoip: use the U-Boot embedded FDT for the kernel instead
++		 * of the one from the Android boot image (mkbootimg often
++		 * leaves dtb_size=0 in the header which breaks dtb parsing).
++		 */
++		env_set("boot_with_embedded_fdt", "1");
++
++		/* Stop the boot watchdog so the kernel is not reset after handoff */
++		wdt_stop_all();
++		printf("QCOM fastboot: stopped watchdogs\n");
+ 
+ 		do_bootm(NULL, 0, 2, bootm_args);
+ 
+diff -ruN fork/drivers/fastboot/fb_mmc.c ours/drivers/fastboot/fb_mmc.c
+--- fork/drivers/fastboot/fb_mmc.c	2025-12-02 16:51:18
++++ ours/drivers/fastboot/fb_mmc.c	2026-10-24 14:00:13
+@@ -14,6 +14,7 @@
+ #include <log.h>
+ #include <part.h>
+ #include <mmc.h>
++#include <scsi.h>
+ #include <div64.h>
+ #include <linux/compat.h>
+ #include <android_image.h>
+@@ -72,13 +73,39 @@
+ 	return 0;
+ }
+ 
++/*
++ * Get the block device used by fastboot.
++ * Tries "mmc" first (eMMC devices), then falls back to "scsi"
++ * (needed for UFS storage on Qualcomm SM7150+).
++ */
++static struct blk_desc *fastboot_get_blk_dev(int devnum)
++{
++	struct blk_desc *desc;
++
++	desc = blk_get_dev("mmc", devnum);
++	if (desc)
++		return desc;
++
++#ifdef CONFIG_SCSI
++	/* Ensure SCSI/UFS devices are scanned before looking them up */
++	if (!blk_get_dev("scsi", devnum)) {
++		scsi_scan(false);
++		desc = blk_get_dev("scsi", devnum);
++		return desc;
++	}
++	desc = blk_get_dev("scsi", devnum);
++#endif
++	return desc;
++}
++
+ static int do_get_part_info(struct blk_desc **dev_desc, const char *name,
+ 			    struct disk_partition *info)
+ {
+ 	int ret;
++	int i;
+ 
+ 	/* First try partition names on the default device */
+-	*dev_desc = blk_get_dev("mmc", CONFIG_FASTBOOT_FLASH_MMC_DEV);
++	*dev_desc = fastboot_get_blk_dev(CONFIG_FASTBOOT_FLASH_MMC_DEV);
+ 	if (*dev_desc) {
+ 		ret = part_get_info_by_name(*dev_desc, name, info);
+ 		if (ret >= 0)
+@@ -90,6 +117,30 @@
+ 			return ret;
+ 	}
+ 
++#ifdef CONFIG_SCSI
++	/*
++	 * UFS storage (Qualcomm SM7150+) splits partitions across multiple
++	 * LUNs. e.g. on hanoip: LUN1 has super/userdata/persist, LUN4 has
++	 * boot_a/vendor_boot_a, LUN5 has boot_b/vendor_boot_b. Iterate all
++	 * SCSI devices until the named partition is found.
++	 */
++	scsi_scan(false);
++	for (i = 0; i <= blk_find_max_devnum(UCLASS_SCSI); i++) {
++		struct blk_desc *desc;
++
++		if (i == CONFIG_FASTBOOT_FLASH_MMC_DEV)
++			continue; /* already tried above */
++		desc = blk_get_dev("scsi", i);
++		if (!desc)
++			continue;
++		ret = part_get_info_by_name(desc, name, info);
++		if (ret >= 0) {
++			*dev_desc = desc;
++			return ret;
++		}
++	}
++#endif
++
+ 	/* Then try dev.hwpart:part */
+ 	ret = part_get_info_by_dev_and_name_or_num("mmc", name, dev_desc,
+ 						   info, true);
+@@ -487,8 +538,7 @@
+ 
+ static struct blk_desc *fastboot_mmc_get_dev(char *response)
+ {
+-	struct blk_desc *ret = blk_get_dev("mmc",
+-					   CONFIG_FASTBOOT_FLASH_MMC_DEV);
++	struct blk_desc *ret = fastboot_get_blk_dev(CONFIG_FASTBOOT_FLASH_MMC_DEV);
+ 
+ 	if (!ret || ret->type == DEV_TYPE_UNKNOWN) {
+ 		pr_err("invalid mmc device\n");
+--- fork/drivers/misc/qcom_geni.c	2025-12-02 16:51:18
++++ ours/drivers/misc/qcom_geni.c	2026-10-24 14:00:13
+@@ -514,7 +514,10 @@
+ 		}
+ 	}
+ 	if (!geni_wrapper) {
+-		pr_err("GENI SE wrapper not found\n");
++		/* No GENI SE wrapper needs firmware loading - this is normal
++		 * on devices that don't use the GENI QUPs during U-Boot.
++		 */
++		debug("GENI SE wrapper not found\n");
+ 		return 0;
+ 	}
+ 
+--- fork/drivers/soc/qcom/rpmh-rsc.c	2025-12-02 16:51:18
++++ ours/drivers/soc/qcom/rpmh-rsc.c	2026-10-24 14:00:13
+@@ -399,6 +399,14 @@
+ 			break;
+ 		udelay(1);
+ 	}
++
++	/*
++	 * Clear the IRQ pending bit for this TCS so the kernel's RPMh probe
++	 * doesn't see a stale TX-done (get_req_from_tcs()==NULL -> WARN).
++	 * IRQ_CLEAR is a global reg (0x08), not per-TCS: write BIT(tcs_id)
++	 * straight to tcs_base, same as the kernel (rpmh-rsc.c tcs_irq_handler).
++	 */
++	writel_relaxed(BIT(tcs_id), drv->tcs_base + drv->regs[RSC_DRV_IRQ_CLEAR]);
+ 
+ 	if (i == USEC_PER_SEC) {
+ 		log_err("%s: error writing %#x to %d:%#x\n", drv->name,
+--- fork/drivers/ufs/ufs-uclass.c	2025-12-02 16:51:18
++++ ours/drivers/ufs/ufs-uclass.c	2026-10-24 14:00:13
+@@ -1850,6 +1850,15 @@
+ 	unsigned long freq;
+ 
+ 	freq = clk_get_rate(refclk);
++
++	/*
++	 * Some Qualcomm platforms (e.g. SM7150) report 0 for the RPMH CXO
++	 * clock since U-Boot has no RPMH clock driver. The UFS ref clock
++	 * is the CXO (19.2MHz) on these platforms.
++	 */
++	if (!freq)
++		freq = 19200000;
++
+ 	return ufs_get_bref_clk_from_hz(freq);
+ }
+ 
+diff -ruN fork/drivers/usb/dwc3/core.c ours/drivers/usb/dwc3/core.c
+--- fork/drivers/usb/dwc3/core.c	2025-12-02 16:51:18
++++ ours/drivers/usb/dwc3/core.c	2026-10-24 14:00:13
+@@ -59,41 +59,55 @@
+ static int dwc3_core_soft_reset(struct dwc3 *dwc)
+ {
+ 	u32		reg;
++	int		retries = 1000;
+ 
+-	/* Before Resetting PHY, put Core in Reset */
+-	reg = dwc3_readl(dwc->regs, DWC3_GCTL);
+-	reg |= DWC3_GCTL_CORESOFTRESET;
+-	dwc3_writel(dwc->regs, DWC3_GCTL, reg);
++	/*
++	 * We're resetting only the device side because, if we're in host mode,
++	 * XHCI driver will reset the host block. If dwc3 was configured for
++	 * host-only mode, then we can return early.
++	 */
++	if (dwc->dr_mode == USB_DR_MODE_HOST)
++		return 0;
+ 
+-	/* Assert USB3 PHY reset */
+-	reg = dwc3_readl(dwc->regs, DWC3_GUSB3PIPECTL(0));
+-	reg |= DWC3_GUSB3PIPECTL_PHYSOFTRST;
+-	dwc3_writel(dwc->regs, DWC3_GUSB3PIPECTL(0), reg);
++	reg = dwc3_readl(dwc->regs, DWC3_DCTL);
++	reg |= DWC3_DCTL_CSFTRST;
++	reg &= ~DWC3_DCTL_RUN_STOP;
++	dwc3_gadget_dctl_write_safe(dwc, reg);
+ 
+-	/* Assert USB2 PHY reset */
+-	reg = dwc3_readl(dwc->regs, DWC3_GUSB2PHYCFG(0));
+-	reg |= DWC3_GUSB2PHYCFG_PHYSOFTRST;
+-	dwc3_writel(dwc->regs, DWC3_GUSB2PHYCFG(0), reg);
++	/*
++	 * For DWC_usb31 controller 1.90a and later, the DCTL.CSFRST bit
++	 * is cleared only after all the clocks are synchronized. This can
++	 * take a little more than 50ms. Set the polling rate at 20ms
++	 * for 10 times instead.
++	 */
++	if (DWC3_VER_IS_WITHIN(DWC31, 190A, ANY) || DWC3_IP_IS(DWC32))
++		retries = 10;
+ 
+-	mdelay(100);
++	do {
++		reg = dwc3_readl(dwc->regs, DWC3_DCTL);
++		if (!(reg & DWC3_DCTL_CSFTRST))
++			goto done;
+ 
+-	/* Clear USB3 PHY reset */
+-	reg = dwc3_readl(dwc->regs, DWC3_GUSB3PIPECTL(0));
+-	reg &= ~DWC3_GUSB3PIPECTL_PHYSOFTRST;
+-	dwc3_writel(dwc->regs, DWC3_GUSB3PIPECTL(0), reg);
++		if (DWC3_VER_IS_WITHIN(DWC31, 190A, ANY) || DWC3_IP_IS(DWC32))
++			mdelay(20);
++		else
++			udelay(1);
++	} while (--retries);
+ 
+-	/* Clear USB2 PHY reset */
+-	reg = dwc3_readl(dwc->regs, DWC3_GUSB2PHYCFG(0));
+-	reg &= ~DWC3_GUSB2PHYCFG_PHYSOFTRST;
+-	dwc3_writel(dwc->regs, DWC3_GUSB2PHYCFG(0), reg);
++	dev_warn(dwc->dev, "DWC3 controller soft reset failed.\n");
++	return -ETIMEDOUT;
+ 
++done:
++	/*
++	 * For DWC_usb31 controller 1.80a and prior, once DCTL.CSFRST bit
++	 * is cleared, we must wait at least 50ms before accessing the PHY
++	 * domain (synchronization delay).
++	 */
++	if (DWC3_VER_IS_WITHIN(DWC31, ANY, 180A))
++		mdelay(50);
++
+ 	mdelay(100);
+ 
+-	/* After PHYs are stable we can take Core out of reset state */
+-	reg = dwc3_readl(dwc->regs, DWC3_GCTL);
+-	reg &= ~DWC3_GCTL_CORESOFTRESET;
+-	dwc3_writel(dwc->regs, DWC3_GCTL, reg);
+-
+ 	return 0;
+ }
+ 
+@@ -580,6 +594,26 @@
+ 	dwc3_writel(dwc->regs, DWC3_GSBUSCFG0, cfg);
+ }
+ 
++static bool dwc3_core_is_valid(struct dwc3 *dwc)
++{
++	u32 reg;
++
++	reg = dwc3_readl(dwc->regs, DWC3_GSNPSID);
++	dwc->ip = DWC3_GSNPS_ID(reg);
++
++	/* This should read as U3 followed by revision number */
++	if (DWC3_IP_IS(DWC3)) {
++		dwc->revision = reg;
++	} else if (DWC3_IP_IS(DWC31) || DWC3_IP_IS(DWC32)) {
++		dwc->revision = dwc3_readl(dwc->regs, DWC3_VER_NUMBER);
++		dwc->version_type = dwc3_readl(dwc->regs, DWC3_VER_TYPE);
++	} else {
++		return false;
++	}
++
++	return true;
++}
++
+ /**
+  * dwc3_core_init - Low-level initialization of DWC3 Core
+  * @dwc: Pointer to our controller context structure
+@@ -592,15 +626,11 @@
+ 	u32			reg;
+ 	int			ret;
+ 
+-	reg = dwc3_readl(dwc->regs, DWC3_GSNPSID);
+-	/* This should read as U3 followed by revision number */
+-	if ((reg & DWC3_GSNPSID_MASK) != 0x55330000 &&
+-	    (reg & DWC3_GSNPSID_MASK) != 0x33310000) {
++	if (!dwc3_core_is_valid(dwc)) {
+ 		dev_err(dwc->dev, "this is not a DesignWare USB3 DRD Core\n");
+ 		ret = -ENODEV;
+ 		goto err0;
+ 	}
+-	dwc->revision = reg;
+ 
+ 	/* Handle USB2.0-only core configuration */
+ 	if (DWC3_GHWPARAMS3_SSPHY_IFC(dwc->hwparams.hwparams3) ==
+diff -ruN fork/drivers/usb/dwc3/core.h ours/drivers/usb/dwc3/core.h
+--- fork/drivers/usb/dwc3/core.h	2025-12-02 16:51:18
++++ ours/drivers/usb/dwc3/core.h	2026-10-24 14:00:13
+@@ -56,6 +56,7 @@
+ #define DWC3_GEVNTCOUNT_MASK	0xfffc
+ #define DWC3_GSNPSID_MASK	0xffff0000
+ #define DWC3_GSNPSREV_MASK	0xffff
++#define DWC3_GSNPS_ID(p)	(((p) & DWC3_GSNPSID_MASK) >> 16)
+ 
+ /* DWC3 registers memory space boundries */
+ #define DWC3_XHCI_REGS_START		0x0
+@@ -99,6 +100,9 @@
+ #define DWC3_GPRTBIMAP_FS0	0xc188
+ #define DWC3_GPRTBIMAP_FS1	0xc18c
+ 
++#define DWC3_VER_NUMBER		0xc1a0
++#define DWC3_VER_TYPE		0xc1a4
++
+ #define DWC3_GUSB2PHYCFG(n)	(0xc200 + (n * 0x04))
+ #define DWC3_GUSB2I2CCTL(n)	(0xc240 + (n * 0x04))
+ 
+@@ -686,7 +690,9 @@
+  * @num_event_buffers: calculated number of event buffers
+  * @u1u2: only used on revisions <1.83a for workaround
+  * @maximum_speed: maximum speed requested (mainly for testing purposes)
++ * @ip: controller's ID
+  * @revision: revision register contents
++ * @version_type: VERSIONTYPE register contents, a sub release of a revision
+  * @dr_mode: requested mode of operation
+  * @hsphy_mode: UTMI phy mode, one of following:
+  *		- USBPHY_INTERFACE_MODE_UTMI
+@@ -795,6 +801,13 @@
+ 	u32			num_event_buffers;
+ 	u32			u1u2;
+ 	u32			maximum_speed;
++
++	u32			ip;
++
++#define DWC3_IP			0x5533
++#define DWC31_IP		0x3331
++#define DWC32_IP		0x3332
++
+ 	u32			revision;
+ 
+ #define DWC3_REVISION_173A	0x5533173a
+@@ -817,7 +830,33 @@
+ #define DWC3_REVISION_270A	0x5533270a
+ #define DWC3_REVISION_280A	0x5533280a
+ #define DWC3_REVISION_290A	0x5533290a
++#define DWC3_REVISION_300A	0x5533300a
++#define DWC3_REVISION_310A	0x5533310a
++#define DWC3_REVISION_320A	0x5533320a
++#define DWC3_REVISION_330A	0x5533330a
+ 
++#define DWC31_REVISION_ANY	0x0
++#define DWC31_REVISION_110A	0x3131302a
++#define DWC31_REVISION_120A	0x3132302a
++#define DWC31_REVISION_160A	0x3136302a
++#define DWC31_REVISION_170A	0x3137302a
++#define DWC31_REVISION_180A	0x3138302a
++#define DWC31_REVISION_190A	0x3139302a
++#define DWC31_REVISION_200A	0x3230302a
++
++#define DWC32_REVISION_ANY	0x0
++#define DWC32_REVISION_100A	0x3130302a
++
++	u32			version_type;
++
++#define DWC31_VERSIONTYPE_ANY		0x0
++#define DWC31_VERSIONTYPE_EA01		0x65613031
++#define DWC31_VERSIONTYPE_EA02		0x65613032
++#define DWC31_VERSIONTYPE_EA03		0x65613033
++#define DWC31_VERSIONTYPE_EA04		0x65613034
++#define DWC31_VERSIONTYPE_EA05		0x65613035
++#define DWC31_VERSIONTYPE_EA06		0x65613036
++
+ 	enum dwc3_ep0_next	ep0_next_event;
+ 	enum dwc3_ep0_state	ep0state;
+ 	enum dwc3_link_state	link_state;
+@@ -1061,6 +1100,27 @@
+ void dwc3_of_parse(struct dwc3 *dwc);
+ int dwc3_init(struct dwc3 *dwc);
+ void dwc3_remove(struct dwc3 *dwc);
++
++#define DWC3_IP_IS(_ip)							\
++	(dwc->ip == _ip##_IP)
++
++#define DWC3_VER_IS(_ip, _ver)						\
++	(DWC3_IP_IS(_ip) && dwc->revision == _ip##_REVISION_##_ver)
++
++#define DWC3_VER_IS_PRIOR(_ip, _ver)					\
++	(DWC3_IP_IS(_ip) && dwc->revision < _ip##_REVISION_##_ver)
++
++#define DWC3_VER_IS_WITHIN(_ip, _from, _to)				\
++	(DWC3_IP_IS(_ip) &&						\
++	 dwc->revision >= _ip##_REVISION_##_from &&			\
++	 (!(_ip##_REVISION_##_to) ||					\
++	  dwc->revision <= _ip##_REVISION_##_to))
++
++#define DWC3_VER_TYPE_IS_WITHIN(_ip, _ver, _from, _to)			\
++	(DWC3_VER_IS(_ip, _ver) &&					\
++	 dwc->version_type >= _ip##_VERSIONTYPE_##_from &&		\
++	 (!(_ip##_VERSIONTYPE_##_to) ||					\
++	  dwc->version_type <= _ip##_VERSIONTYPE_##_to))
+ 
+ static inline int dwc3_host_init(struct dwc3 *dwc)
+ { return 0; }
+diff -ruN fork/drivers/usb/dwc3/dwc3-generic.c ours/drivers/usb/dwc3/dwc3-generic.c
+--- fork/drivers/usb/dwc3/dwc3-generic.c	2025-12-02 16:51:18
++++ ours/drivers/usb/dwc3/dwc3-generic.c	2026-10-24 14:00:13
+@@ -460,8 +460,12 @@
+ 	setbits_le32(qscratch_base + QSCRATCH_GENERAL_CFG,
+ 			  PIPE_UTMI_CLK_DIS);
+ 
++	udelay(100);
++
+ 	setbits_le32(qscratch_base + QSCRATCH_GENERAL_CFG,
+ 			  PIPE_UTMI_CLK_SEL | PIPE3_PHYSTATUS_SW);
++
++	udelay(100);
+ 
+ 	clrbits_le32(qscratch_base + QSCRATCH_GENERAL_CFG,
+ 			  PIPE_UTMI_CLK_DIS);
+diff -ruN fork/drivers/usb/dwc3/gadget.c ours/drivers/usb/dwc3/gadget.c
+--- fork/drivers/usb/dwc3/gadget.c	2025-12-02 16:51:18
++++ ours/drivers/usb/dwc3/gadget.c	2026-10-24 14:00:13
+@@ -62,7 +62,7 @@
+ 		return -EINVAL;
+ 	}
+ 
+-	dwc3_writel(dwc->regs, DWC3_DCTL, reg);
++	dwc3_gadget_dctl_write_safe(dwc, reg);
+ 
+ 	return 0;
+ }
+@@ -1168,7 +1168,7 @@
+ 			dwc3_stop_active_transfer(dwc, dep->number, true);
+ 			goto out1;
+ 		}
+-		dev_err(dwc->dev, "request %p was not queued to %s\n",
++		dev_dbg(dwc->dev, "request %p was not queued to %s\n",
+ 				request, ep->name);
+ 		ret = -EINVAL;
+ 		goto out0;
+@@ -1396,7 +1396,7 @@
+ static int dwc3_gadget_run_stop(struct dwc3 *dwc, int is_on, int suspend)
+ {
+ 	u32			reg;
+-	u32			timeout = 500;
++	u32			timeout = 2000;
+ 
+ 	reg = dwc3_readl(dwc->regs, DWC3_DCTL);
+ 	if (is_on) {
+@@ -1422,9 +1422,10 @@
+ 		dwc->pullups_connected = false;
+ 	}
+ 
+-	dwc3_writel(dwc->regs, DWC3_DCTL, reg);
++	dwc3_gadget_dctl_write_safe(dwc, reg);
+ 
+ 	do {
++		udelay(2000);
+ 		reg = dwc3_readl(dwc->regs, DWC3_DSTS);
+ 		if (is_on) {
+ 			if (!(reg & DWC3_DSTS_DEVCTRLHLT))
+@@ -1436,7 +1437,6 @@
+ 		timeout--;
+ 		if (!timeout)
+ 			return -ETIMEDOUT;
+-		udelay(1);
+ 	} while (1);
+ 
+ 	dev_vdbg(dwc->dev, "gadget %s data soft-%s\n",
+@@ -2137,10 +2137,8 @@
+ 
+ 	reg = dwc3_readl(dwc->regs, DWC3_DCTL);
+ 	reg &= ~DWC3_DCTL_INITU1ENA;
+-	dwc3_writel(dwc->regs, DWC3_DCTL, reg);
+-
+ 	reg &= ~DWC3_DCTL_INITU2ENA;
+-	dwc3_writel(dwc->regs, DWC3_DCTL, reg);
++	dwc3_gadget_dctl_write_safe(dwc, reg);
+ 
+ 	dwc3_disconnect_gadget(dwc);
+ 	dwc->start_config_issued = false;
+@@ -2189,7 +2187,7 @@
+ 
+ 	reg = dwc3_readl(dwc->regs, DWC3_DCTL);
+ 	reg &= ~DWC3_DCTL_TSTCTRL_MASK;
+-	dwc3_writel(dwc->regs, DWC3_DCTL, reg);
++	dwc3_gadget_dctl_write_safe(dwc, reg);
+ 	dwc->test_mode = false;
+ 
+ 	dwc3_stop_active_transfers(dwc);
+@@ -2305,11 +2303,11 @@
+ 		if (dwc->has_lpm_erratum && dwc->revision >= DWC3_REVISION_240A)
+ 			reg |= DWC3_DCTL_LPM_ERRATA(dwc->lpm_nyet_threshold);
+ 
+-		dwc3_writel(dwc->regs, DWC3_DCTL, reg);
++		dwc3_gadget_dctl_write_safe(dwc, reg);
+ 	} else {
+ 		reg = dwc3_readl(dwc->regs, DWC3_DCTL);
+ 		reg &= ~DWC3_DCTL_HIRD_THRES_MASK;
+-		dwc3_writel(dwc->regs, DWC3_DCTL, reg);
++		dwc3_gadget_dctl_write_safe(dwc, reg);
+ 	}
+ 
+ 	dep = dwc->eps[0];
+@@ -2417,7 +2415,7 @@
+ 
+ 				reg &= ~u1u2;
+ 
+-				dwc3_writel(dwc->regs, DWC3_DCTL, reg);
++				dwc3_gadget_dctl_write_safe(dwc, reg);
+ 				break;
+ 			default:
+ 				/* do nothing */
+diff -ruN fork/drivers/usb/dwc3/gadget.h ours/drivers/usb/dwc3/gadget.h
+--- fork/drivers/usb/dwc3/gadget.h	2025-12-02 16:51:18
++++ ours/drivers/usb/dwc3/gadget.h	2026-10-24 14:00:13
+@@ -104,4 +104,18 @@
+ 	return DWC3_DEPCMD_GET_RSC_IDX(res_id);
+ }
+ 
++/**
++ * dwc3_gadget_dctl_write_safe - write to DCTL safe from link state change
++ * @dwc: pointer to our context structure
++ * @value: value to write to DCTL
++ *
++ * Use this function when doing read-modify-write to DCTL. It will not
++ * send link state change request.
++ */
++static inline void dwc3_gadget_dctl_write_safe(struct dwc3 *dwc, u32 value)
++{
++	value &= ~DWC3_DCTL_ULSTCHNGREQ_MASK;
++	dwc3_writel(dwc->regs, DWC3_DCTL, value);
++}
++
+ #endif /* __DRIVERS_USB_DWC3_GADGET_H */
+diff -ruN fork/dts/upstream/src/arm64/qcom/pm6150l.dtsi ours/dts/upstream/src/arm64/qcom/pm6150l.dtsi
+--- fork/dts/upstream/src/arm64/qcom/pm6150l.dtsi	2025-12-02 16:51:18
++++ ours/dts/upstream/src/arm64/qcom/pm6150l.dtsi	2026-10-24 14:00:14
+@@ -135,5 +135,24 @@
+ 
+ 			status = "disabled";
+ 		};
++
++		pm6150l_lcdb: regulator@ec00 {
++			compatible = "qcom,pm6150l-lcdb";
++			reg = <0xec00>;
++			interrupts = <0x5 0xec 0x1 IRQ_TYPE_EDGE_RISING>;
++			interrupt-names = "sc-err";
++
++			lcdb_lab: lab {
++				regulator-name = "lcdb_lab";
++				regulator-min-microvolt = <5500000>;
++				regulator-max-microvolt = <5500000>;
++			};
++
++			lcdb_ibb: ibb {
++				regulator-name = "lcdb_ibb";
++				regulator-min-microvolt = <5500000>;
++				regulator-max-microvolt = <5500000>;
++			};
++		};
+ 	};
+ };
+diff -ruN fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-battery-diagnostic.dts ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-battery-diagnostic.dts
+--- fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-battery-diagnostic.dts	1969-12-31 21:00:00
++++ ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-battery-diagnostic.dts	2026-10-25 17:12:37
+@@ -0,0 +1,63 @@
++// SPDX-License-Identifier: BSD-3-Clause
++#include "sm7150-motorola-hanoip-gpu-diagnostic.dts"
++
++/* RAM diagnostic: battery telemetry and passive SMB5 monitoring only. */
++/ {
++	chosen {
++		bootargs = "earlycon=msm_geni_serial,0xa88000 console=ttyMSM0,115200n8 console=ttyGS0 console=ramoops loglevel=8 ignore_loglevel panic_on_oops=1 panic=5 pause_on_oops=5 pstore.backend=ramoops clk_ignore_unused consoleblank=0 vt.global_cursor_default=0";
++	};
++
++	hanoip_battery: battery {
++		compatible = "simple-battery";
++		device-chemistry = "lithium-ion";
++		/* Observed Android BMS design values for the ATL 6000 mAh pack. */
++		voltage-min-design-microvolt = <3200000>;
++		voltage-max-design-microvolt = <4450000>;
++		charge-full-design-microamp-hours = <6174000>;
++		constant-charge-current-max-microamp = <3600000>;
++	};
++};
++
++/* The U-Boot PM6150 include predates the mainline charger node/channels. */
++&pm6150_lsid0 {
++	pm6150_charger: charger@1000 {
++		reg = <0x1000>;
++		compatible = "motorola,hanoip-smb5-monitor";
++		io-channels = <&pm6150_adc ADC5_USB_IN_I>,
++			      <&pm6150_adc ADC5_USB_IN_V_16>;
++		io-channel-names = "usbin_i", "usbin_v";
++		monitored-battery = <&hanoip_battery>;
++		status = "okay";
++	};
++};
++
++&pm6150_adc {
++	channel@7 {
++		reg = <ADC5_USB_IN_I>;
++		qcom,pre-scaling = <1 1>;
++		label = "usb_in_i_uv";
++	};
++
++	channel@8 {
++		reg = <ADC5_USB_IN_V_16>;
++		qcom,pre-scaling = <1 16>;
++		label = "usb_in_v_div_16";
++	};
++};
++
++&pm6150_charger {
++	/* This diagnostic compatible skips all charger/Type-C setup writes. */
++	compatible = "motorola,hanoip-smb5-monitor";
++	monitored-battery = <&hanoip_battery>;
++	status = "okay";
++};
++
++&pm6150_qgauge {
++	monitored-battery = <&hanoip_battery>;
++	power-supplies = <&pm6150_charger>;
++	status = "okay";
++};
++
++&pm6150_qg_sdam {
++	read-only;
++};
+diff -ruN fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cpu8-diagnostic.dts ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cpu8-diagnostic.dts
+--- fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cpu8-diagnostic.dts	1969-12-31 21:00:00
++++ ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cpu8-diagnostic.dts	2026-10-25 17:12:37
+@@ -0,0 +1,14 @@
++// SPDX-License-Identifier: BSD-3-Clause
++#include "sm7150-motorola-hanoip-wifi-diagnostic.dts"
++
++/*
++ * Boot all eight CPUs. With maxcpus=6 the Cortex-A76 cores could not be
++ * onlined later: the system capabilities were finalized on the A55 cluster
++ * alone and CPU6 was refused ("Detected conflict for capability 80
++ * (Spectre-v2)"). idle=poll is dropped as well; arm64 does not know it.
++ */
++/ {
++	chosen {
++		bootargs = "earlycon=msm_geni_serial,0xa88000 console=ttyMSM0,115200n8 console=ttyGS0 console=ramoops console=tty1 loglevel=8 ignore_loglevel panic_on_oops=1 panic=5 pause_on_oops=5 pstore.backend=ramoops clk_ignore_unused consoleblank=0 vt.global_cursor_default=0";
++	};
++};
+diff -ruN fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cpufreq-diagnostic.dts ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cpufreq-diagnostic.dts
+--- fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cpufreq-diagnostic.dts	1969-12-31 21:00:00
++++ ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cpufreq-diagnostic.dts	2026-10-24 22:53:57
+@@ -0,0 +1,7 @@
++// SPDX-License-Identifier: BSD-3-Clause
++#include "sm7150-motorola-hanoip-touch-diagnostic.dts"
++
++/* One-variable RAM test: CPUfreq on; idle, CPU count and display unchanged. */
++&{/chosen} {
++	bootargs = "earlycon=msm_geni_serial,0xa88000 console=ttyMSM0,115200n8 console=ttyGS0 console=ramoops console=tty1 loglevel=8 ignore_loglevel panic_on_oops=1 panic=5 pause_on_oops=5 pstore.backend=ramoops clk_ignore_unused consoleblank=0 vt.global_cursor_default=0 maxcpus=6 cpuidle.off=1 idle=poll";
++};
+diff -ruN fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cpuidle-diagnostic.dts ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cpuidle-diagnostic.dts
+--- fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cpuidle-diagnostic.dts	1969-12-31 21:00:00
++++ ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cpuidle-diagnostic.dts	2026-10-24 23:30:48
+@@ -0,0 +1,7 @@
++// SPDX-License-Identifier: BSD-3-Clause
++#include "sm7150-motorola-hanoip-cpufreq-diagnostic.dts"
++
++/* RAM test: CPUfreq baseline, enabling only the existing PSCI idle states. */
++&{/chosen} {
++	bootargs = "earlycon=msm_geni_serial,0xa88000 console=ttyMSM0,115200n8 console=ttyGS0 console=ramoops console=tty1 loglevel=8 ignore_loglevel panic_on_oops=1 panic=5 pause_on_oops=5 pstore.backend=ramoops clk_ignore_unused consoleblank=0 vt.global_cursor_default=0 maxcpus=6 idle=poll";
++};
+diff -ruN fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cpuidle-local-diagnostic.dts ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cpuidle-local-diagnostic.dts
+--- fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cpuidle-local-diagnostic.dts	1969-12-31 21:00:00
++++ ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cpuidle-local-diagnostic.dts	2026-10-24 23:38:37
+@@ -0,0 +1,7 @@
++// SPDX-License-Identifier: BSD-3-Clause
++#include "sm7150-motorola-hanoip-cpuidle-diagnostic.dts"
++
++/* Isolate per-CPU power collapse; no L3/CX/AOSS domain collapse in this test. */
++&cluster_pd {
++	/delete-property/ domain-idle-states;
++};
+diff -ruN fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-diagnostic.dts ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-diagnostic.dts
+--- fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-diagnostic.dts	1969-12-31 21:00:00
++++ ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-diagnostic.dts	2026-10-24 14:26:02
+@@ -0,0 +1,15 @@
++// SPDX-License-Identifier: BSD-3-Clause
++#include "sm7150-motorola-hanoip.dts"
++
++/* This DTB is also handed to Linux. Keep internal storage unavailable. */
++&ufs_mem_hc {
++	status = "disabled";
++};
++
++&ufs_mem_phy {
++	status = "disabled";
++};
++
++&ice {
++	status = "disabled";
++};
+diff -ruN fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-display-diagnostic.dts ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-display-diagnostic.dts
+--- fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-display-diagnostic.dts	1969-12-31 21:00:00
++++ ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-display-diagnostic.dts	2026-10-24 16:25:56
+@@ -0,0 +1,45 @@
++// SPDX-License-Identifier: BSD-3-Clause
++#include "sm7150-motorola-hanoip-diagnostic.dts"
++
++/* Volatile display test: UFS stays disabled; panel is loaded over USB. */
++&mdss {
++	status = "okay";
++	memory-region = <&cont_splash_mem>;
++	/* The core BCR reset reboots this board during firmware handoff. */
++	/delete-property/ resets;
++};
++
++&dispcc {
++	status = "okay";
++};
++
++&mdss_dsi0 {
++	status = "okay";
++};
++
++&mdss_dsi0_phy {
++	status = "okay";
++};
++
++&gpu {
++	status = "disabled";
++};
++
++&panel {
++	backlight = <&pm6150l_wled>;
++};
++
++&pm6150l_lcdb {
++	status = "okay";
++};
++
++&pm6150l_wled {
++	status = "okay";
++	/delete-property/ qcom,num-strings;
++	qcom,enabled-strings = <0 1 2>;
++	qcom,current-limit-microamp = <25000>;
++	qcom,current-boost-limit = <1400>;
++	qcom,ovp-millivolt = <26500>;
++	default-brightness = <512>;
++	max-brightness = <4095>;
++};
+diff -ruN fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-gpu-diagnostic.dts ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-gpu-diagnostic.dts
+--- fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-gpu-diagnostic.dts	1969-12-31 21:00:00
++++ ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-gpu-diagnostic.dts	2026-10-25 17:12:37
+@@ -0,0 +1,16 @@
++// SPDX-License-Identifier: BSD-3-Clause
++#include "sm7150-motorola-hanoip-cpu8-diagnostic.dts"
++
++/*
++ * Enable the Adreno 618 that the display bring-up kept disabled. SQE/GMU
++ * firmware comes from linux-firmware; the zap shader is the device-signed
++ * one on the modem partition (linked by load-wifi from modem_a, mounted
++ * read-only). The speed-bin fuse (0xa7) selects 800..180 MHz.
++ */
++&gpu {
++	status = "okay";
++
++	zap-shader {
++		firmware-name = "qcom/sm7150/motorola/hanoip/a615_zap.mdt";
++	};
++};
+diff -ruN fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-audio.dts ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-audio.dts
+--- fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-audio.dts	1969-12-31 21:00:00
++++ ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-audio.dts	2026-10-25 22:55:50
+@@ -0,0 +1,13 @@
++// SPDX-License-Identifier: BSD-3-Clause
++#include "sm7150-motorola-hanoip-pmos.dts"
++
++/*
++ * Audio bring-up, phase 1: start the ADSP (LPASS) with the hanoip
++ * firmware read from modem_a. The APR services (q6core, q6afe with the
++ * LPASS clocks, q6asm, q6adm/routing) come from sm7150.dtsi; no sound card
++ * or amplifier is enabled yet.
++ */
++&remoteproc_adsp {
++	firmware-name = "qcom/sm7150/motorola/hanoip/adsp.mdt";
++	status = "okay";
++};
+diff -ruN fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-audio2.dts ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-audio2.dts
+--- fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-audio2.dts	1969-12-31 21:00:00
++++ ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-audio2.dts	2026-10-26 09:45:14
+@@ -0,0 +1,116 @@
++// SPDX-License-Identifier: BSD-3-Clause
++#include <dt-bindings/sound/qcom,q6asm.h>
++#include "sm7150-motorola-hanoip-pmos-audio.dts"
++
++/*
++ * Audio bring-up, phase 2: a sound card with MultiMedia1 routed to the
++ * speaker I2S (SECONDARY_MI2S_RX on vendor LPI gpio8-11).
++ * No codec yet: the aw882xx amplifier stays off, so this only proves the
++ * path through the ADSP. Vendor format: 48 kHz, S16_LE, mono, playback on
++ * data line 0 and amplifier feedback on line 1.
++ */
++/ {
++	/*
++	 * Placeholder codec for phase 2: qcom_snd_parse_of() only makes a
++	 * link a DPCM backend when it has both platform and codec. Touches no
++	 * hardware; replaced by the aw882xx amplifier in phase 3.
++	 */
++	speaker_dummy_codec: audio-codec-dummy {
++		compatible = "linux,spdif-dit";
++		#sound-dai-cells = <0>;
++	};
++
++	sound {
++		compatible = "qcom,sm8250-sndcard";
++		model = "Motorola Moto G60";
++		pinctrl-0 = <&hanoip_sec_mi2s_active>;
++		pinctrl-names = "default";
++
++		mm1-dai-link {
++			link-name = "MultiMedia1";
++
++			cpu {
++				sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA1>;
++			};
++		};
++
++		speaker-dai-link {
++			link-name = "Speaker Playback";
++
++			cpu {
++				sound-dai = <&q6afedai SECONDARY_MI2S_RX>;
++			};
++
++			platform {
++				sound-dai = <&q6routing>;
++			};
++
++			codec {
++				sound-dai = <&speaker_dummy_codec>;
++			};
++		};
++	};
++};
++
++&q6asmdai {
++	dai@0 {
++		reg = <MSM_FRONTEND_DAI_MULTIMEDIA1>;
++	};
++};
++
++&q6afedai {
++	dai@18 {
++		reg = <SECONDARY_MI2S_RX>;
++		qcom,sd-lines = <0>;
++	};
++};
++
++/*
++ * The speaker I2S pins are vendor LPI gpio8-11, in the SSC part of the LPI
++ * TLMM below &lpass_tlmm (which starts at vendor gpio18). Only their four
++ * register blocks are mapped.
++ */
++&soc {
++	lpass_tlmm_ssc: pinctrl@62b48000 {
++		compatible = "qcom,sm7150-lpass-lpi-ssc-pinctrl";
++		reg = <0 0x62b48000 0 0x4000>;
++
++		clocks = <&q6afecc LPASS_HW_MACRO_VOTE LPASS_CLK_ATTRIBUTE_COUPLE_NO>;
++		clock-names = "core";
++
++		gpio-controller;
++		#gpio-cells = <2>;
++		gpio-ranges = <&lpass_tlmm_ssc 0 0 4>;
++
++		hanoip_sec_mi2s_active: sec-mi2s-active-state {
++			sclk-pins {
++				pins = "ssc_gpio8";
++				function = "sec_mi2s_sclk";
++				drive-strength = <16>;
++				bias-bus-hold;
++			};
++
++			ws-pins {
++				pins = "ssc_gpio9";
++				function = "sec_mi2s_ws";
++				drive-strength = <16>;
++				bias-bus-hold;
++			};
++
++			data0-pins {
++				pins = "ssc_gpio10";
++				function = "sec_mi2s_data0";
++				drive-strength = <16>;
++				bias-bus-hold;
++			};
++
++			data1-pins {
++				pins = "ssc_gpio11";
++				function = "sec_mi2s_data1";
++				drive-strength = <16>;
++				bias-disable;
++				input-enable;
++			};
++		};
++	};
++};
+diff -ruN fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-audio3.dts ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-audio3.dts
+--- fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-audio3.dts	1969-12-31 21:00:00
++++ ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-audio3.dts	2026-10-25 23:11:03
+@@ -0,0 +1,22 @@
++// SPDX-License-Identifier: BSD-3-Clause
++#include "sm7150-motorola-hanoip-pmos-audio2.dts"
++
++/*
++ * Audio bring-up, phase 3: the Awinic AW882xx speaker amplifier on I2C2
++ * (SE 0x888000, address 0x34), reset on TLMM GPIO43 as in the vendor tree,
++ * replacing the phase 2 placeholder codec on the speaker link. The driver
++ * keeps the amplifier muted and powered down until playback and starts
++ * attenuated (snd-soc-aw882xx attenuation_db, default 18 dB).
++ */
++&i2c2 {
++	speaker_amp: audio-codec@34 {
++		compatible = "awinic,aw882xx";
++		reg = <0x34>;
++		reset-gpios = <&tlmm 43 GPIO_ACTIVE_LOW>;
++		#sound-dai-cells = <0>;
++	};
++};
++
++&{/sound/speaker-dai-link/codec} {
++	sound-dai = <&speaker_amp>;
++};
+diff -ruN fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-camid.dts ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-camid.dts
+--- fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-camid.dts	1969-12-31 21:00:00
++++ ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-camid.dts	2026-10-26 15:20:10
+@@ -0,0 +1,203 @@
++// SPDX-License-Identifier: BSD-3-Clause
++#include <dt-bindings/clock/qcom,sm7150-camcc.h>
++#include "sm7150-motorola-hanoip-pmos-perif.dts"
++
++/*
++ * Camera bring-up, step 1: chip-ID probe only. Rails, MCLK and reset per
++ * slot as in the vendor tree; the hanoip,camid nodes are only bound by
++ * the hand-loaded hanoip-camid module, which powers one sensor up, reads
++ * its ID and powers it down. CCI runs at 400 kHz for this test.
++ *
++ *   slot 0 rear main  S5KHM2  CCI0 m0 0x56  MCLK0 GPIO13  reset GPIO23
++ *   slot 1 front      OV32B   CCI1 m0 0x10  MCLK2 GPIO15  reset GPIO25
++ *   slot 2 rear depth OV02B1B CCI0 m1 0x3d  MCLK3 GPIO16  reset GPIO26
++ *   slot 3 rear wide  S5K4H7  CCI0 m1 0x2d  MCLK1 GPIO14  reset GPIO24
++ */
++/ {
++	cam_rear_main_avdd: regulator-cam-rear-main-avdd {
++		compatible = "regulator-fixed";
++		regulator-name = "cam_rear_main_avdd_2p8";
++		regulator-min-microvolt = <2800000>;
++		regulator-max-microvolt = <2800000>;
++		gpio = <&tlmm 72 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		startup-delay-us = <1000>;
++		vin-supply = <&vreg_bob>;
++	};
++
++	cam_front_avdd: regulator-cam-front-avdd {
++		compatible = "regulator-fixed";
++		regulator-name = "cam_front_avdd_2p8";
++		regulator-min-microvolt = <2800000>;
++		regulator-max-microvolt = <2800000>;
++		gpio = <&tlmm 65 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		startup-delay-us = <1000>;
++		vin-supply = <&vreg_bob>;
++	};
++
++	cam_rear_aux_avdd: regulator-cam-rear-aux-avdd {
++		compatible = "regulator-fixed";
++		regulator-name = "cam_rear_depth_wide_avdd_2p8";
++		regulator-min-microvolt = <2800000>;
++		regulator-max-microvolt = <2800000>;
++		gpio = <&tlmm 46 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		startup-delay-us = <1000>;
++		vin-supply = <&vreg_bob>;
++	};
++
++	cam_rear_wide_dvdd: regulator-cam-rear-wide-dvdd {
++		compatible = "regulator-fixed";
++		regulator-name = "cam_rear_wide_dvdd_1p2";
++		regulator-min-microvolt = <1200000>;
++		regulator-max-microvolt = <1200000>;
++		gpio = <&tlmm 33 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		startup-delay-us = <1000>;
++		vin-supply = <&vreg_s8c_1p2>;
++	};
++
++	cam_front_dvdd: regulator-cam-front-dvdd {
++		compatible = "regulator-fixed";
++		regulator-name = "cam_front_dvdd_1p1";
++		regulator-min-microvolt = <1100000>;
++		regulator-max-microvolt = <1100000>;
++		gpio = <&tlmm 93 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		startup-delay-us = <1000>;
++		vin-supply = <&vreg_s8c_1p2>;
++	};
++
++	/* Focus motors (VCM); not used by the ID probe. */
++	cam_rear_afvdd: regulator-cam-rear-afvdd {
++		compatible = "regulator-fixed";
++		regulator-name = "cam_rear_main_wide_afvdd_2p8";
++		regulator-min-microvolt = <2800000>;
++		regulator-max-microvolt = <2800000>;
++		gpio = <&tlmm 64 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		startup-delay-us = <1000>;
++		vin-supply = <&vreg_bob>;
++	};
++};
++
++&cci0 {
++	status = "okay";
++};
++
++&cci1 {
++	status = "okay";
++};
++
++&cci0_i2c0 {
++	clock-frequency = <400000>;
++
++	camid@56 {
++		compatible = "hanoip,camid";
++		reg = <0x56>;
++		label = "S5KHM2 (rear main)";
++		hanoip,id-reg = <0x0000>;
++		hanoip,id-value = <0x1ad2>;
++
++		vio-supply = <&vreg_l13a_1p8>;
++		vana-supply = <&cam_rear_main_avdd>;
++		vdig-supply = <&vreg_l6a_1p2>;
++		hanoip,vdig-microvolt = <1104000>;
++		clocks = <&camcc CAMCC_MCLK0_CLK>;
++		reset-gpios = <&tlmm 23 GPIO_ACTIVE_LOW>;
++
++		pinctrl-0 = <&cam_mclk0_default>;
++		pinctrl-names = "default";
++	};
++};
++
++&cci0_i2c1 {
++	clock-frequency = <400000>;
++
++	camid@3d {
++		compatible = "hanoip,camid";
++		reg = <0x3d>;
++		label = "OV02B1B (rear depth)";
++		hanoip,id-reg = <0x03>;
++		hanoip,id-reg-bytes = <1>;
++		hanoip,id-bytes = <1>;
++		hanoip,id-value = <0x2b>;
++
++		vio-supply = <&vreg_l13a_1p8>;
++		vana-supply = <&cam_rear_aux_avdd>;
++		clocks = <&camcc CAMCC_MCLK3_CLK>;
++		reset-gpios = <&tlmm 26 GPIO_ACTIVE_LOW>;
++
++		pinctrl-0 = <&cam_mclk3_default>;
++		pinctrl-names = "default";
++	};
++
++	camid@2d {
++		compatible = "hanoip,camid";
++		reg = <0x2d>;
++		label = "S5K4H7 (rear wide)";
++		hanoip,id-reg = <0x0000>;
++		hanoip,id-value = <0x487b>;
++
++		vio-supply = <&vreg_l13a_1p8>;
++		vana-supply = <&cam_rear_aux_avdd>;
++		vdig-supply = <&cam_rear_wide_dvdd>;
++		clocks = <&camcc CAMCC_MCLK1_CLK>;
++		reset-gpios = <&tlmm 24 GPIO_ACTIVE_LOW>;
++
++		pinctrl-0 = <&cam_mclk1_default>;
++		pinctrl-names = "default";
++	};
++};
++
++&cci1_i2c0 {
++	clock-frequency = <400000>;
++
++	camid@10 {
++		compatible = "hanoip,camid";
++		reg = <0x10>;
++		label = "OV32B (front)";
++		hanoip,id-reg = <0x300b>;
++		hanoip,id-value = <0x3242>;
++
++		vio-supply = <&vreg_l13a_1p8>;
++		vana-supply = <&cam_front_avdd>;
++		vdig-supply = <&cam_front_dvdd>;
++		clocks = <&camcc CAMCC_MCLK2_CLK>;
++		reset-gpios = <&tlmm 25 GPIO_ACTIVE_LOW>;
++
++		pinctrl-0 = <&cam_mclk2_default>;
++		pinctrl-names = "default";
++	};
++};
++
++&tlmm {
++	cam_mclk0_default: cam-mclk0-default-state {
++		pins = "gpio13";
++		function = "cam_mclk";
++		drive-strength = <2>;
++		bias-disable;
++	};
++
++	cam_mclk1_default: cam-mclk1-default-state {
++		pins = "gpio14";
++		function = "cam_mclk";
++		drive-strength = <2>;
++		bias-disable;
++	};
++
++	cam_mclk2_default: cam-mclk2-default-state {
++		pins = "gpio15";
++		function = "cam_mclk";
++		drive-strength = <2>;
++		bias-disable;
++	};
++
++	cam_mclk3_default: cam-mclk3-default-state {
++		pins = "gpio16";
++		function = "cam_mclk";
++		drive-strength = <2>;
++		bias-disable;
++	};
++};
+diff -ruN fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-perif-nonfc.dts ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-perif-nonfc.dts
+--- fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-perif-nonfc.dts	1969-12-31 21:00:00
++++ ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-perif-nonfc.dts	2026-10-26 10:43:39
+@@ -0,0 +1,7 @@
++// SPDX-License-Identifier: BSD-3-Clause
++#include "sm7150-motorola-hanoip-pmos-perif.dts"
++
++/* Bisect: modem init stalls (DOG) with the perif DT; drop NFC only. */
++&{/soc@0/geniqup@8c0000/i2c@888000/nfc@28} {
++	status = "disabled";
++};
+diff -ruN fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-perif.dts ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-perif.dts
+--- fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-perif.dts	1969-12-31 21:00:00
++++ ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-perif.dts	2026-10-26 10:58:17
+@@ -0,0 +1,84 @@
++// SPDX-License-Identifier: BSD-3-Clause
++#include <dt-bindings/interrupt-controller/irq.h>
++#include "sm7150-motorola-hanoip-pmos-audio3.dts"
++
++/*
++ * Peripherals on top of the audio DT: vibrator, both flash LED channels
++ * and the NFC controller, as described by the vendor tree.
++ */
++
++/* LDO vibrator; the vendor runs it at 3.0 V without overdrive. */
++&pm6150_vib {
++	qcom,vib-max-microvolt = <3000000>;
++	status = "okay";
++};
++
++/*
++ * Channel 1 is the rear flash (vendor flash_0, up to 1150 mA) and channel 2
++ * the front one (flash_1, up to 600 mA); torch is 500 mA max on both. Keep
++ * them as separate LEDs, the rear one first so the Plasma flashlight (it
++ * looks for *:flash) picks it, and stay well below the vendor limits.
++ */
++&pm6150l_flash {
++	led-1 {
++		led-sources = <1>;
++		led-max-microamp = <150000>;
++	};
++
++	led-2 {
++		function = LED_FUNCTION_FLASH;
++		function-enumerator = <1>;
++		color = <LED_COLOR_ID_WHITE>;
++		led-sources = <2>;
++		led-max-microamp = <100000>;
++		flash-max-microamp = <500000>;
++		flash-max-timeout-us = <1280000>;
++	};
++};
++
++/*
++ * Notification LED: one white LED on TRILED sink 1 (LPG channel 1, the
++ * vendor "charging" LED). Sinks 2 and 3 light nothing on their own.
++ */
++&pm6150l_lpg {
++	status = "okay";
++
++	led@1 {
++		reg = <1>;
++		color = <LED_COLOR_ID_WHITE>;
++		function = LED_FUNCTION_STATUS;
++	};
++};
++
++/* NXP PN54x (vendor qcom,nq-nci): IRQ GPIO37, VEN GPIO12, firmware GPIO36. */
++&i2c2 {
++	nfc@28 {
++		compatible = "nxp,nxp-nci-i2c";
++		reg = <0x28>;
++
++		interrupt-parent = <&tlmm>;
++		interrupts = <37 IRQ_TYPE_EDGE_RISING>;
++
++		enable-gpios = <&tlmm 12 GPIO_ACTIVE_HIGH>;
++		firmware-gpios = <&tlmm 36 GPIO_ACTIVE_HIGH>;
++
++		pinctrl-0 = <&nfc_int_active>, <&nfc_enable_active>;
++		pinctrl-names = "default";
++	};
++};
++
++&tlmm {
++	nfc_int_active: nfc-int-active-state {
++		pins = "gpio37";
++		function = "gpio";
++		drive-strength = <2>;
++		bias-pull-down;
++	};
++
++	nfc_enable_active: nfc-enable-active-state {
++		pins = "gpio12", "gpio36";
++		function = "gpio";
++		drive-strength = <2>;
++		bias-disable;
++	};
++};
+diff -ruN fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-sensors.dts ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-sensors.dts
+--- fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-sensors.dts	1969-12-31 21:00:00
++++ ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-sensors.dts	2026-10-26 11:33:43
+@@ -0,0 +1,7 @@
++// SPDX-License-Identifier: BSD-3-Clause
++#include "sm7150-motorola-hanoip-pmos-perif.dts"
++
++/* Sensor-bus probe only: expose SE11 I2C (GPIO101/102), no clients. */
++&i2c11 {
++	status = "okay";
++};
+diff -ruN fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-venus.dts ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-venus.dts
+--- fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-venus.dts	1969-12-31 21:00:00
++++ ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-venus.dts	2026-10-26 15:50:00
+@@ -0,0 +1,11 @@
++// SPDX-License-Identifier: BSD-3-Clause
++#include "sm7150-motorola-hanoip-pmos-perif.dts"
++
++/*
++ * Hardware video (Venus), experimental: the vendor firmware is loaded from
++ * the modem_a image links that hanoip-firmware sets up.
++ */
++&venus {
++	firmware-name = "qcom/sm7150/motorola/hanoip/venus.mdt";
++	status = "okay";
++};
+diff -ruN fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos.dts ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos.dts
+--- fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos.dts	1969-12-31 21:00:00
++++ ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos.dts	2026-10-25 17:12:37
+@@ -0,0 +1,13 @@
++// SPDX-License-Identifier: BSD-3-Clause
++#include "sm7150-motorola-hanoip-battery-diagnostic.dts"
++
++/*
++ * pmOS on the super tail: same hardware as the battery telemetry variant.
++ * The ILI7807S is a TDDI whose touch firmware lives in IRAM and is lost when
++ * the panel powers off, so the touch follows the panel and reloads it.
++ */
++&spi6 {
++	touchscreen@0 {
++		panel = <&panel>;
++	};
++};
+diff -ruN fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-touch-diagnostic.dts ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-touch-diagnostic.dts
+--- fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-touch-diagnostic.dts	1969-12-31 21:00:00
++++ ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-touch-diagnostic.dts	2026-10-24 16:06:54
+@@ -0,0 +1,9 @@
++// SPDX-License-Identifier: BSD-3-Clause
++#include "sm7150-motorola-hanoip-display-diagnostic.dts"
++
++&spi6 {
++	touchscreen@0 {
++		/* The downstream driver requests falling edges, despite its old DT. */
++		interrupts-extended = <&tlmm 9 IRQ_TYPE_EDGE_FALLING>;
++	};
++};
+diff -ruN fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-ufs-diagnostic.dts ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-ufs-diagnostic.dts
+--- fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-ufs-diagnostic.dts	1969-12-31 21:00:00
++++ ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-ufs-diagnostic.dts	2026-10-24 15:05:43
+@@ -0,0 +1,13 @@
++// SPDX-License-Identifier: BSD-3-Clause
++#include "sm7150-motorola-hanoip-diagnostic.dts"
++
++/* Passed to Linux; this U-Boot variant is built without a UFS driver. */
++&ufs_mem_hc {
++	/* Match the mainline DMA topology; the base board had removed it. */
++	iommus = <&apps_smmu 0x300 0x0>;
++	status = "okay";
++};
++
++&ufs_mem_phy {
++	status = "okay";
++};
+diff -ruN fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-ufs-local-diagnostic.dts ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-ufs-local-diagnostic.dts
+--- fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-ufs-local-diagnostic.dts	1969-12-31 21:00:00
++++ ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-ufs-local-diagnostic.dts	2026-10-25 01:09:58
+@@ -0,0 +1,15 @@
++// SPDX-License-Identifier: BSD-3-Clause
++#include "sm7150-motorola-hanoip-cpuidle-local-diagnostic.dts"
++
++/*
++ * Everything from the local CPUidle baseline plus UFS. Drivers are modules;
++ * /init does not load or mount storage. The base node keeps the required
++ * iommus = <&apps_smmu 0x300 0x0>.
++ */
++&ufs_mem_hc {
++	status = "okay";
++};
++
++&ufs_mem_phy {
++	status = "okay";
++};
+diff -ruN fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-wifi-diagnostic.dts ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-wifi-diagnostic.dts
+--- fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-wifi-diagnostic.dts	1969-12-31 21:00:00
++++ ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-wifi-diagnostic.dts	2026-10-25 11:37:22
+@@ -0,0 +1,59 @@
++// SPDX-License-Identifier: BSD-3-Clause
++#include <dt-bindings/firmware/qcom,scm.h>
++#include "sm7150-motorola-hanoip-ufs-local-diagnostic.dts"
++
++/*
++ * Wi-Fi bring-up: start the modem (it hosts the WCN3990 WLAN firmware) and
++ * give rmtfs a fixed buffer. Android allocates rmtfs dynamically; this range
++ * is plain RAM there (outside removed_region and every firmware carve-out).
++ * rmtfs runs file-backed and read-only (-o /run/efs -r): EFS never touches UFS.
++ */
++&reserved_memory {
++	rmtfs_mem: memory@9a000000 {
++		compatible = "qcom,rmtfs-mem";
++		reg = <0x0 0x9a000000 0x0 0x202000>;
++		no-map;
++
++		qcom,client-id = <1>;
++		qcom,vmid = <QCOM_SCM_VMID_MSS_MSA>;
++		qcom,use-guard-pages;
++	};
++};
++
++&remoteproc_mpss {
++	firmware-name = "qcom/sm7150/motorola/hanoip/modem.mdt";
++	status = "okay";
++};
++
++/*
++ * As on Android (ipa_fws loaded by the AP), the AP loads the IPA GSI
++ * firmware from the modem partition before the modem starts. Without IPA
++ * the modem aborted ~1.5 s after boot (EX:kernel tmr_slave1), with or
++ * without ath10k loaded.
++ */
++&ipa {
++	qcom,gsi-loader = "self";
++	memory-region = <&ipa_fw_mem>;
++	firmware-name = "qcom/sm7150/motorola/hanoip/ipa_fws.mdt";
++	status = "okay";
++};
++
++/*
++ * The WCN3990 copy-engine interrupts are pulses: Android configures them as
++ * edge. Declared level-high, no CE interrupt ever reached the CPU (HTC ready
++ * only arrived by polling and the HTT connect timed out).
++ */
++&wifi {
++	interrupts = <GIC_SPI 414 IRQ_TYPE_EDGE_RISING>,
++		     <GIC_SPI 415 IRQ_TYPE_EDGE_RISING>,
++		     <GIC_SPI 416 IRQ_TYPE_EDGE_RISING>,
++		     <GIC_SPI 417 IRQ_TYPE_EDGE_RISING>,
++		     <GIC_SPI 418 IRQ_TYPE_EDGE_RISING>,
++		     <GIC_SPI 419 IRQ_TYPE_EDGE_RISING>,
++		     <GIC_SPI 420 IRQ_TYPE_EDGE_RISING>,
++		     <GIC_SPI 421 IRQ_TYPE_EDGE_RISING>,
++		     <GIC_SPI 422 IRQ_TYPE_EDGE_RISING>,
++		     <GIC_SPI 423 IRQ_TYPE_EDGE_RISING>,
++		     <GIC_SPI 424 IRQ_TYPE_EDGE_RISING>,
++		     <GIC_SPI 425 IRQ_TYPE_EDGE_RISING>;
++};
+diff -ruN fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip.dts ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip.dts
+--- fork/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip.dts	1969-12-31 21:00:00
++++ ours/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip.dts	2026-10-24 15:12:37
+@@ -0,0 +1,898 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * Motorola Moto G60 (hanoip) - SM7150 (sdmmagpie)
++ *
++ * Copyright (c) 2026, hanoip-uboot port
++ *
++ * Based on the sm7150-google-sunfish.dts by:
++ * Copyright (c) 2023-2024, Connor Mitchell <c.dog29@hotmail.com>
++ * Copyright (c) 2025, Danila Tikhonov <danila@jiaxyga.com>
++ */
++
++/dts-v1/;
++
++#include <dt-bindings/firmware/qcom,scm.h>
++#include <dt-bindings/clock/qcom,sm7150-gcc.h>
++#include <dt-bindings/clock/qcom,sm7150-dispcc.h>
++#include <dt-bindings/gpio/gpio.h>
++#include <dt-bindings/input/input.h>
++#include <dt-bindings/leds/common.h>
++#include <dt-bindings/pinctrl/qcom,pmic-gpio.h>
++#include <dt-bindings/regulator/qcom,rpmh-regulator.h>
++#include <dt-bindings/usb/pd.h>
++
++#include "sm7150.dtsi"
++#include "pm6150.dtsi"
++#include "pm6150l.dtsi"
++
++/* RAM física do hanoip: base 0x80000000, fim 0x17dd00000 (~3.96GB).
++ * O sm7150.dtsi deixa size=0 esperando o ABL preencher via external FDT,
++ * mas fixamos aqui com o valor real do device (iomem do kernel).
++ * NOTA: NÃO usar 4GB cheio (0x100000000) - o fim real é 0x17dd00000,
++ * os últimos ~35MB são reservados para firmware.
++ */
++&{/memory@80000000} {
++	device_type = "memory";
++	reg = <0x0 0x80000000 0x0 0xfdd00000>;
++};
++
++/ {
++	model = "Motorola Moto G60";
++	compatible = "motorola,hanoip", "qcom,sm7150";
++	chassis-type = "handset";
++
++	aliases {
++		bluetooth0 = &bluetooth;
++		hsuart0 = &uart3;
++		serial0 = &uart8;
++		wifi0 = &wifi;
++	};
++
++	chosen {
++		#address-cells = <2>;
++		#size-cells = <2>;
++		ranges;
++
++		stdout-path = "serial0:115200n8";
++		bootargs = "earlycon=msm_geni_serial,0xa88000 console=ttyMSM0,115200n8 console=ttyGS0 console=ramoops console=tty1 loglevel=8 ignore_loglevel panic_on_oops=1 panic=5 pause_on_oops=5 pstore.backend=ramoops clk_ignore_unused consoleblank=0 vt.global_cursor_default=0 maxcpus=6 cpuidle.off=1 cpufreq.off=1 idle=poll";
++
++		framebuffer@9c000000 {
++			compatible = "simple-framebuffer";
++			reg = <0x0 0x9c000000 0x0 (1080 * 2460 * 4)>;
++			width = <1080>;
++			height = <2460>;
++			stride = <(1080 * 4)>;
++			format = "a8r8g8b8";
++
++			clocks = <&gcc GCC_DISP_HF_AXI_CLK>;
++		};
++	};
++
++	gpio_keys: gpio-keys {
++		compatible = "gpio-keys";
++
++		pinctrl-0 = <&vol_up_n>;
++		pinctrl-names = "default";
++
++		key-volume-up {
++			label = "Volume Up";
++			gpios = <&pm6150l_gpios 2 GPIO_ACTIVE_LOW>;
++			linux,code = <KEY_VOLUMEUP>;
++			debounce-interval = <15>;
++			linux,can-disable;
++			wakeup-source;
++		};
++	};
++
++	reserved-memory {
++		/* Keep one DFPS reservation at the address used by the stock DT. */
++		/delete-node/ dfps-data@9e300000;
++
++		/* cont_splash e dfps: framebuffer do ABL - SEM no-map (o sm7150.dtsi ja tem os demais) */
++		cont_splash_mem: cont-splash@9c000000 {
++			reg = <0x0 0x9c000000 0x0 0x01700000>;
++			label = "cont_splash_region";
++		};
++
++		dfps-data@9d700000 {
++			reg = <0x0 0x9d700000 0x0 0x00100000>;
++			label = "dfps_data_region";
++		};
++
++		ramoops_mem: ramoops@9d800000 {
++			compatible = "ramoops";
++			reg = <0x0 0x9d800000 0x0 0x400000>;
++
++			record-size = <0x80000>;
++			pmsg-size = <0x200000>;
++			console-size = <0x100000>;
++		};
++	};
++
++	vph_pwr: regulator-vph-pwr {
++		compatible = "regulator-fixed";
++
++		regulator-name = "vph_pwr";
++		regulator-min-microvolt = <3700000>;
++		regulator-max-microvolt = <3700000>;
++
++		regulator-always-on;
++		regulator-boot-on;
++	};
++
++	vreg_ibb: regulator-ibb {
++		compatible = "regulator-fixed";
++
++		regulator-name = "ibb";
++		regulator-min-microvolt = <6000000>;
++		regulator-max-microvolt = <6000000>;
++	};
++
++	/* placeholder: o RPMh ainda nao esta ok; o ABL ja alimenta o painel */
++	vreg_vddi: regulator-vddi {
++		compatible = "regulator-fixed";
++
++		regulator-name = "vddi";
++		regulator-min-microvolt = <1800000>;
++		regulator-max-microvolt = <1800000>;
++
++		regulator-always-on;
++		regulator-boot-on;
++	};
++
++	vreg_vdda_dsi: regulator-vdda-dsi {
++		compatible = "regulator-fixed";
++
++		regulator-name = "vdda_dsi";
++		regulator-min-microvolt = <1200000>;
++		regulator-max-microvolt = <1200000>;
++
++		regulator-always-on;
++		regulator-boot-on;
++	};
++
++	vreg_vdds_dsi_pll: regulator-vdds-dsi-pll {
++		compatible = "regulator-fixed";
++
++		regulator-name = "vdds_dsi_pll";
++		regulator-min-microvolt = <900000>;
++		regulator-max-microvolt = <900000>;
++
++		regulator-always-on;
++		regulator-boot-on;
++	};
++
++	vreg_lab: regulator-lab {
++		compatible = "regulator-fixed";
++
++		regulator-name = "lab";
++		regulator-min-microvolt = <6100000>;
++		regulator-max-microvolt = <6100000>;
++	};
++
++	// S3A is really mx.lvl but it's there for supply map completeness sake.
++	vreg_s3a_0p8: regulator-smpa3 {
++		compatible = "regulator-fixed";
++
++		regulator-name = "vreg_s3a_0p8";
++		regulator-min-microvolt = <800000>;
++		regulator-max-microvolt = <800000>;
++
++		regulator-always-on;
++		vin-supply = <&vph_pwr>;
++	};
++};
++
++/* Hanoip uses SDMMAGPIE firmware modes, not the ATOLL domain modes. */
++&cluster_sleep_cx_ret {
++	arm,psci-suspend-param = <0x41002244>;
++};
++
++&cluster_aoss_sleep {
++	arm,psci-suspend-param = <0x4100c244>;
++};
++
++&apps_rsc {
++	regulators-0 {
++		compatible = "qcom,pm6150-rpmh-regulators";
++		qcom,pmic-id = "a";
++
++		vdd-s1-supply = <&vph_pwr>;
++		vdd-s2-supply = <&vph_pwr>;
++		vdd-s3-supply = <&vph_pwr>;
++		vdd-s4-supply = <&vph_pwr>;
++		vdd-s5-supply = <&vph_pwr>;
++
++		vdd-l1-supply = <&vreg_s8c_1p2>;
++		vdd-l2-l3-supply = <&vreg_s4a_1p1>;
++		vdd-l4-l7-l8-supply = <&vreg_s4a_1p1>;
++		vdd-l5-l16-l17-l18-l19-supply = <&vreg_bob>;
++		vdd-l6-supply = <&vreg_s8c_1p2>;
++		vdd-l9-supply = <&vreg_s3a_0p8>;
++		vdd-l10-l14-l15-supply = <&vreg_s5a_2p0>;
++		vdd-l11-l12-l13-supply = <&vreg_s5a_2p0>;
++
++		vreg_s4a_1p1: smps4 {
++			regulator-name = "vreg_s4a_1p1";
++			regulator-min-microvolt = <824000>;
++			regulator-max-microvolt = <1120000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vreg_s5a_2p0: smps5 {
++			regulator-name = "vreg_s5a_2p0";
++			regulator-min-microvolt = <1744000>;
++			regulator-max-microvolt = <2040000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vreg_l1a_1p2: ldo1 {
++			regulator-name = "vreg_l1a_1p2";
++			regulator-min-microvolt = <1096000>;
++			regulator-max-microvolt = <1304000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vreg_l2a_1p0: ldo2 {
++			regulator-name = "vreg_l2a_1p0";
++			regulator-min-microvolt = <944000>;
++			regulator-max-microvolt = <1056000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vdda_pll_cc_ebi01:
++		vreg_l3a_1p0: ldo3 {
++			regulator-name = "vreg_l3a_1p0";
++			regulator-min-microvolt = <968000>;
++			regulator-max-microvolt = <1064000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vdd_qlink_lv:
++		vdd_qlink_lv_ck:
++		vdd_usb_hs_core:
++		vdda_mipi_csi0_0p9:
++		vdda_mipi_csi1_0p9:
++		vdda_mipi_csi2_0p9:
++		vdda_mipi_csi3_0p9:
++		vdda_mipi_dsi0_pll:
++		vdda_qrefs_0p9:
++		vdda_ufs_core:
++		vdda_usb_ss_dp_core:
++		vreg_l4a_0p88: ldo4 {
++			regulator-name = "vreg_l4a_0p88";
++			regulator-min-microvolt = <824000>;
++			regulator-max-microvolt = <920000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++			regulator-allow-set-load;
++			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
++						   RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vreg_l5a_2p7: ldo5 {
++			regulator-name = "vreg_l5a_2p7";
++			regulator-min-microvolt = <2600000>;
++			regulator-max-microvolt = <2800000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vreg_l6a_1p2: ldo6 {
++			regulator-name = "vreg_l6a_1p2";
++			regulator-min-microvolt = <1096000>;
++			regulator-max-microvolt = <1304000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vdd_wcss_cx:
++		vreg_l9a_0p8: ldo9 {
++			regulator-name = "vreg_l9a_0p8";
++			regulator-min-microvolt = <624000>;
++			regulator-max-microvolt = <760000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vddpx_3:
++		vreg_l10a_1p8: ldo10 {
++			regulator-name = "vreg_l10a_1p8";
++			regulator-min-microvolt = <1720000>;
++			regulator-max-microvolt = <1832000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vdd_qfprom:
++		vdda_apc1_cs_1p8:
++		vdda_qrefs_1p8:
++		vdda_usb_hs_1p8:
++		vddpx_11:
++		vreg_l11a_1p8: ldo11 {
++			regulator-name = "vreg_l11a_1p8";
++			regulator-min-microvolt = <1696000>;
++			regulator-max-microvolt = <1984000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vreg_l12a_1p8: ldo12 {
++			regulator-name = "vreg_l12a_1p8";
++			regulator-min-microvolt = <1696000>;
++			regulator-max-microvolt = <1952000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++			regulator-allow-set-load;
++			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
++						   RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vreg_l13a_1p8: ldo13 {
++			regulator-name = "vreg_l13a_1p8";
++			regulator-min-microvolt = <1696000>;
++			regulator-max-microvolt = <1904000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vreg_l14a_1p8: ldo14 {
++			regulator-name = "vreg_l14a_1p8";
++			regulator-min-microvolt = <1720000>;
++			regulator-max-microvolt = <1856000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vreg_l15a_1p8: ldo15 {
++			regulator-name = "vreg_l15a_1p8";
++			regulator-min-microvolt = <1696000>;
++			regulator-max-microvolt = <1904000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vreg_l16a_2p8: ldo16 {
++			regulator-name = "vreg_l16a_2p8";
++			regulator-min-microvolt = <2424000>;
++			regulator-max-microvolt = <2976000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vdda_usb_hs_3p1:
++		vreg_l17a_3p1: ldo17 {
++			regulator-name = "vreg_l17a_3p1";
++			regulator-min-microvolt = <3000000>;
++			regulator-max-microvolt = <3232000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vreg_l19a_2p85: ldo19 {
++			regulator-name = "vreg_l19a_2p85";
++			regulator-min-microvolt = <2944000>;
++			regulator-max-microvolt = <3304000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++			regulator-allow-set-load;
++			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
++						   RPMH_REGULATOR_MODE_HPM>;
++		};
++	};
++
++	regulators-1 {
++		compatible = "qcom,pm6150l-rpmh-regulators";
++		qcom,pmic-id = "c";
++
++		vdd-s1-supply = <&vph_pwr>;
++		vdd-s2-supply = <&vph_pwr>;
++		vdd-s3-supply = <&vph_pwr>;
++		vdd-s4-supply = <&vph_pwr>;
++		vdd-s5-supply = <&vph_pwr>;
++		vdd-s6-supply = <&vph_pwr>;
++		vdd-s7-supply = <&vph_pwr>;
++		vdd-s8-supply = <&vph_pwr>;
++
++		vdd-l2-l3-supply = <&vreg_s8c_1p2>;
++		vdd-l4-l5-l6-supply = <&vreg_bob>;
++		vdd-l7-l11-supply = <&vreg_bob>;
++		vdd-l9-l10-supply = <&vreg_bob>;
++
++		vdd-bob-supply = <&vph_pwr>;
++		vdd-flash-supply = <&vreg_bob>;
++		vdd-rgb-supply = <&vreg_bob>;
++
++		vreg_s1c_1p13: smps1 {
++			regulator-name = "vreg_s1c_1p13";
++			regulator-min-microvolt = <1000000>;
++			regulator-max-microvolt = <1200000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vreg_s8c_1p2: smps8 {
++			regulator-name = "vreg_s8c_1p2";
++			regulator-min-microvolt = <1200000>;
++			regulator-max-microvolt = <1730000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vreg_l1c_1p8: ldo1 {
++			regulator-name = "vreg_l1c_1p8";
++			regulator-min-microvolt = <1616000>;
++			regulator-max-microvolt = <1984000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vdd_wcss_adc_dac:
++		vreg_l2c_1p3: ldo2 {
++			regulator-name = "vreg_l2c_1p3";
++			regulator-min-microvolt = <1200000>;
++			regulator-max-microvolt = <1352000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vdda_csi0_1p25:
++		vdda_csi1_1p25:
++		vdda_csi2_1p25:
++		vdda_csi3_1p25:
++		vdda_hv_ebi0:
++		vdda_mipi_dsi0_1p2:
++		vdda_ufs_1p2:
++		vdda_usb_ss_dp_1p2:
++		vddpx_10:
++		vreg_l3c_1p23: ldo3 {
++			regulator-name = "vreg_l3c_1p23";
++			regulator-min-microvolt = <1144000>;
++			regulator-max-microvolt = <1256000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++			regulator-allow-set-load;
++			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
++						   RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vddpx_5:
++		vreg_l4c_1p8: ldo4 {
++			regulator-name = "vreg_l4c_1p8";
++			regulator-min-microvolt = <1648000>;
++			regulator-max-microvolt = <2950000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vddpx_6:
++		vreg_l5c_1p8: ldo5 {
++			regulator-name = "vreg_l5c_1p8";
++			regulator-min-microvolt = <1648000>;
++			regulator-max-microvolt = <2950000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vddpx_2:
++		vreg_l6c_3p0: ldo6 {
++			regulator-name = "vreg_l6c_3p0";
++			regulator-min-microvolt = <1648000>;
++			regulator-max-microvolt = <2950000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++			regulator-allow-set-load;
++			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
++						RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vreg_l7c_3p0: ldo7 {
++			regulator-name = "vreg_l7c_3p0";
++			regulator-min-microvolt = <3000000>;
++			regulator-max-microvolt = <3312000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vreg_l8c_1p8: ldo8 {
++			regulator-name = "vreg_l8c_1p8";
++			regulator-min-microvolt = <1800000>;
++			regulator-max-microvolt = <1900000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vreg_l9c_3p1: ldo9 {
++			regulator-name = "vreg_l9c_3p1";
++			regulator-min-microvolt = <2950000>;
++			regulator-max-microvolt = <3312000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vreg_l10c_3p3: ldo10 {
++			regulator-name = "vreg_l10c_3p3";
++			regulator-min-microvolt = <3200000>;
++			regulator-max-microvolt = <3312000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vreg_l11c_3p3: ldo11 {
++			regulator-name = "vreg_l11c_3p3";
++			regulator-min-microvolt = <2950000>;
++			regulator-max-microvolt = <3400000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vreg_bob: bob {
++			regulator-name = "vreg_bob";
++			regulator-min-microvolt = <3296000>;
++			regulator-max-microvolt = <3960000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_AUTO>;
++			regulator-allow-bypass;
++		};
++	};
++};
++
++&dispcc {
++	status = "okay";
++};
++
++&gpi_dma0 {
++	status = "okay";
++};
++
++&gpi_dma1 {
++	status = "okay";
++};
++
++&gpu {
++	zap-shader {
++		firmware-name = "qcom/sm7150/motorola/hanoip/a615_zap.mbn";
++	};
++};
++
++&i2c2 {
++	status = "okay";
++	clock-frequency = <400000>;
++
++	/* nq@28 nfc */
++};
++
++&mdss {
++	status = "okay";
++};
++
++&mdss_dsi0 {
++	vdda-supply = <&vreg_vdda_dsi>;
++	status = "okay";
++
++	panel: panel@0 {
++		compatible = "tianma,ili7807s-hanoip";
++		reg = <0>;
++
++		vddi-supply = <&vreg_vddi>;
++		avdd-supply = <&lcdb_lab>;
++		avee-supply = <&lcdb_ibb>;
++
++		reset-gpios = <&pm6150l_gpios 9 GPIO_ACTIVE_LOW>;
++
++		pinctrl-0 = <&lcd_reset_n>,
++			    <&lcd_en_active>,
++			    <&mdp_vsync_p>;
++		pinctrl-names = "default";
++
++		port {
++			panel_in: endpoint {
++				remote-endpoint = <&mdss_dsi0_out>;
++			};
++		};
++	};
++};
++
++&mdss_dsi0_out {
++	data-lanes = <0 1 2 3>;
++	remote-endpoint = <&panel_in>;
++	status = "okay";
++};
++
++&mdss_dsi0_phy {
++	vdds-supply = <&vreg_vdds_dsi_pll>;
++	status = "okay";
++};
++
++&pm6150_resin {
++	linux,code = <KEY_VOLUMEDOWN>;
++	status = "okay";
++};
++
++&pm6150_rtc {
++	status = "okay";
++};
++
++&pm6150_typec {
++	vdd-vbus-supply = <&pm6150_vbus>;
++	vdd-pdphy-supply = <&vdda_usb_hs_3p1>;
++	status = "okay";
++
++	connector {
++		compatible = "usb-c-connector";
++
++		power-role = "source";
++		data-role = "dual";
++		self-powered;
++
++		source-pdos = <PDO_FIXED(5000, 3000, PDO_FIXED_DUAL_ROLE |
++			       PDO_FIXED_USB_COMM | PDO_FIXED_DATA_SWAP)>;
++
++		ports {
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			port@0 {
++				reg = <0>;
++				pm6150_hs_in: endpoint {
++					remote-endpoint = <&usb_1_dwc3_hs>;
++				};
++			};
++
++			port@1 {
++				reg = <1>;
++				pm6150_typec_mux_in: endpoint {
++					remote-endpoint = <&usb_1_qmpphy_out>;
++				};
++			};
++		};
++	};
++};
++
++&pm6150_vbus {
++	regulator-min-microamp = <500000>;
++	regulator-max-microamp = <3000000>;
++	status = "okay";
++};
++
++&pm6150l_lcdb {
++	status = "okay";
++};
++
++&pm6150l_wled {
++	status = "okay";
++	qcom,num-strings = <4>;
++	qcom,enabled-strings = <0 1 2 3>;
++	default-brightness = <4095>;
++	max-brightness = <4095>;
++};
++
++&pm6150l_flash {
++	status = "okay";
++
++	led-1 {
++		function = LED_FUNCTION_FLASH;
++		color = <LED_COLOR_ID_WHITE>;
++		led-sources = <1>;
++		led-max-microamp = <150000>;
++		flash-max-microamp = <1000000>;
++		flash-max-timeout-us = <1280000>;
++	};
++};
++
++&pm6150l_gpios {
++	vol_up_n: vol-up-n-state {
++		pins = "gpio2";
++		function = PMIC_GPIO_FUNC_NORMAL;
++		input-enable;
++		bias-pull-up;
++		power-source = <0>;
++	};
++
++	lcd_reset_n: lcd-reset-n-state {
++		pins = "gpio9";
++		function = PMIC_GPIO_FUNC_FUNC1;
++		qcom,drive-strength = <PMIC_GPIO_STRENGTH_MED>;
++		bias-disable;
++		output-low;
++		power-source = <1>;
++	};
++};
++
++&qfprom {
++	vcc-supply = <&vdd_qfprom>;
++};
++
++&qup_uart3_cts {
++	bias-pull-down;
++};
++
++&qup_uart3_rts {
++	drive-strength = <2>;
++	bias-disable;
++};
++
++&qup_uart3_tx {
++	drive-strength = <2>;
++	bias-disable;
++};
++
++&qup_uart3_rx {
++	bias-pull-up;
++};
++
++&qup_uart8_tx {
++	drive-strength = <2>;
++	bias-disable;
++};
++
++&qup_uart8_rx {
++	drive-strength = <2>;
++	bias-pull-up;
++};
++
++&qupv3_id_0 {
++	status = "okay";
++};
++
++&qupv3_id_1 {
++	status = "okay";
++};
++
++&sdhc_2 {
++	status = "disabled";
++};
++
++&spi6 {
++	status = "okay";
++
++	touchscreen@0 {
++		compatible = "tchip,ilitek";
++		reg = <0>;
++
++		reset-gpios = <&tlmm 8 GPIO_ACTIVE_LOW>;
++		interrupts-extended = <&tlmm 9 IRQ_TYPE_LEVEL_LOW>;
++
++		spi-max-frequency = <12000000>;
++	};
++};
++
++&tlmm {
++	compatible = "motorola,hanoip-tlmm", "qcom,sm7150-tlmm";
++	gpio-reserved-ranges = <0 4>;
++
++	panel_en_hog: panel-en-hog {
++		gpio-hog;
++		gpios = <55 0>;
++		output-high;
++		line-name = "panel-en-hog";
++	};
++
++	lcd_en_active: lcd-en-active-state {
++		pins = "gpio55";
++		function = "gpio";
++		drive-strength = <8>;
++		bias-disable;
++		output-high;
++	};
++
++	mdp_vsync_p: mdp-vsync-p-state {
++		pins = "gpio10";
++		function = "mdp_vsync";
++		drive-strength = <2>;
++		bias-pull-down;
++	};
++
++	qup_uart3_sleep: qup-uart3-sleep-state {
++		cts-pins {
++			pins = "gpio38";
++			function = "gpio";
++			bias-pull-down;
++		};
++
++		rts-pins {
++			pins = "gpio39";
++			function = "gpio";
++			bias-pull-down;
++		};
++
++		tx-pins {
++			pins = "gpio40";
++			function = "gpio";
++			bias-pull-up;
++		};
++
++		rx-pins {
++			pins = "gpio41";
++			function = "gpio";
++			bias-pull-up;
++		};
++	};
++};
++
++&uart3 {
++	/delete-property/interrupts;
++	interrupts-extended = <&intc GIC_SPI 604 IRQ_TYPE_LEVEL_HIGH>,
++			      <&tlmm 41 IRQ_TYPE_EDGE_FALLING>;
++
++	pinctrl-1 = <&qup_uart3_sleep>;
++	pinctrl-names = "default",
++			"sleep";
++
++	status = "okay";
++
++	bluetooth: bluetooth {
++		compatible = "qcom,wcn3990-bt";
++
++		vddio-supply = <&vreg_l10a_1p8>;
++		vddxo-supply = <&vreg_l1c_1p8>;
++		vddrf-supply = <&vdd_wcss_adc_dac>;
++		vddch0-supply = <&vreg_l10c_3p3>;
++		max-speed = <3200000>;
++	};
++};
++
++&uart8 {
++	status = "okay";
++};
++
++&ufs_mem_hc {
++	/delete-property/ operating-points-v2;
++	/delete-property/ required-opps;
++	freq-table-hz = <50000000 200000000>, <0 0>, <0 0>,
++		<37500000 150000000>, <75000000 300000000>, <0 0>, <0 0>, <0 0>;
++	reset-gpios = <&tlmm 119 GPIO_ACTIVE_LOW>;
++
++	vcc-supply = <&vreg_l19a_2p85>;
++	vcc-max-microamp = <600000>;
++	vccq2-supply = <&vreg_l12a_1p8>;
++	vccq2-max-microamp = <600000>;
++
++	status = "okay";
++};
++
++&ufs_mem_phy {
++	vdda-phy-supply = <&vdda_ufs_core>;
++	vdda-pll-supply = <&vdda_ufs_1p2>;
++	resets = <&ufs_mem_hc 0>;
++	reset-names = "ufsphy";
++
++	/*
++	 * IMPORTANTE: manter resets = <&ufs_mem_hc 0> (do node base, igual
++	 * ao sunfish). O kernel usa get_exclusive() no reset do PHY e
++	 * get_optional() no reset do ufshc; se ambos apontarem pro mesmo
++	 * GCC_UFS_PHY_BCR, da -EBUSY e a UFS nao probeia.
++	 */
++	status = "okay";
++};
++
++&usb_1 {
++	qcom,select-utmi-as-pipe-clk;
++	status = "okay";
++};
++
++&usb_1_dwc3 {
++	dr_mode = "peripheral";
++	maximum-speed = "high-speed";
++	phys = <&usb_1_hsphy>;
++	phy-names = "usb2-phy";
++};
++
++&usb_1_dwc3_hs {
++	remote-endpoint = <&pm6150_hs_in>;
++};
++
++&usb_1_hsphy {
++	vdd-supply = <&vdd_usb_hs_core>;
++	vdda-pll-supply = <&vdda_usb_hs_1p8>;
++	vdda-phy-dpdm-supply = <&vdda_usb_hs_3p1>;
++	status = "okay";
++};
++
++&usb_1_qmpphy {
++	vdda-pll-supply = <&vdda_usb_ss_dp_1p2>;
++	vdda-phy-supply = <&vdda_usb_ss_dp_core>;
++	orientation-switch;
++	status = "disabled";
++};
++
++&usb_1_qmpphy_out {
++	remote-endpoint = <&pm6150_typec_mux_in>;
++};
++
++&wifi {
++	vdd-0.8-cx-mx-supply = <&vdd_wcss_cx>;
++	vdd-1.8-xo-supply = <&vreg_l1c_1p8>;
++	vdd-1.3-rfa-supply = <&vdd_wcss_adc_dac>;
++	vdd-3.3-ch0-supply = <&vreg_l10c_3p3>;
++	vdd-3.3-ch1-supply = <&vreg_l11c_3p3>;
++
++	qcom,ath10k-calibration-variant = "motorola_hanoip";
++
++	status = "okay";
++};
++&mdss {
++	status = "disabled";
++};
++&dispcc {
++	status = "disabled";
++};
++&mdss_dsi0 {
++	status = "disabled";
++};
++&mdss_dsi0_phy {
++	status = "disabled";
++};
+diff -ruN fork/dts/upstream/src/arm64/qcom/sm7150.dtsi ours/dts/upstream/src/arm64/qcom/sm7150.dtsi
+--- fork/dts/upstream/src/arm64/qcom/sm7150.dtsi	2025-12-02 16:51:18
++++ ours/dts/upstream/src/arm64/qcom/sm7150.dtsi	2026-10-24 14:19:34
+@@ -1424,11 +1424,11 @@
+ 				power-domains = <&rpmhpd RPMHPD_CX>;
+ 				required-opps = <&rpmhpd_opp_low_svs>;
+ 
+-				interconnects = <&aggre1_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
++				interconnects = <&aggre2_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
+ 						 &config_noc SLAVE_QUP_1 QCOM_ICC_TAG_ALWAYS>,
+ 						<&gem_noc MASTER_AMPSS_M0 QCOM_ICC_TAG_ALWAYS
+ 						 &config_noc SLAVE_QUP_1 QCOM_ICC_TAG_ALWAYS>,
+-						<&aggre1_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
++						<&aggre2_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
+ 						 &mc_virt SLAVE_EBI_CH0 QCOM_ICC_TAG_ALWAYS>;
+ 				interconnect-names = "qup-core",
+ 						     "qup-config",
+@@ -1460,11 +1460,11 @@
+ 				power-domains = <&rpmhpd RPMHPD_CX>;
+ 				operating-points-v2 = <&qup_opp_table>;
+ 
+-				interconnects = <&aggre1_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
++				interconnects = <&aggre2_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
+ 						 &config_noc SLAVE_QUP_1 QCOM_ICC_TAG_ALWAYS>,
+ 						<&gem_noc MASTER_AMPSS_M0 QCOM_ICC_TAG_ALWAYS
+ 						 &config_noc SLAVE_QUP_1 QCOM_ICC_TAG_ALWAYS>,
+-						<&aggre1_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
++						<&aggre2_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
+ 						 &mc_virt SLAVE_EBI_CH0 QCOM_ICC_TAG_ALWAYS>;
+ 				interconnect-names = "qup-core",
+ 						     "qup-config",
+@@ -1497,11 +1497,11 @@
+ 				power-domains = <&rpmhpd RPMHPD_CX>;
+ 				required-opps = <&rpmhpd_opp_low_svs>;
+ 
+-				interconnects = <&aggre1_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
++				interconnects = <&aggre2_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
+ 						 &config_noc SLAVE_QUP_1 QCOM_ICC_TAG_ALWAYS>,
+ 						<&gem_noc MASTER_AMPSS_M0 QCOM_ICC_TAG_ALWAYS
+ 						 &config_noc SLAVE_QUP_1 QCOM_ICC_TAG_ALWAYS>,
+-						<&aggre1_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
++						<&aggre2_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
+ 						 &mc_virt SLAVE_EBI_CH0 QCOM_ICC_TAG_ALWAYS>;
+ 				interconnect-names = "qup-core",
+ 						     "qup-config",
+@@ -1533,11 +1533,11 @@
+ 				power-domains = <&rpmhpd RPMHPD_CX>;
+ 				operating-points-v2 = <&qup_opp_table>;
+ 
+-				interconnects = <&aggre1_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
++				interconnects = <&aggre2_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
+ 						 &config_noc SLAVE_QUP_1 QCOM_ICC_TAG_ALWAYS>,
+ 						<&gem_noc MASTER_AMPSS_M0 QCOM_ICC_TAG_ALWAYS
+ 						 &config_noc SLAVE_QUP_1 QCOM_ICC_TAG_ALWAYS>,
+-						<&aggre1_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
++						<&aggre2_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
+ 						 &mc_virt SLAVE_EBI_CH0 QCOM_ICC_TAG_ALWAYS>;
+ 				interconnect-names = "qup-core",
+ 						     "qup-config",
+@@ -1570,11 +1570,11 @@
+ 				power-domains = <&rpmhpd RPMHPD_CX>;
+ 				required-opps = <&rpmhpd_opp_low_svs>;
+ 
+-				interconnects = <&aggre1_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
++				interconnects = <&aggre2_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
+ 						 &config_noc SLAVE_QUP_1 QCOM_ICC_TAG_ALWAYS>,
+ 						<&gem_noc MASTER_AMPSS_M0 QCOM_ICC_TAG_ALWAYS
+ 						 &config_noc SLAVE_QUP_1 QCOM_ICC_TAG_ALWAYS>,
+-						<&aggre1_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
++						<&aggre2_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
+ 						 &mc_virt SLAVE_EBI_CH0 QCOM_ICC_TAG_ALWAYS>;
+ 				interconnect-names = "qup-core",
+ 						     "qup-config",
+@@ -1606,11 +1606,11 @@
+ 				power-domains = <&rpmhpd RPMHPD_CX>;
+ 				operating-points-v2 = <&qup_opp_table>;
+ 
+-				interconnects = <&aggre1_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
++				interconnects = <&aggre2_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
+ 						 &config_noc SLAVE_QUP_1 QCOM_ICC_TAG_ALWAYS>,
+ 						<&gem_noc MASTER_AMPSS_M0 QCOM_ICC_TAG_ALWAYS
+ 						 &config_noc SLAVE_QUP_1 QCOM_ICC_TAG_ALWAYS>,
+-						<&aggre1_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
++						<&aggre2_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
+ 						 &mc_virt SLAVE_EBI_CH0 QCOM_ICC_TAG_ALWAYS>;
+ 				interconnect-names = "qup-core",
+ 						     "qup-config",
+@@ -1643,7 +1643,7 @@
+ 				power-domains = <&rpmhpd RPMHPD_CX>;
+ 				operating-points-v2 = <&qup_opp_table>;
+ 
+-				interconnects = <&aggre1_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
++				interconnects = <&aggre2_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
+ 						 &config_noc SLAVE_QUP_1 QCOM_ICC_TAG_ALWAYS>,
+ 						<&system_noc A1NOC_SNOC_MAS QCOM_ICC_TAG_ALWAYS
+ 						 &gem_noc SLAVE_LLCC QCOM_ICC_TAG_ALWAYS>;
+@@ -1668,11 +1668,11 @@
+ 				power-domains = <&rpmhpd RPMHPD_CX>;
+ 				required-opps = <&rpmhpd_opp_low_svs>;
+ 
+-				interconnects = <&aggre1_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
++				interconnects = <&aggre2_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
+ 						 &config_noc SLAVE_QUP_1 QCOM_ICC_TAG_ALWAYS>,
+ 						<&gem_noc MASTER_AMPSS_M0 QCOM_ICC_TAG_ALWAYS
+ 						 &config_noc SLAVE_QUP_1 QCOM_ICC_TAG_ALWAYS>,
+-						<&aggre1_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
++						<&aggre2_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
+ 						 &mc_virt SLAVE_EBI_CH0 QCOM_ICC_TAG_ALWAYS>;
+ 				interconnect-names = "qup-core",
+ 						     "qup-config",
+@@ -1704,11 +1704,11 @@
+ 				power-domains = <&rpmhpd RPMHPD_CX>;
+ 				required-opps = <&rpmhpd_opp_low_svs>;
+ 
+-				interconnects = <&aggre1_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
++				interconnects = <&aggre2_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
+ 						 &config_noc SLAVE_QUP_1 QCOM_ICC_TAG_ALWAYS>,
+ 						<&gem_noc MASTER_AMPSS_M0 QCOM_ICC_TAG_ALWAYS
+ 						 &config_noc SLAVE_QUP_1 QCOM_ICC_TAG_ALWAYS>,
+-						<&aggre1_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
++						<&aggre2_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
+ 						 &mc_virt SLAVE_EBI_CH0 QCOM_ICC_TAG_ALWAYS>;
+ 				interconnect-names = "qup-core",
+ 						     "qup-config",
+@@ -1740,11 +1740,11 @@
+ 				power-domains = <&rpmhpd RPMHPD_CX>;
+ 				operating-points-v2 = <&qup_opp_table>;
+ 
+-				interconnects = <&aggre1_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
++				interconnects = <&aggre2_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
+ 						 &config_noc SLAVE_QUP_1 QCOM_ICC_TAG_ALWAYS>,
+ 						<&gem_noc MASTER_AMPSS_M0 QCOM_ICC_TAG_ALWAYS
+ 						 &config_noc SLAVE_QUP_1 QCOM_ICC_TAG_ALWAYS>,
+-						<&aggre1_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
++						<&aggre2_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
+ 						 &mc_virt SLAVE_EBI_CH0 QCOM_ICC_TAG_ALWAYS>;
+ 				interconnect-names = "qup-core",
+ 						     "qup-config",
+@@ -1777,7 +1777,7 @@
+ 				power-domains = <&rpmhpd RPMHPD_CX>;
+ 				operating-points-v2 = <&qup_opp_table>;
+ 
+-				interconnects = <&aggre1_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
++				interconnects = <&aggre2_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
+ 						 &config_noc SLAVE_QUP_1 QCOM_ICC_TAG_ALWAYS>,
+ 						<&system_noc A1NOC_SNOC_MAS QCOM_ICC_TAG_ALWAYS
+ 						 &gem_noc SLAVE_LLCC QCOM_ICC_TAG_ALWAYS>;
+@@ -1802,11 +1802,11 @@
+ 				power-domains = <&rpmhpd RPMHPD_CX>;
+ 				required-opps = <&rpmhpd_opp_low_svs>;
+ 
+-				interconnects = <&aggre1_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
++				interconnects = <&aggre2_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
+ 						 &config_noc SLAVE_QUP_1 QCOM_ICC_TAG_ALWAYS>,
+ 						<&gem_noc MASTER_AMPSS_M0 QCOM_ICC_TAG_ALWAYS
+ 						 &config_noc SLAVE_QUP_1 QCOM_ICC_TAG_ALWAYS>,
+-						<&aggre1_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
++						<&aggre2_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
+ 						 &mc_virt SLAVE_EBI_CH0 QCOM_ICC_TAG_ALWAYS>;
+ 				interconnect-names = "qup-core",
+ 						     "qup-config",
+@@ -1838,11 +1838,11 @@
+ 				power-domains = <&rpmhpd RPMHPD_CX>;
+ 				operating-points-v2 = <&qup_opp_table>;
+ 
+-				interconnects = <&aggre1_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
++				interconnects = <&aggre2_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
+ 						 &config_noc SLAVE_QUP_1 QCOM_ICC_TAG_ALWAYS>,
+ 						<&gem_noc MASTER_AMPSS_M0 QCOM_ICC_TAG_ALWAYS
+ 						 &config_noc SLAVE_QUP_1 QCOM_ICC_TAG_ALWAYS>,
+-						<&aggre1_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
++						<&aggre2_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
+ 						 &mc_virt SLAVE_EBI_CH0 QCOM_ICC_TAG_ALWAYS>;
+ 				interconnect-names = "qup-core",
+ 						     "qup-config",
+@@ -1875,7 +1875,7 @@
+ 				power-domains = <&rpmhpd RPMHPD_CX>;
+ 				operating-points-v2 = <&qup_opp_table>;
+ 
+-				interconnects = <&aggre1_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
++				interconnects = <&aggre2_noc MASTER_QUP_1 QCOM_ICC_TAG_ALWAYS
+ 						 &config_noc SLAVE_QUP_1 QCOM_ICC_TAG_ALWAYS>,
+ 						<&system_noc A1NOC_SNOC_MAS QCOM_ICC_TAG_ALWAYS
+ 						 &gem_noc SLAVE_LLCC QCOM_ICC_TAG_ALWAYS>;
+@@ -1969,6 +1969,7 @@
+ 				 <&gcc GCC_AGGRE_UFS_PHY_AXI_CLK>,
+ 				 <&gcc GCC_UFS_PHY_AHB_CLK>,
+ 				 <&gcc GCC_UFS_PHY_UNIPRO_CORE_CLK>,
++				 <&gcc GCC_UFS_PHY_ICE_CORE_CLK>,
+ 				 <&rpmhcc RPMH_CXO_CLK>,
+ 				 <&gcc GCC_UFS_PHY_TX_SYMBOL_0_CLK>,
+ 				 <&gcc GCC_UFS_PHY_RX_SYMBOL_0_CLK>;
+@@ -1976,6 +1977,7 @@
+ 				      "bus_aggr_clk",
+ 				      "iface_clk",
+ 				      "core_clk_unipro",
++				      "core_clk_ice",
+ 				      "ref_clk",
+ 				      "tx_lane0_sync_clk",
+ 				      "rx_lane0_sync_clk";
+@@ -2066,8 +2068,6 @@
+ 				      "ref_aux",
+ 				      "qref";
+ 
+-			resets = <&ufs_mem_hc 0>;
+-			reset-names = "ufsphy";
+ 
+ 			power-domains = <&gcc UFS_PHY_GDSC>;
+ 
+@@ -2082,7 +2082,15 @@
+ 				     "qcom,inline-crypto-engine";
+ 			reg = <0x0 0x01d90000 0x0 0x8000>;
+ 
+-			clocks = <&gcc GCC_UFS_PHY_ICE_CORE_CLK>;
++			clocks = <&gcc GCC_UFS_PHY_AXI_CLK>,
++				 <&gcc GCC_UFS_MEM_CLKREF_CLK>,
++				 <&gcc GCC_UFS_PHY_AHB_CLK>,
++				 <&gcc GCC_UFS_PHY_ICE_CORE_CLK>;
++			clock-names = "ufs_core_clk", "bus_clk", "iface_clk", "ice_core_clk";
++			qcom,enable-ice-clk;
++			qcom,op-freq-hz = <0>, <0>, <0>, <300000000>;
++
++			power-domains = <&gcc UFS_PHY_GDSC>;
+ 		};
+ 
+ 		ipa: ipa@1e40000 {

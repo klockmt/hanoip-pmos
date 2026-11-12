@@ -1,0 +1,31 @@
+From 4932621124bd22474edbb3c0512a5dfdfe8d1fb1 Mon Sep 17 00:00:00 2001
+From: Vitaliy Skorkin <nikroksm@mail.ru>
+Date: Wed, 28 Aug 2024 20:36:03 +0500
+Subject: [PATCH 092/194] media: i2c: ov8856: Not reset media bus code on get
+ format
+
+Signed-off-by: Vitalii Skorkin <nikroksm@mail.ru>
+---
+ drivers/media/i2c/ov8856.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/media/i2c/ov8856.c b/drivers/media/i2c/ov8856.c
+index 8bedb47cd..754189066 100644
+--- a/drivers/media/i2c/ov8856.c
++++ b/drivers/media/i2c/ov8856.c
+@@ -2187,9 +2187,10 @@ static int ov8856_get_format(struct v4l2_subdev *sd,
+ 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
+ 		fmt->format = *v4l2_subdev_state_get_format(sd_state,
+ 							    fmt->pad);
+-	else
++	else {
++		fmt->format.code = ov8856_mbus_codes[ov8856->cur_mbus_index];
+ 		ov8856_update_pad_format(ov8856, ov8856->cur_mode, &fmt->format);
+-
++	}
+ 	mutex_unlock(&ov8856->mutex);
+ 
+ 	return 0;
+-- 
+2.43.0
+

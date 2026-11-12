@@ -1,0 +1,79 @@
+From 353266eacd91ee6e1a9f7247c86167057a523f2d Mon Sep 17 00:00:00 2001
+From: hanoip <h@l>
+Date: Tue, 27 Oct 2026 15:51:32 -0300
+Subject: [PATCH 180/194] power: supply: qcom_qg: use the last ADC current for
+ the coulomb budget
+
+The averaged current register freezes and occasionally holds a much larger stale
+value, which filled the coulomb budget several times faster than the real
+current: the reported capacity still climbed about 1% every two minutes where
+the measured 280 mA over a 4939 mAh pack is 1% in six.
+
+Use the last ADC current (the value the CURRENT_NOW property exposes, verified
+to track the real current) for the budget and for the IR compensation, and show
+it in the debugfs dump so the arithmetic can be checked. The implausible-voltage
+message becomes dbg to stop flooding the log.
+---
+ drivers/power/supply/qcom_qg.c | 18 +++++++++++++-----
+ 1 file changed, 13 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/power/supply/qcom_qg.c b/drivers/power/supply/qcom_qg.c
+index cb97de99a..3fad7c4e4 100644
+--- a/drivers/power/supply/qcom_qg.c
++++ b/drivers/power/supply/qcom_qg.c
+@@ -88,6 +88,7 @@ struct qcom_qg_chip {
+ 	 */
+ 	s64 coul_mpercent;
+ 	unsigned long coul_jiffies;
++	int last_current_ua;
+ 
+ 	/* debugfs may not be mounted yet when the driver probes */
+ 	struct delayed_work dbg_work;
+@@ -244,6 +245,8 @@ static int qcom_qg_smooth_capacity(struct qcom_qg_chip *chip, int soc,
+ 		return soc;
+ 	}
+ 
++	chip->last_current_ua = current_ua;
++
+ 	if (charging)
+ 		qcom_qg_coul_update(chip, current_ua, now);
+ 	else
+@@ -333,8 +336,12 @@ static int qcom_qg_get_capacity(struct qcom_qg_chip *chip,
+ 	int voltage_min = chip->batt_info->voltage_min_design_uv;
+ 	int voltage_max = chip->batt_info->voltage_max_design_uv;
+ 
+-	ret = qcom_qg_get_current(chip, QG_S2_NORMAL_AVG_I_DATA0_REG,
+-				  &current_now);
++	/*
++	 * Use the last ADC current, not the averaged one: the averaged register
++	 * freezes and sometimes holds a much larger stale value (it made the
++	 * coulomb budget fill up several times faster than the real current).
++	 */
++	ret = qcom_qg_get_current(chip, QG_LAST_ADC_I_DATA0_REG, &current_now);
+ 	if (ret)
+ 		return ret;
+ 
+@@ -354,9 +361,9 @@ static int qcom_qg_get_capacity(struct qcom_qg_chip *chip,
+ 			   qcom_qg_voltage_ok(ocv)) {
+ 			voltage_now = ocv;
+ 		} else {
+-			dev_warn_ratelimited(chip->dev,
+-					     "no plausible battery voltage (avg %d), keeping the last capacity\n",
+-					     voltage_now);
++			dev_dbg(chip->dev,
++				"no plausible battery voltage (avg %d), keeping the last capacity\n",
++				voltage_now);
+ 			guard(mutex)(&chip->lock);
+ 			if (chip->msoc >= 0) {
+ 				*val = chip->msoc;
+@@ -560,6 +567,7 @@ static int qcom_qg_state_show(struct seq_file *s, void *unused)
+ 	seq_printf(s, "cap reportada (msoc)   = %d %%\n", chip->msoc);
+ 	seq_printf(s, "orcamento coulomb      = %lld mili-%%  (=%lld%%)\n",
+ 		   chip->coul_mpercent, chip->coul_mpercent / 1000);
++	seq_printf(s, "ultima corrente usada  = %d uA\n", chip->last_current_ua);
+ 	return 0;
+ }
+ DEFINE_SHOW_ATTRIBUTE(qcom_qg_state);
+-- 
+2.43.0
+

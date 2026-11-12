@@ -5,4 +5,6 @@ grep -q "comment \"Tailscale direct connections\"$" /etc/nftables.d/52_tailscale
 # The watchdog arrived after the first images: an upgrade enables it too (rc-update add is idempotent).
 rc-update add hanoip-watchdog default >/dev/null 2>&1 || true
 rc-update add hanoip-led default >/dev/null 2>&1 || true
+# elogind must not create a PSI trigger on 4.14 (docs/PITFALLS.md): D-Bus reads /usr/local first, so this overrides its service file.
+install -Dm644 /usr/share/device-motorola-hanoip/org.freedesktop.login1.service /usr/local/share/dbus-1/system-services/org.freedesktop.login1.service
 exit 0

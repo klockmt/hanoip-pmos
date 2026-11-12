@@ -1,0 +1,163 @@
+From 2b2dfd2e80869aac500025d6fa70da950150489d Mon Sep 17 00:00:00 2001
+From: Aelin Reidel <aelin@mainlining.org>
+Date: Sat, 28 Mar 2026 22:57:22 +0100
+Subject: [PATCH 115/194] more camera work
+
+---
+ arch/arm64/boot/dts/qcom/sm7150.dtsi      | 97 ++++++++++++++++-------
+ drivers/media/platform/qcom/camss/camss.c |  6 +-
+ 2 files changed, 71 insertions(+), 32 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/sm7150.dtsi b/arch/arm64/boot/dts/qcom/sm7150.dtsi
+index cd81391fb..055aa6b3e 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm7150.dtsi
+@@ -3633,15 +3633,38 @@ camss: camss@ace0000 {
+ 			      <0 0x0ace6000 0 0x2000>,
+ 			      <0 0x0acaf000 0 0x5200>,
+ 			      <0 0x0acb6000 0 0x5200>,
+-			      <0 0x0acc4000 0 0x4000>;
++			      <0 0x0acc4000 0 0x4000>,
++			      <0 0x0ac6f000 0 0x3000>,
++			      <0 0x0ac42000 0 0x6000>,
++			      <0 0x0ac48000 0 0x1000>,
++			      <0 0x0ac40000 0 0x1000>,
++			      <0 0x0ac18000 0 0x3000>,
++			      <0 0x0ac00000 0 0x6000>,
++			      <0 0x0ac10000 0 0x8000>,
++			      <0 0x0ac87000 0 0x3000>,
++			      <0 0x0ac91000 0 0x3000>,
++			      <0 0x0ac52000 0 0x4000>,
++			      <0 0x0ac4e000 0 0x4000>,
++			      <0 0x0ac6b000 0 0x0a00>;
+ 			reg-names = "csiphy0",
+ 				    "csiphy1",
+ 				    "csiphy2",
+ 				    "csiphy3",
+ 				    "vfe0",
+ 				    "vfe1",
+-				    "vfe_lite";
+-			// FIXME: missing regs
++				    "vfe_lite",
++				    "bps",
++				    "camnoc",
++				    "cpas_cdm",
++				    "cpas_top",
++				    "ipc_csr",
++				    "ipc_qgic",
++				    "ipc_sierra",
++				    "ipe0",
++				    "ipe1",
++				    "jpeg_dma",
++				    "jpeg_enc",
++				    "lrme";
+ 
+ 			clocks = <&gcc GCC_CAMERA_HF_AXI_CLK>,
+ 				 <&gcc GCC_CAMERA_SF_AXI_CLK>,
+@@ -3758,22 +3781,22 @@ camss: camss@ace0000 {
+ 				      "lrme",
+ 				      "lrme_src";
+ 
+-			interrupts = <GIC_SPI 477 IRQ_TYPE_LEVEL_HIGH>,
+-				     <GIC_SPI 478 IRQ_TYPE_LEVEL_HIGH>,
+-				     <GIC_SPI 479 IRQ_TYPE_LEVEL_HIGH>,
+-				     <GIC_SPI 607 IRQ_TYPE_LEVEL_HIGH>,
+-				     <GIC_SPI 464 IRQ_TYPE_LEVEL_HIGH>,
+-				     <GIC_SPI 466 IRQ_TYPE_LEVEL_HIGH>,
+-				     <GIC_SPI 438 IRQ_TYPE_LEVEL_HIGH>,
+-				     <GIC_SPI 465 IRQ_TYPE_LEVEL_HIGH>,
+-				     <GIC_SPI 467 IRQ_TYPE_LEVEL_HIGH>,
+-				     <GIC_SPI 434 IRQ_TYPE_LEVEL_HIGH>,
+-				     <GIC_SPI 459 IRQ_TYPE_LEVEL_HIGH>,
+-				     <GIC_SPI 468 IRQ_TYPE_LEVEL_HIGH>,
+-				     <GIC_SPI 463 IRQ_TYPE_LEVEL_HIGH>,
+-				     <GIC_SPI 475 IRQ_TYPE_LEVEL_HIGH>,
+-				     <GIC_SPI 474 IRQ_TYPE_LEVEL_HIGH>,
+-				     <GIC_SPI 476 IRQ_TYPE_LEVEL_HIGH>;
++			interrupts = <GIC_SPI 477 IRQ_TYPE_EDGE_RISING>,
++				     <GIC_SPI 478 IRQ_TYPE_EDGE_RISING>,
++				     <GIC_SPI 479 IRQ_TYPE_EDGE_RISING>,
++				     <GIC_SPI 607 IRQ_TYPE_EDGE_RISING>,
++				     <GIC_SPI 464 IRQ_TYPE_EDGE_RISING>,
++				     <GIC_SPI 466 IRQ_TYPE_EDGE_RISING>,
++				     <GIC_SPI 438 IRQ_TYPE_EDGE_RISING>,
++				     <GIC_SPI 465 IRQ_TYPE_EDGE_RISING>,
++				     <GIC_SPI 467 IRQ_TYPE_EDGE_RISING>,
++				     <GIC_SPI 434 IRQ_TYPE_EDGE_RISING>,
++				     <GIC_SPI 459 IRQ_TYPE_EDGE_RISING>,
++				     <GIC_SPI 468 IRQ_TYPE_EDGE_RISING>,
++				     <GIC_SPI 463 IRQ_TYPE_EDGE_RISING>,
++				     <GIC_SPI 475 IRQ_TYPE_EDGE_RISING>,
++				     <GIC_SPI 474 IRQ_TYPE_EDGE_RISING>,
++				     <GIC_SPI 476 IRQ_TYPE_EDGE_RISING>;
+ 			interrupt-names = "csiphy0",
+ 					  "csiphy1",
+ 					  "csiphy2",
+@@ -3804,20 +3827,36 @@ camss: camss@ace0000 {
+ 					     "ipe0",
+ 					     "ipe1";
+ 
+-			iommus = <&apps_smmu 0x900 0x460>,
+-				 <&apps_smmu 0xd00 0x460>,
++			iommus = <&apps_smmu 0x820 0x440>,
+ 				 <&apps_smmu 0x880 0x460>,
+-				 <&apps_smmu 0xc80 0x460>,
+-				 <&apps_smmu 0x820 0x440>,
+-				 <&apps_smmu 0xc20 0x440>,
+-				 <&apps_smmu 0x920 0x460>,
+-				 <&apps_smmu 0xd20 0x460>,
++				 <&apps_smmu 0x900 0x460>,
+ 				 <&apps_smmu 0x8a0 0x460>,
+-				 <&apps_smmu 0xca0 0x460>,
++				 <&apps_smmu 0x8c0 0x460>,
++				 <&apps_smmu 0x920 0x460>,
+ 				 <&apps_smmu 0x940 0x460>,
++				 <&apps_smmu 0xc20 0x440>,
++				 <&apps_smmu 0xc80 0x460>,
++				 <&apps_smmu 0xca0 0x460>,
++				 <&apps_smmu 0xcc0 0x460>,
++				 <&apps_smmu 0xd00 0x460>,
++				 <&apps_smmu 0xd20 0x460>,
+ 				 <&apps_smmu 0xd40 0x460>,
+-				 <&apps_smmu 0x8c0 0x460>,
+-				 <&apps_smmu 0xcc0 0x460>;
++				 <&apps_smmu 0x1000 0x0>,
++				 <&apps_smmu 0x1042 0x0>,
++				 <&apps_smmu 0x1180 0x0>,
++				 <&apps_smmu 0x11a0 0x0>,
++				 <&apps_smmu 0x11c0 0x0>,
++				 <&apps_smmu 0x11e0 0x0>,
++				 <&apps_smmu 0x1200 0x0>,
++				 <&apps_smmu 0x1220 0x0>,
++				 <&apps_smmu 0x1240 0x0>,
++				 <&apps_smmu 0x1260 0x0>,
++				 <&apps_smmu 0x1280 0x20>,
++				 <&apps_smmu 0x12a0 0x20>,
++				 <&apps_smmu 0x12c0 0x20>,
++				 <&apps_smmu 0x12e0 0x20>,
++				 <&apps_smmu 0x1300 0x60>,
++				 <&apps_smmu 0x1320 0x60>;
+ 
+ 			interconnects = <&gem_noc MASTER_AMPSS_M0 QCOM_ICC_TAG_ACTIVE_ONLY
+ 					 &config_noc SLAVE_CAMERA_CFG QCOM_ICC_TAG_ACTIVE_ONLY>,
+diff --git a/drivers/media/platform/qcom/camss/camss.c b/drivers/media/platform/qcom/camss/camss.c
+index a7da50959..c2652ea87 100644
+--- a/drivers/media/platform/qcom/camss/camss.c
++++ b/drivers/media/platform/qcom/camss/camss.c
+@@ -2011,10 +2011,10 @@ static const struct camss_subdev_resources csiphy_res_7150[] = {
+ 			{ .supply = "vdda-pll", .init_load_uA = 0 }
+ 		},
+ 		.clock = { "csiphy3", "csiphy3_timer_src", "csiphy3_timer", "cphy_rx_src" },
+-		.clock_rate = { { 300000000, 384000000, 400000000 },
+-				{ 0 },
++		.clock_rate = { { 0 },
+ 				{ 300000000 },
+-				{ 0 } },
++				{ 0 },
++				{ 384000000, 400000000, 400000000 } },
+ 		.reg = { "csiphy3" },
+ 		.interrupt = { "csiphy3" },
+ 		.csiphy = {
+-- 
+2.43.0
+

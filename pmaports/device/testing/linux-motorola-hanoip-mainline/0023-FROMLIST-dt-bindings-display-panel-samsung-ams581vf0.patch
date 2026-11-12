@@ -1,0 +1,36 @@
+From 4f3f4c625eff9ac439ff2ed97e3fd12a57f619a4 Mon Sep 17 00:00:00 2001
+From: Danila Tikhonov <danila@jiaxyga.com>
+Date: Fri, 21 Feb 2025 22:19:30 +0300
+Subject: [PATCH 023/194] FROMLIST: dt-bindings: display: panel:
+ samsung,ams581vf01: Add google,sunfish
+
+This panel is used in Google Pixel 4a (google,sunfish). Document the
+corresponding string.
+
+Signed-off-by: Danila Tikhonov <danila@jiaxyga.com>
+---
+ .../bindings/display/panel/samsung,ams581vf01.yaml        | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/Documentation/devicetree/bindings/display/panel/samsung,ams581vf01.yaml b/Documentation/devicetree/bindings/display/panel/samsung,ams581vf01.yaml
+index 70dff9c0e..a3a1de32d 100644
+--- a/Documentation/devicetree/bindings/display/panel/samsung,ams581vf01.yaml
++++ b/Documentation/devicetree/bindings/display/panel/samsung,ams581vf01.yaml
+@@ -17,7 +17,13 @@ allOf:
+ 
+ properties:
+   compatible:
+-    const: samsung,ams581vf01
++    oneOf:
++      - enum:
++          - samsung,ams581vf01
++      - items:
++          - enum:
++              - google,ams581vf01-sunfish
++          - const: samsung,ams581vf01
+ 
+   reg:
+     maxItems: 1
+-- 
+2.43.0
+

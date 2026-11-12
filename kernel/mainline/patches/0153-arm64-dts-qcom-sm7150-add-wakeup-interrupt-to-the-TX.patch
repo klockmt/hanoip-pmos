@@ -1,0 +1,58 @@
+From 2bdfc447a7206d135ce215ce42b3049ca690cb08 Mon Sep 17 00:00:00 2001
+From: Artem Hutsaliuk <artemgutsaliukv@gmail.com>
+Date: Sun, 9 Aug 2026 23:03:33 -0500
+Subject: [PATCH 153/194] arm64: dts: qcom: sm7150: add wakeup interrupt to the
+ TX SoundWire controller
+
+Capture traffic originates at the codec, so the microphone bus has to be
+able to wake itself: unlike the RX bus, which is woken by whoever plays
+audio, the TX controller needs the separate wakeup interrupt.
+
+Without it the TX SoundWire device never leaves runtime suspend.
+pm_runtime_resume_and_get() returns -EBUSY, regmap-irq floods the log
+with "IRQ sync failed to resume", the audio service on the ADSP is
+restarted and the sound card fails to instantiate with -EBUSY - taking
+the speaker down with it.
+
+The driver already supports this: qcom_swrm_probe() takes the wakeup
+interrupt as the second one and the binding documents the names as
+"core" and "wakeup". The interrupt number is GIC_SPI 500, taken from the
+vendor device tree, where the TX controller is the only one declared
+wakeup capable.
+
+Tested on a Xiaomi Mi 9T (SM7150-AA, WCD9375): the sixteen consecutive
+"IRQ sync failed to resume" messages are gone and the card comes up on
+every boot.
+
+Signed-off-by: Artem Hutsaliuk <artemgutsaliukv@gmail.com>
+---
+ arch/arm64/boot/dts/qcom/sm7150.dtsi | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/sm7150.dtsi b/arch/arm64/boot/dts/qcom/sm7150.dtsi
+index 2ee0d36db..b30ad8b74 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm7150.dtsi
+@@ -4695,7 +4695,18 @@ swr2: soundwire-controller@62ed0000 {
+ 			reg = <0 0x62ed0000 0 0x2000>;
+ 			compatible = "qcom,soundwire-v1.5.1";
+ 			status = "disabled";
+-			interrupts = <GIC_SPI 296 IRQ_TYPE_LEVEL_HIGH>;
++			/*
++			 * The TX bus needs the second, wakeup interrupt: capture
++			 * traffic originates at the codec, so the bus has to wake
++			 * itself. Without it the SoundWire device never leaves
++			 * runtime suspend, regmap-irq keeps reporting "IRQ sync
++			 * failed to resume" and the sound card fails to probe.
++			 * The RX bus does not need it - it is woken by the
++			 * playback side.
++			 */
++			interrupts = <GIC_SPI 296 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 500 IRQ_TYPE_LEVEL_HIGH>;
++			interrupt-names = "core", "wakeup";
+ 
+ 			clocks = <&txmacro>;
+ 			clock-names = "iface";
+-- 
+2.43.0
+

@@ -1,0 +1,59 @@
+From 59ce1307f6f69262eeb5bb174156428ce6611a4a Mon Sep 17 00:00:00 2001
+From: hanoip <hanoip@localhost>
+Date: Mon, 26 Oct 2026 14:04:55 +0000
+Subject: [PATCH 165/194] net: qrtr: ns: wait for the HELLO before announcing
+ servers
+
+Since "net: qrtr: Send HELLO message on endpoint register" the core
+sends our HELLO from a delayed work and rejects non-HELLO packets to the
+node with -EAGAIN until it has gone out. When the remote says HELLO
+first, announce_servers() hits that -EAGAIN, logs "failed to announce
+new service" and stops; the name server no longer replies to HELLO, so
+nothing announces the local servers again.
+
+On Motorola hanoip (SM7150) the modem then never learns about rmtfs,
+tqftpserv and pd-mapper, waits until its watchdog fires ("DOG detects
+stalled initialization") and Wi-Fi never comes up: 3 of 6 boots.
+Retry on -EAGAIN for up to a second instead.
+---
+ net/qrtr/ns.c | 17 ++++++++++++++++-
+ 1 file changed, 16 insertions(+), 1 deletion(-)
+
+diff --git a/net/qrtr/ns.c b/net/qrtr/ns.c
+index bcb090ee7..d4d77579c 100644
+--- a/net/qrtr/ns.c
++++ b/net/qrtr/ns.c
+@@ -5,6 +5,7 @@
+  * Copyright (c) 2020, Linaro Ltd.
+  */
+ 
++#include <linux/delay.h>
+ #include <linux/module.h>
+ #include <linux/qrtr.h>
+ #include <linux/workqueue.h>
+@@ -226,7 +227,21 @@ static int announce_servers(struct sockaddr_qrtr *sq)
+ 
+ 	/* Announce the list of servers registered in this node */
+ 	xa_for_each(&node->servers, index, srv) {
+-		ret = service_announce_new(sq, srv);
++		int tries = 0;
++
++		/*
++		 * Our HELLO to a new node goes out from a delayed work in the
++		 * core; until then non-HELLO packets to it fail with -EAGAIN.
++		 * The remote can say HELLO first, so wait for ours instead of
++		 * dropping the announcements: nothing would retry them.
++		 */
++		do {
++			ret = service_announce_new(sq, srv);
++			if (ret != -EAGAIN)
++				break;
++			msleep(20);
++		} while (++tries < 50);
++
+ 		if (ret < 0) {
+ 			if (ret == -ENODEV)
+ 				continue;
+-- 
+2.43.0
+

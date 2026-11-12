@@ -1,0 +1,4 @@
+# sudo-rs asks PAM for the service "sudo"; the image has no such file and falls back to "other", which refuses everyone.
+auth		include		base-auth
+account		include		base-account
+session		include		base-session-noninteractive

@@ -1,0 +1,16 @@
+[Unit]
+Description=Set all block devices read-only except super, its disk and loop7
+Documentation=man:systemd.service(5)
+DefaultDependencies=no
+Before=local-fs.target
+After=systemd-remount-fs.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/hanoip-guard
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=basic.target

@@ -1,0 +1,9 @@
+#!/bin/sh
+# Load modem and Wi-Fi modules for mainline kernel.
+# SMEM item 134 (hanoip_mmi_unit_info) is required, otherwise modem crashes 1.5 s after it comes up.
+for m in hanoip_mmi_unit_info qcom_pd_mapper qrtr_smd qcom_q6v5_pas; do
+    modprobe "$m" || { logger -t hanoip-modem "modprobe $m failed"; exit 1; }
+done
+# IPA is the modem's data path; Wi-Fi does not need it, so failure here is only a warning.
+modprobe ipa || logger -t hanoip-modem "modprobe ipa failed"
+modprobe ath10k_snoc || logger -t hanoip-modem "modprobe ath10k_snoc failed"

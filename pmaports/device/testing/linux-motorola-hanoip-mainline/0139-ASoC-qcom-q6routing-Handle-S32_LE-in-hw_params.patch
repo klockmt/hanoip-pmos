@@ -1,0 +1,30 @@
+From f25a8bcfc659ed34c88461187c80b207dd8ce326 Mon Sep 17 00:00:00 2001
+From: Aleks <aleks.spv@gmail.com>
+Date: Wed, 21 Oct 2026 10:28:07 +0600
+Subject: [PATCH 139/194] ASoC: qcom: q6routing: Handle S32_LE in hw_params
+
+Without it bits_per_sample stays 0 for a 32-bit backend and the ADM
+rejects the COPP open (cmd 0x10326 error 0x1).
+
+Signed-off-by: Aleks <aleks.spv@gmail.com>
+---
+ sound/soc/qcom/qdsp6/q6routing.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/sound/soc/qcom/qdsp6/q6routing.c b/sound/soc/qcom/qdsp6/q6routing.c
+index d076c99f1..b4554ba53 100644
+--- a/sound/soc/qcom/qdsp6/q6routing.c
++++ b/sound/soc/qcom/qdsp6/q6routing.c
+@@ -1159,6 +1159,9 @@ static int routing_hw_params(struct snd_soc_component *component,
+ 	case SNDRV_PCM_FORMAT_S24_LE:
+ 			session->bits_per_sample = 24;
+ 		break;
++	case SNDRV_PCM_FORMAT_S32_LE:
++			session->bits_per_sample = 32;
++		break;
+ 	default:
+ 		break;
+ 	}
+-- 
+2.43.0
+

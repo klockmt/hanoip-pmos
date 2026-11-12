@@ -1,0 +1,15 @@
+[Unit]
+Description=Mark slot a successful after complete boot
+Documentation=man:systemd.service(5)
+DefaultDependencies=no
+After=sshd.service
+ConditionKernelCommandLine=androidboot.slot_suffix=_a
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/hanoip-ml-slot
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

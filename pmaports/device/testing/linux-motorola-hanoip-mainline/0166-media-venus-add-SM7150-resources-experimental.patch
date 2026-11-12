@@ -1,0 +1,86 @@
+From 711b9dbe533ff4c667dd0895bf42340411847a5b Mon Sep 17 00:00:00 2001
+From: hanoip <hanoip@localhost>
+Date: Mon, 26 Oct 2026 18:50:00 +0000
+Subject: [PATCH 166/194] media: venus: add SM7150 resources (experimental)
+
+SM7150 (sdmmagpie) has one video core plus a CVP core and runs Iris 1
+firmware (VIDEO.IR.1.x). Start from the SC7180 setup, which uses the same
+HFI 4XX interface, non-pixel CP region and IOMMU layout as the vendor
+tree, with the SM7150 OPP frequencies.
+---
+ drivers/media/platform/qcom/venus/core.c | 45 ++++++++++++++++++++++++
+ 1 file changed, 45 insertions(+)
+
+diff --git a/drivers/media/platform/qcom/venus/core.c b/drivers/media/platform/qcom/venus/core.c
+index 243e342b0..ff7608fad 100644
+--- a/drivers/media/platform/qcom/venus/core.c
++++ b/drivers/media/platform/qcom/venus/core.c
+@@ -944,6 +944,14 @@ static const struct venus_resources sdm845_res_v2 = {
+ 	.enc_nodename = "video-core1",
+ };
+ 
++static const struct freq_tbl sm7150_freq_table[] = {
++	{  0, 533000000 },
++	{  0, 444000000 },
++	{  0, 365000000 },
++	{  0, 338000000 },
++	{  0, 240000000 },
++};
++
+ static const struct freq_tbl sc7180_freq_table[] = {
+ 	{  0, 500000000 },
+ 	{  0, 434000000 },
+@@ -995,6 +1003,42 @@ static const struct venus_resources sc7180_res = {
+ 	.enc_nodename = "video-encoder",
+ };
+ 
++/*
++ * SM7150 (sdmmagpie): one video core plus CVP (vcodec1, unused here), Iris 1
++ * firmware (VIDEO.IR.1.x). Started from the SC7180 setup: same HFI 4XX
++ * interface, non-pixel CP region and IOMMU layout as the vendor tree.
++ */
++static const struct venus_resources sm7150_res = {
++	.freq_tbl = sm7150_freq_table,
++	.freq_tbl_size = ARRAY_SIZE(sm7150_freq_table),
++	.bw_tbl_enc = sc7180_bw_table_enc,
++	.bw_tbl_enc_size = ARRAY_SIZE(sc7180_bw_table_enc),
++	.bw_tbl_dec = sc7180_bw_table_dec,
++	.bw_tbl_dec_size = ARRAY_SIZE(sc7180_bw_table_dec),
++	.clks = {"core", "iface", "bus" },
++	.clks_num = 3,
++	.vcodec0_clks = { "vcodec0_core", "vcodec0_bus" },
++	.vcodec_clks_num = 2,
++	.vcodec_pmdomains = (const char *[]) { "venus", "vcodec0" },
++	.vcodec_pmdomains_num = 2,
++	.opp_pmdomain = (const char *[]) { "cx" },
++	.opp_pmdomain_num = 1,
++	.vcodec_num = 1,
++	.hfi_version = HFI_VERSION_4XX,
++	.vpu_version = VPU_VERSION_AR50,
++	.vmem_id = VIDC_RESOURCE_NONE,
++	.vmem_size = 0,
++	.vmem_addr = 0,
++	.dma_mask = 0xe0000000 - 1,
++	.cp_start = 0,
++	.cp_size = 0x70800000,
++	.cp_nonpixel_start = 0x1000000,
++	.cp_nonpixel_size = 0x24800000,
++	.fwname = "qcom/sm7150/venus.mbn",
++	.dec_nodename = "video-decoder",
++	.enc_nodename = "video-encoder",
++};
++
+ #if (!IS_ENABLED(CONFIG_VIDEO_QCOM_IRIS))
+ static const struct freq_tbl sm8250_freq_table[] = {
+ 	{ 0, 444000000 },
+@@ -1177,6 +1221,7 @@ static const struct of_device_id venus_dt_match[] = {
+ 	{ .compatible = "qcom,msm8998-venus", .data = &msm8998_res, },
+ 	{ .compatible = "qcom,qcm2290-venus", .data = &qcm2290_res, },
+ 	{ .compatible = "qcom,sc7180-venus", .data = &sc7180_res, },
++	{ .compatible = "qcom,sm7150-venus", .data = &sm7150_res, },
+ 	{ .compatible = "qcom,sdm660-venus", .data = &sdm660_res, },
+ 	{ .compatible = "qcom,sdm845-venus", .data = &sdm845_res, },
+ 	{ .compatible = "qcom,sdm845-venus-v2", .data = &sdm845_res_v2, },
+-- 
+2.43.0
+

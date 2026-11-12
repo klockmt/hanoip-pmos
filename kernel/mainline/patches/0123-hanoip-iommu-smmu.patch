@@ -1,0 +1,91 @@
+From 401305ff8091a722caf86478fa69c692aeffc765 Mon Sep 17 00:00:00 2001
+From: hanoip <hanoip@localhost>
+Date: Sun, 25 Oct 2026 20:56:33 +0000
+Subject: [PATCH 123/194] hanoip: iommu-smmu
+
+---
+ drivers/iommu/arm/arm-smmu/arm-smmu-qcom.c |  1 +
+ drivers/iommu/arm/arm-smmu/arm-smmu.c      | 35 ++++++++++++++++++++++
+ drivers/iommu/arm/arm-smmu/arm-smmu.h      |  1 +
+ 3 files changed, 37 insertions(+)
+
+diff --git a/drivers/iommu/arm/arm-smmu/arm-smmu-qcom.c b/drivers/iommu/arm/arm-smmu/arm-smmu-qcom.c
+index e711a418d..160c490fa 100644
+--- a/drivers/iommu/arm/arm-smmu/arm-smmu-qcom.c
++++ b/drivers/iommu/arm/arm-smmu/arm-smmu-qcom.c
+@@ -425,6 +425,7 @@ static const struct of_device_id qcom_smmu_client_of_match[] __maybe_unused = {
+ 	{ .compatible = "qcom,sm6115-mdss" },
+ 	{ .compatible = "qcom,sm6350-mdss" },
+ 	{ .compatible = "qcom,sm6375-mdss" },
++	{ .compatible = "qcom,sm7150-mdss" },
+ 	{ .compatible = "qcom,sm8150-mdss" },
+ 	{ .compatible = "qcom,sm8250-mdss" },
+ 	{ .compatible = "qcom,sm8450-mdss" },
+diff --git a/drivers/iommu/arm/arm-smmu/arm-smmu.c b/drivers/iommu/arm/arm-smmu/arm-smmu.c
+index 889a0966d..2f75f8ce9 100644
+--- a/drivers/iommu/arm/arm-smmu/arm-smmu.c
++++ b/drivers/iommu/arm/arm-smmu/arm-smmu.c
+@@ -1162,6 +1162,37 @@ static void arm_smmu_master_install_s2crs(struct arm_smmu_master_cfg *cfg,
+ 	}
+ }
+ 
++/* Diagnostic hanoip handoff: retain ABL scanout before switching its streams. */
++static int arm_smmu_hanoip_map_splash(struct iommu_domain *domain, struct device *dev)
++{
++	struct arm_smmu_domain *smmu_domain = to_smmu_domain(domain);
++	struct device_node *memory;
++	struct resource region;
++	int ret;
++
++	if (!of_machine_is_compatible("motorola,hanoip") ||
++	    !of_device_is_compatible(dev->of_node, "qcom,sm7150-mdss"))
++		return 0;
++	memory = of_parse_phandle(dev->of_node, "memory-region", 0);
++	if (!memory)
++		return 0;
++	ret = of_address_to_resource(memory, 0, &region);
++	of_node_put(memory);
++	if (ret)
++		return ret;
++	if (region.start != 0x9c000000 || resource_size(&region) != 0x1700000)
++		return -EINVAL;
++	if (smmu_domain->hanoip_splash_mapped)
++		return 0;
++	ret = iommu_map(domain, region.start, region.start,
++			resource_size(&region), IOMMU_READ, GFP_KERNEL);
++	if (ret)
++		return dev_err_probe(dev, ret, "HANOIP: splash mapping failed\n");
++	smmu_domain->hanoip_splash_mapped = true;
++	dev_info(dev, "HANOIP: mapped firmware framebuffer %pr before stream switch\n", &region);
++	return 0;
++}
++
+ static int arm_smmu_attach_dev(struct iommu_domain *domain, struct device *dev,
+ 			       struct iommu_domain *old)
+ {
+@@ -1202,6 +1233,10 @@ static int arm_smmu_attach_dev(struct iommu_domain *domain, struct device *dev,
+ 		goto rpm_put;
+ 	}
+ 
++	ret = arm_smmu_hanoip_map_splash(domain, dev);
++	if (ret)
++		goto rpm_put;
++
+ 	/* Looks ok, so add the device to the domain */
+ 	arm_smmu_master_install_s2crs(cfg, S2CR_TYPE_TRANS,
+ 				      smmu_domain->cfg.cbndx, fwspec);
+diff --git a/drivers/iommu/arm/arm-smmu/arm-smmu.h b/drivers/iommu/arm/arm-smmu/arm-smmu.h
+index 26d2e33cd..60e0c5958 100644
+--- a/drivers/iommu/arm/arm-smmu/arm-smmu.h
++++ b/drivers/iommu/arm/arm-smmu/arm-smmu.h
+@@ -376,6 +376,7 @@ enum arm_smmu_domain_stage {
+ };
+ 
+ struct arm_smmu_domain {
++	bool hanoip_splash_mapped;
+ 	struct arm_smmu_device		*smmu;
+ 	struct io_pgtable_ops		*pgtbl_ops;
+ 	unsigned long			pgtbl_quirks;
+-- 
+2.43.0
+

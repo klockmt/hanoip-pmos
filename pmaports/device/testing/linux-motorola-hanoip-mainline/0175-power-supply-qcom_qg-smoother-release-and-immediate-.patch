@@ -1,0 +1,53 @@
+From 19200b1dbe926fb31b3010fe550fa8f925992bab Mon Sep 17 00:00:00 2001
+From: hanoip <h@l>
+Date: Tue, 27 Oct 2026 15:21:21 -0300
+Subject: [PATCH 175/194] power: supply: qcom_qg: smoother release and
+ immediate full
+
+Two follow-ups from watching a real charge session:
+
+- the coulomb budget could wind up to 5% and then be released as a jump of
+  several points; cap it to 2% so a release moves at most two points;
+- when the charger reports the battery full, report 100 at once instead of
+  waiting for the coulomb budget to deliver the last points.
+---
+ drivers/power/supply/qcom_qg.c | 16 ++++++++++++----
+ 1 file changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/power/supply/qcom_qg.c b/drivers/power/supply/qcom_qg.c
+index 39cd82038..f23dd10eb 100644
+--- a/drivers/power/supply/qcom_qg.c
++++ b/drivers/power/supply/qcom_qg.c
+@@ -53,7 +53,7 @@
+ 
+ /* Coulomb counter: ignore gaps longer than this and cap the wind-up. */
+ #define QG_COUL_MAX_DT_S		600
+-#define QG_COUL_MAX_MPCT		5000
++#define QG_COUL_MAX_MPCT		2000	/* libera no maximo 2% por vez */
+ 
+ #ifdef CONFIG_DEBUG_FS
+ #include <linux/debugfs.h>
+@@ -352,9 +352,17 @@ static int qcom_qg_get_capacity(struct qcom_qg_chip *chip,
+ 	if (ret)
+ 		return ret;
+ 
+-	/* A terminated charge means full, whatever the estimate says */
+-	if (status == POWER_SUPPLY_STATUS_FULL)
+-		soc = 100;
++	/*
++	 * A terminated charge means full, whatever the estimate says. Report it
++	 * immediately: the coulomb budget must not delay the last couple of
++	 * percent after the hardware declared the battery full.
++	 */
++	if (status == POWER_SUPPLY_STATUS_FULL) {
++		guard(mutex)(&chip->lock);
++		chip->msoc = 100;
++		*val = 100;
++		return 0;
++	}
+ 
+ 	soc = clamp(soc, 0, 100);
+ 
+-- 
+2.43.0
+

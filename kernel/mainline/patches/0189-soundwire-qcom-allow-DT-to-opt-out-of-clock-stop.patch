@@ -1,0 +1,44 @@
+From c187ac7a0b2103f04cc63f26999959402e4f5abd Mon Sep 17 00:00:00 2001
+From: hanoip <hanoip@localhost>
+Date: Wed, 28 Oct 2026 19:37:11 +0000
+Subject: [PATCH 189/194] soundwire: qcom: allow DT to opt out of clock stop
+
+---
+ drivers/soundwire/qcom.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/soundwire/qcom.c b/drivers/soundwire/qcom.c
+index 7de0a07c4..e6db5557d 100644
+--- a/drivers/soundwire/qcom.c
++++ b/drivers/soundwire/qcom.c
+@@ -221,6 +221,8 @@ struct qcom_swrm_ctrl {
+ 	u32 slave_status;
+ 	u32 wr_fifo_depth;
+ 	bool clock_stop_not_supported;
++	/* DT: the controller loses its state while its clock is gated */
++	bool no_clock_stop;
+ 	/* hclk could not be enabled in runtime resume, MMIO is dead */
+ 	bool clk_failed;
+ };
+@@ -679,7 +681,7 @@ static int qcom_swrm_enumerate(struct sdw_bus *bus)
+ 
+ 		sdw_extract_slave_id(bus, addr, &id);
+ 		found = false;
+-		ctrl->clock_stop_not_supported = false;
++		ctrl->clock_stop_not_supported = ctrl->no_clock_stop;
+ 		/* Now compare with entries */
+ 		list_for_each_entry_safe(slave, _s, &bus->slaves, node) {
+ 			if (sdw_compare_devid(slave, id) == 0) {
+@@ -1632,6 +1634,9 @@ static int qcom_swrm_probe(struct platform_device *pdev)
+ 	ctrl->bus.port_ops = &qcom_swrm_port_ops;
+ 	ctrl->bus.compute_params = &qcom_swrm_compute_params;
+ 	ctrl->bus.clk_stop_timeout = 300;
++	ctrl->no_clock_stop = of_property_read_bool(dev->of_node,
++						    "qcom,clock-stop-not-supported");
++	ctrl->clock_stop_not_supported = ctrl->no_clock_stop;
+ 
+ 	ret = qcom_swrm_get_port_config(ctrl);
+ 	if (ret)
+-- 
+2.43.0
+

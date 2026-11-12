@@ -1,0 +1,121 @@
+From 76384cb44fa13a5a6c3c81cbdcdf6b1a887ba07b Mon Sep 17 00:00:00 2001
+From: hanoip <hanoip@localhost>
+Date: Mon, 26 Oct 2026 12:46:05 +0000
+Subject: [PATCH 162/194] pinctrl: qcom: sm7150-lpass-lpi: add the SSC SEC_MI2S
+ pins
+
+The LPI TLMM node starts at vendor gpio18; the SEC_MI2S pins that
+Motorola hanoip uses for its speaker amplifier are vendor gpio8-11, in
+the SSC part below it (0x62b48000, one 0x1000 block per pin). Add a
+second variant that maps only those four blocks, with the vendor mux
+values (func3, func3, func4, func2). Other SSC blocks may belong to the
+sensor subsystem, and a stray access hangs the bus.
+---
+ .../pinctrl/qcom/pinctrl-sm7150-lpass-lpi.c   | 48 +++++++++++++++++++
+ 1 file changed, 48 insertions(+)
+
+diff --git a/drivers/pinctrl/qcom/pinctrl-sm7150-lpass-lpi.c b/drivers/pinctrl/qcom/pinctrl-sm7150-lpass-lpi.c
+index c3cb508e6..de35384c1 100644
+--- a/drivers/pinctrl/qcom/pinctrl-sm7150-lpass-lpi.c
++++ b/drivers/pinctrl/qcom/pinctrl-sm7150-lpass-lpi.c
+@@ -25,6 +25,10 @@ enum lpass_lpi_functions {
+ 	LPI_MUX_qua_mi2s_data,
+ 	LPI_MUX_qua_mi2s_sclk,
+ 	LPI_MUX_qua_mi2s_ws,
++	LPI_MUX_sec_mi2s_data0,
++	LPI_MUX_sec_mi2s_data1,
++	LPI_MUX_sec_mi2s_sclk,
++	LPI_MUX_sec_mi2s_ws,
+ 	LPI_MUX_slimbus_clk,
+ 	LPI_MUX_slimbus_data,
+ 	LPI_MUX_swr_rx_clk,
+@@ -52,9 +56,23 @@ static const struct pinctrl_pin_desc sm7150_lpi_pins[] = {
+ 	PINCTRL_PIN(13, "gpio13"),
+ };
+ 
++/*
++ * Pins 8-11 of the SSC part of the LPI TLMM (0x62b40000, one 0x1000 block
++ * per pin, the vendor tree's gpio8-11). The node above starts at vendor
++ * gpio18. Only these four are described: other blocks of the SSC range
++ * may belong to the sensor subsystem, and a stray access hangs the bus.
++ */
++static const struct pinctrl_pin_desc sm7150_lpi_ssc_pins[] = {
++	PINCTRL_PIN(0, "ssc_gpio8"),
++	PINCTRL_PIN(1, "ssc_gpio9"),
++	PINCTRL_PIN(2, "ssc_gpio10"),
++	PINCTRL_PIN(3, "ssc_gpio11"),
++};
++
+ static const char * const gpio_groups[] = {
+ 	"gpio0",  "gpio1",  "gpio2",  "gpio3",  "gpio4",  "gpio5",  "gpio6",
+ 	"gpio7",  "gpio8",  "gpio9",  "gpio10", "gpio11", "gpio12", "gpio13",
++	"ssc_gpio8", "ssc_gpio9", "ssc_gpio10", "ssc_gpio11",
+ };
+ 
+ static const char * const audio_ref_groups[] = { "gpio1" };
+@@ -72,6 +90,10 @@ static const char * const qca_sb_data_groups[] = { "gpio12" };
+ static const char * const qua_mi2s_data_groups[] = { "gpio7", "gpio8", "gpio9", "gpio10" };
+ static const char * const qua_mi2s_sclk_groups[] = { "gpio5" };
+ static const char * const qua_mi2s_ws_groups[] = { "gpio6" };
++static const char * const sec_mi2s_data0_groups[] = { "ssc_gpio10" };
++static const char * const sec_mi2s_data1_groups[] = { "ssc_gpio11" };
++static const char * const sec_mi2s_sclk_groups[] = { "ssc_gpio8" };
++static const char * const sec_mi2s_ws_groups[] = { "ssc_gpio9" };
+ static const char * const slimbus_clk_groups[] = { "gpio0" };
+ static const char * const slimbus_data_groups[] = { "gpio2", "gpio3", "gpio4" };
+ static const char * const swr_rx_clk_groups[] = { "gpio3" };
+@@ -111,6 +133,14 @@ static const struct lpi_pingroup sm7150_groups[] = {
+ 	LPI_PINGROUP(13, LPI_NO_SLEW, qca_sb_clk, _, _, _),
+ };
+ 
++/* Mux values from the vendor tree: func3, func3, func4 and func2. */
++static const struct lpi_pingroup sm7150_ssc_groups[] = {
++	LPI_PINGROUP(0, LPI_NO_SLEW, _, _, sec_mi2s_sclk, _),
++	LPI_PINGROUP(1, LPI_NO_SLEW, _, _, sec_mi2s_ws, _),
++	LPI_PINGROUP(2, LPI_NO_SLEW, _, _, _, sec_mi2s_data0),
++	LPI_PINGROUP(3, LPI_NO_SLEW, _, sec_mi2s_data1, _, _),
++};
++
+ static const struct lpi_function sm7150_functions[] = {
+ 	LPI_FUNCTION(audio_ref),
+ 	LPI_FUNCTION(cdc_pdm_rx),
+@@ -127,6 +157,10 @@ static const struct lpi_function sm7150_functions[] = {
+ 	LPI_FUNCTION(qua_mi2s_data),
+ 	LPI_FUNCTION(qua_mi2s_sclk),
+ 	LPI_FUNCTION(qua_mi2s_ws),
++	LPI_FUNCTION(sec_mi2s_data0),
++	LPI_FUNCTION(sec_mi2s_data1),
++	LPI_FUNCTION(sec_mi2s_sclk),
++	LPI_FUNCTION(sec_mi2s_ws),
+ 	LPI_FUNCTION(slimbus_clk),
+ 	LPI_FUNCTION(slimbus_data),
+ 	LPI_FUNCTION(swr_rx_clk),
+@@ -146,11 +180,25 @@ static const struct lpi_pinctrl_variant_data sm7150_lpi_data = {
+ 	.flags = LPI_FLAG_SLEW_RATE_SAME_REG,
+ };
+ 
++static const struct lpi_pinctrl_variant_data sm7150_lpi_ssc_data = {
++	.pins = sm7150_lpi_ssc_pins,
++	.npins = ARRAY_SIZE(sm7150_lpi_ssc_pins),
++	.groups = sm7150_ssc_groups,
++	.ngroups = ARRAY_SIZE(sm7150_ssc_groups),
++	.functions = sm7150_functions,
++	.nfunctions = ARRAY_SIZE(sm7150_functions),
++	.flags = LPI_FLAG_SLEW_RATE_SAME_REG,
++};
++
+ static const struct of_device_id lpi_pinctrl_of_match[] = {
+ 	{
+ 	       .compatible = "qcom,sm7150-lpass-lpi-pinctrl",
+ 	       .data = &sm7150_lpi_data,
+ 	},
++	{
++	       .compatible = "qcom,sm7150-lpass-lpi-ssc-pinctrl",
++	       .data = &sm7150_lpi_ssc_data,
++	},
+ 	{ }
+ };
+ MODULE_DEVICE_TABLE(of, lpi_pinctrl_of_match);
+-- 
+2.43.0
+

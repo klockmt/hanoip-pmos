@@ -1,0 +1,46 @@
+From 5dc82c0068cfbbf29b02b3eae13fb8f2081a3069 Mon Sep 17 00:00:00 2001
+From: Luca Weiss <luca.weiss@fairphone.com>
+Date: Fri, 20 Dec 2024 11:48:18 +0100
+Subject: [PATCH 044/194] power: supply: qcom_qg: use chip->dev in probe
+ instead of pdev->dev
+
+It's equivalent but this makes it a bit more unified instead of
+mix-and-match.
+
+Signed-off-by: Luca Weiss <luca.weiss@fairphone.com>
+---
+ drivers/power/supply/qcom_qg.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/power/supply/qcom_qg.c b/drivers/power/supply/qcom_qg.c
+index 7a587b5c5..678259b14 100644
+--- a/drivers/power/supply/qcom_qg.c
++++ b/drivers/power/supply/qcom_qg.c
+@@ -199,7 +199,7 @@ static int qcom_qg_probe(struct platform_device *pdev)
+ 	chip->dev = &pdev->dev;
+ 
+ 	/* Regmap */
+-	chip->regmap = dev_get_regmap(pdev->dev.parent, NULL);
++	chip->regmap = dev_get_regmap(chip->dev->parent, NULL);
+ 	if (!chip->regmap)
+ 		return dev_err_probe(chip->dev, -ENODEV,
+ 				     "Failed to locate the regmap\n");
+@@ -211,13 +211,13 @@ static int qcom_qg_probe(struct platform_device *pdev)
+ 				     "Couldn't read base address\n");
+ 
+ 	/* ADC for thermal channel */
+-	chip->batt_therm_chan = devm_iio_channel_get(&pdev->dev, "batt-therm");
++	chip->batt_therm_chan = devm_iio_channel_get(chip->dev, "batt-therm");
+ 	if (IS_ERR(chip->batt_therm_chan))
+ 		return dev_err_probe(chip->dev, PTR_ERR(chip->batt_therm_chan),
+ 				     "Couldn't get batt-therm IIO channel\n");
+ 
+ 	psy_cfg.drv_data = chip;
+-	psy_cfg.of_node = pdev->dev.of_node;
++	psy_cfg.of_node = chip->dev->of_node;
+ 
+ 	/* Power supply */
+ 	chip->batt_psy =
+-- 
+2.43.0
+

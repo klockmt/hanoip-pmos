@@ -1,0 +1,19 @@
+#!/bin/sh
+# Checks that tracing a script (sh -x) does not print the values of .env: env.sh loads them with an eval, and a trace
+# of that eval printed every line of .env, passwords included (2026-11-07, docs/PITFALLS.md). No phone needed.
+set -eu
+cd "$(dirname "$0")/.."
+dir=$(mktemp -d)
+trap 'rm -rf "$dir"' EXIT
+mkdir -p "$dir/scripts"
+cp scripts/env.sh "$dir/scripts/"
+canary=canary-$$-xtrace
+printf 'HANOIP_SUDO_PASSWORD=%s\nHANOIP_ROOT_PASSWORD=%s\n' "$canary" "$canary" > "$dir/.env"
+# The script checks the value by its length only: a comparison with the value would print it in the trace itself.
+printf '#!/bin/sh\n. "$(dirname "$0")/env.sh"\nn=${#HANOIP_SUDO_PASSWORD}\n[ "$n" = %s ] || exit 3\necho loaded\n' "${#canary}" > "$dir/scripts/x"
+out=$(sh -x "$dir/scripts/x" 2>&1) || { echo "FAIL: the traced script did not load .env" >&2; exit 1; }
+case $out in *loaded*) ;; *) echo "FAIL: the traced script did not run to the end" >&2; exit 1 ;; esac
+case $out in *"$canary"*) echo "FAIL: sh -x prints the values of .env" >&2; exit 1 ;; esac
+# The trace must come back on after the values are loaded.
+case $out in *"+ echo loaded"*) ;; *) echo "FAIL: tracing stays off after env.sh" >&2; exit 1 ;; esac
+echo "ok    test-env-xtrace"

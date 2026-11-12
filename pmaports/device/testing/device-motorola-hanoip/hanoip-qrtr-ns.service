@@ -1,0 +1,16 @@
+[Unit]
+Description=QRTR name server for Qualcomm IPC
+Documentation=man:systemd.service(5)
+DefaultDependencies=no
+Before=tqftpserv.service hanoip-pd-mapper.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/hanoip-qrtr-ns
+Restart=always
+RestartSec=1
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=basic.target

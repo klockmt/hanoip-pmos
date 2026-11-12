@@ -1,0 +1,36 @@
+From 8098c3542aff01b778d7feffcd61a21854a4ea1c Mon Sep 17 00:00:00 2001
+From: Danila Tikhonov <danila@jiaxyga.com>
+Date: Fri, 21 Feb 2025 22:29:10 +0300
+Subject: [PATCH 014/194] FROMLIST: dt-bindings: i2c: qcom-cci: Add the SM7150
+ compatible
+
+Add the SM7150 CCI device string compatible.
+
+Signed-off-by: Danila Tikhonov <danila@jiaxyga.com>
+---
+ Documentation/devicetree/bindings/i2c/qcom,i2c-cci.yaml | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/Documentation/devicetree/bindings/i2c/qcom,i2c-cci.yaml b/Documentation/devicetree/bindings/i2c/qcom,i2c-cci.yaml
+index 1e8def25e..19411eb85 100644
+--- a/Documentation/devicetree/bindings/i2c/qcom,i2c-cci.yaml
++++ b/Documentation/devicetree/bindings/i2c/qcom,i2c-cci.yaml
+@@ -39,6 +39,7 @@ properties:
+               - qcom,shikra-cci
+               - qcom,sm6150-cci
+               - qcom,sm6350-cci
++              - qcom,sm7150-cci
+               - qcom,sm8250-cci
+               - qcom,sm8450-cci
+               - qcom,sm8550-cci
+@@ -218,6 +219,7 @@ allOf:
+           contains:
+             enum:
+               - qcom,sc7280-cci
++              - qcom,sm7150-cci
+               - qcom,sm8250-cci
+               - qcom,sm8450-cci
+     then:
+-- 
+2.43.0
+

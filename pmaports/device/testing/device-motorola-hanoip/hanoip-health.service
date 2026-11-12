@@ -1,0 +1,13 @@
+[Unit]
+Description=Mark the slot good once the phone is reachable, reboot if it is not in time
+Documentation=man:systemd.service(5)
+After=sshd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/hanoip-health
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

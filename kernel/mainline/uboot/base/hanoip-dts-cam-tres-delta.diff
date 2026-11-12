@@ -1,0 +1,1518 @@
+diff --git a/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa0.dts b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa0.dts
+new file mode 100644
+index 00000000..f142f920
+--- /dev/null
++++ b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa0.dts
+@@ -0,0 +1,162 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * ÁUDIO — ETAPA 0 (diagnóstico): SoundWire ligado + escravos do WCD937x.
++ *
++ * O DT do U-Boot é uma cópia mais antiga do sm7150.dtsi e NÃO tem os nós de
++ * áudio (txmacro/rxmacro/vamacro/swr_tx/swr_rx). Eles são portados aqui,
++ * verbatim do sm7150.dtsi de 7.3 (mesma definição que o kernel usa), em vez de
++ * alterar o dtsi compartilhado.
++ *
++ * Objetivo desta variante: saber se o codec enumera no barramento SEM mexer em
++ * reset (LPI GPIO24) nem em tensões. Se enumerar, o pinctrl não é necessário
++ * para o próximo passo; se não, estendemos pinctrl-sm7150-lpass-lpi.c (14->32).
++ *
++ * Nada aqui configura tensão, micbias ou reset: risco elétrico nenhum.
++ */
++#include <dt-bindings/sound/qcom,q6dsp-lpass-ports.h>
++#include "sm7150-motorola-hanoip-clusteridle-venus.dts"
++
++&soc {
++	txmacro: codec@62ec0000 {
++		compatible = "qcom,sm8250-lpass-tx-macro";
++		reg = <0 0x62ec0000 0 0x1000>;
++		clocks = <&q6afecc LPASS_CLK_ID_TX_CORE_MCLK LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
++			 <&q6afecc LPASS_CLK_ID_TX_CORE_NPL_MCLK LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
++			 <&q6afecc LPASS_HW_MACRO_VOTE LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
++			 <&vamacro>;
++		clock-names = "mclk", "npl", "macro", "fsgen";
++		#clock-cells = <0>;
++		clock-output-names = "mclk";
++
++		pinctrl-0 = <&tx_swr_active>;
++		pinctrl-names = "default";
++
++		#sound-dai-cells = <1>;
++
++		status = "disabled";
++	};
++
++	rxmacro: codec@62ee0000 {
++		compatible = "qcom,sm8250-lpass-rx-macro";
++		reg = <0 0x62ee0000 0 0x1000>;
++		clocks = <&q6afecc LPASS_CLK_ID_TX_CORE_MCLK LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
++			 <&q6afecc LPASS_CLK_ID_TX_CORE_NPL_MCLK LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
++			 <&q6afecc LPASS_HW_MACRO_VOTE LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
++			 <&vamacro>;
++		clock-names = "mclk", "npl", "macro", "fsgen";
++		#clock-cells = <0>;
++		clock-output-names = "mclk";
++
++		pinctrl-0 = <&rx_swr_active>;
++		pinctrl-names = "default";
++
++		#sound-dai-cells = <1>;
++
++		status = "disabled";
++	};
++
++	vamacro: codec@62f20000 {
++		compatible = "qcom,sm8250-lpass-va-macro";
++		reg = <0 0x62f20000 0 0x1000>;
++		/* O firmware do ADSP rejeita LPASS_CLK_ID_VA_CORE_MCLK */
++		clocks = <&q6afecc LPASS_CLK_ID_TX_CORE_MCLK LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
++			 <&q6afecc LPASS_HW_MACRO_VOTE LPASS_CLK_ATTRIBUTE_COUPLE_NO>;
++		clock-names = "mclk", "macro";
++		#clock-cells = <0>;
++		clock-output-names = "fsgen";
++
++		#sound-dai-cells = <1>;
++
++		status = "disabled";
++	};
++
++	swr_tx: soundwire@62ed0000 {
++		compatible = "qcom,soundwire-v1.5.1";
++		reg = <0 0x62ed0000 0 0x2000>;
++		interrupts = <GIC_SPI 296 IRQ_TYPE_LEVEL_HIGH>;
++		interrupt-names = "core";
++		clocks = <&txmacro>;
++		clock-names = "iface";
++
++		qcom,din-ports = <5>;
++		qcom,dout-ports = <0>;
++		qcom,ports-sinterval-low =	/bits/ 8 <0x01 0x03 0x03 0x03 0x03>;
++		qcom,ports-offset1 =		/bits/ 8 <0x00 0x00 0x00 0x00 0x00>;
++		qcom,ports-offset2 =		/bits/ 8 <0x00 0x00 0x00 0x00 0x00>;
++		qcom,ports-hstart =		/bits/ 8 <0xff 0xff 0xff 0xff 0xff>;
++		qcom,ports-hstop =		/bits/ 8 <0xff 0xff 0xff 0xff 0xff>;
++		qcom,ports-word-length =	/bits/ 8 <0xff 0xff 0xff 0xff 0xff>;
++		qcom,ports-block-pack-mode =	/bits/ 8 <0xff 0xff 0xff 0xff 0xff>;
++		qcom,ports-block-group-count =	/bits/ 8 <0xff 0xff 0xff 0xff 0xff>;
++		qcom,ports-lane-control =	/bits/ 8 <0x01 0x01 0x01 0x01 0x01>;
++
++		#sound-dai-cells = <1>;
++		#address-cells = <2>;
++		#size-cells = <0>;
++
++		status = "disabled";
++	};
++
++	swr_rx: soundwire@62ef0000 {
++		compatible = "qcom,soundwire-v1.5.1";
++		reg = <0 0x62ef0000 0 0x2000>;
++		interrupts = <GIC_SPI 297 IRQ_TYPE_LEVEL_HIGH>;
++		interrupt-names = "core";
++		clocks = <&rxmacro>;
++		clock-names = "iface";
++
++		qcom,din-ports = <0>;
++		qcom,dout-ports = <5>;
++		qcom,ports-sinterval-low =	/bits/ 8 <0x03 0x3f 0x1f 0x03 0x03>;
++		qcom,ports-offset1 =		/bits/ 8 <0x00 0x00 0x0b 0x01 0x01>;
++		qcom,ports-offset2 =		/bits/ 8 <0x00 0x00 0x0b 0x00 0x00>;
++		qcom,ports-hstart =		/bits/ 8 <0xff 0x03 0xff 0xff 0xff>;
++		qcom,ports-hstop =		/bits/ 8 <0xff 0x06 0xff 0xff 0xff>;
++		qcom,ports-word-length =	/bits/ 8 <0x01 0x07 0x04 0xff 0xff>;
++		qcom,ports-block-pack-mode =	/bits/ 8 <0xff 0x00 0x01 0xff 0xff>;
++		qcom,ports-block-group-count =	/bits/ 8 <0xff 0xff 0xff 0xff 0x00>;
++		qcom,ports-lane-control =	/bits/ 8 <0x01 0x00 0x00 0x00 0x00>;
++
++		#sound-dai-cells = <1>;
++		#address-cells = <2>;
++		#size-cells = <0>;
++
++		status = "disabled";
++	};
++};
++
++&txmacro {
++	status = "okay";
++};
++
++&rxmacro {
++	status = "okay";
++};
++
++&vamacro {
++	status = "okay";
++};
++
++&swr_tx {
++	status = "okay";
++
++	wcd937x_tx: codec@0,3 {
++		compatible = "sdw20217010a00";
++		reg = <0 3>;
++		qcom,tx-port-mapping = <2 3 4 5>;
++		qcom,tx-channel-mapping = /bits/ 8 <1 1 2 1 2 3 3 4 1 2 3 4>;
++		#sound-dai-cells = <1>;
++	};
++};
++
++&swr_rx {
++	status = "okay";
++
++	wcd937x_rx: codec@0,4 {
++		compatible = "sdw20217010a00";
++		reg = <0 4>;
++		qcom,rx-port-mapping = <1 2 3 4 5>;
++		qcom,rx-channel-mapping = /bits/ 8 <1 2 1 1 2 1 1 2>;
++		#sound-dai-cells = <1>;
++	};
++};
+diff --git a/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa1.dts b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa1.dts
+new file mode 100644
+index 00000000..1f620584
+--- /dev/null
++++ b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa1.dts
+@@ -0,0 +1,80 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * ÁUDIO — ETAPA 1: codec WCD9370 + links de playback e captura.
++ *
++ * Base: etapa 0 (SoundWire ligado). Descoberta da etapa 0: o codec ENUMERA sem
++ * reset (sdw:2:...:4 e sdw:3:...:3), então o reset real (LPI GPIO24, que o
++ * pinctrl mainline não expõe) NÃO é necessário para o codec viver.
++ *
++ * ATENÇÃO — RESET FICTÍCIO: o driver exige reset-gpios (devm_gpiod_get não
++ * opcional). Aqui apontamos para o TLMM GPIO100, que o DT do hanoip não usa,
++ * só para satisfazer o driver. O pino real do codec segue como o bootloader
++ * deixou (fora de reset). Quando o pinctrl LPI for estendido (14->32), trocar
++ * por <&lpass_tlmm 24 GPIO_ACTIVE_LOW> e revalidar.
++ *
++ * Tensões: L10A (vdd-rxtx e vdd-px), L15A (vdd-buck), BOB (mic-bias), todas
++ * 1,8 V e micbias 2,8 V como no stock. Nada foi inventado.
++ *
++ * Links: "WCD Playback" em RX_CODEC_DMA_RX_0 (earpiece/fone) e "WCD Capture"
++ * em TX_CODEC_DMA_TX_3, padrão do sm8250-mtp (mesmo modelo q6afe) adaptado aos
++ * masters separados do sm7150.
++ */
++#include <dt-bindings/gpio/gpio.h>
++#include "sm7150-motorola-hanoip-audio-etapa0.dts"
++
++/ {
++	wcd9370: audio-codec-0 {
++		compatible = "qcom,wcd9370-codec";
++
++		/* reset fictício: ver comentário do topo */
++		reset-gpios = <&tlmm 100 GPIO_ACTIVE_LOW>;
++
++		vdd-buck-supply = <&vreg_l15a_1p8>;
++		vdd-rxtx-supply = <&vreg_l10a_1p8>;
++		vdd-px-supply = <&vreg_l10a_1p8>;
++		vdd-mic-bias-supply = <&vreg_bob>;
++
++		qcom,micbias1-microvolt = <2800000>;
++		qcom,micbias2-microvolt = <2800000>;
++		qcom,micbias3-microvolt = <2800000>;
++
++		qcom,rx-device = <&wcd937x_rx>;
++		qcom,tx-device = <&wcd937x_tx>;
++
++		#sound-dai-cells = <1>;
++	};
++};
++
++&{/sound} {
++	wcd_playback_dai_link: wcd-playback-dai-link {
++		link-name = "WCD Playback";
++
++		cpu {
++			sound-dai = <&q6afedai RX_CODEC_DMA_RX_0>;
++		};
++
++		platform {
++			sound-dai = <&q6routing>;
++		};
++
++		codec {
++			sound-dai = <&wcd9370 0>, <&swr_rx 0>, <&rxmacro 0>;
++		};
++	};
++
++	wcd_capture_dai_link: wcd-capture-dai-link {
++		link-name = "WCD Capture";
++
++		cpu {
++			sound-dai = <&q6afedai TX_CODEC_DMA_TX_3>;
++		};
++
++		platform {
++			sound-dai = <&q6routing>;
++		};
++
++		codec {
++			sound-dai = <&wcd9370 1>, <&swr_tx 0>, <&txmacro 0>;
++		};
++	};
++};
+diff --git a/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa10.dts b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa10.dts
+new file mode 100644
+index 00000000..9e462012
+--- /dev/null
++++ b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa10.dts
+@@ -0,0 +1,25 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * ÁUDIO — ETAPA 10: clock CORRETO do macro RX.
++ *
++ * O sm7150.dtsi declara o rxmacro com os clocks do TX:
++ *     clocks = <&q6afecc LPASS_CLK_ID_TX_CORE_MCLK ...>,
++ *              <&q6afecc LPASS_CLK_ID_TX_CORE_NPL_MCLK ...>, ...
++ * (idêntico ao txmacro — copiar/colar). O clock do macro RX é
++ * LPASS_CLK_ID_RX_CORE_MCLK (59) / LPASS_CLK_ID_RX_CORE_NPL_MCLK (60); o vendor
++ * usa "rx_core_clk"/"rx_npl_clk" nesse macro.
++ *
++ * Consequência esperada: sem o MCLK do RX, o master SoundWire RX sobe (as
++ * chamadas retornam sucesso) mas o clock de áudio não existe, e o stream morre
++ * logo depois de começar — exatamente o EIO de ~0,5 s medido.
++ *
++ * Base: etapa9 (audio-routing). Só muda o clock do rxmacro.
++ */
++#include "sm7150-motorola-hanoip-audio-etapa9.dts"
++
++&rxmacro {
++	clocks = <&q6afecc LPASS_CLK_ID_RX_CORE_MCLK LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
++		 <&q6afecc LPASS_CLK_ID_RX_CORE_NPL_MCLK LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
++		 <&q6afecc LPASS_HW_MACRO_VOTE LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
++		 <&vamacro>;
++};
+diff --git a/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa11.dts b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa11.dts
+new file mode 100644
+index 00000000..d55fb7be
+--- /dev/null
++++ b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa11.dts
+@@ -0,0 +1,33 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * ÁUDIO — ETAPA 11: voto de energia do DCODEC (o que o driver pula).
++ *
++ * Mecanismo (ver seção 15 do checkpoint): lpass_macro_pds_init() retorna NULL
++ * quando o nó não tem power-domains, então os votos "macro" e "dcodec" nunca
++ * vão ao ADSP. O firmware do ADSP tem exatamente LPASS_CORE_HW_MACRO_BLOCK e
++ * LPASS_CORE_HW_DCODEC_BLOCK, e o clk_summary mostra LPASS_HW_DCODEC com
++ * enable=0.
++ *
++ * Esta variante declara o clock "dcodec" nos dois macros (o driver já faz
++ * devm_clk_get_optional(dev, "dcodec")), e o kernel desta rodada foi patchado
++ * para habilitá-lo (clk_prepare_enable) no probe. Base: etapa10.
++ */
++#include "sm7150-motorola-hanoip-audio-etapa10.dts"
++
++&rxmacro {
++	clocks = <&q6afecc LPASS_CLK_ID_RX_CORE_MCLK LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
++		 <&q6afecc LPASS_CLK_ID_RX_CORE_NPL_MCLK LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
++		 <&q6afecc LPASS_HW_MACRO_VOTE LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
++		 <&q6afecc LPASS_HW_DCODEC_VOTE LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
++		 <&vamacro>;
++	clock-names = "mclk", "npl", "macro", "dcodec", "fsgen";
++};
++
++&txmacro {
++	clocks = <&q6afecc LPASS_CLK_ID_TX_CORE_MCLK LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
++		 <&q6afecc LPASS_CLK_ID_TX_CORE_NPL_MCLK LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
++		 <&q6afecc LPASS_HW_MACRO_VOTE LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
++		 <&q6afecc LPASS_HW_DCODEC_VOTE LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
++		 <&vamacro>;
++	clock-names = "mclk", "npl", "macro", "dcodec", "fsgen";
++};
+diff --git a/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa12.dts b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa12.dts
+new file mode 100644
+index 00000000..ee02def4
+--- /dev/null
++++ b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa12.dts
+@@ -0,0 +1,62 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * ÁUDIO — ETAPA 12: card completo (alto-falante + earpiece + fone + mics).
++ *
++ * Reavaliação de 28/10 (docs/kernel/REAVALIACAO-AUDIO-20261028.md): o EIO das
++ * etapas 5..11 NÃO era o DSP nem o voto DCODEC. Medido em runtime na etapa 10:
++ *   - com 'RX_MACRO RX0 MUX'=AIF1_PB (+ INT0 MIX/DEM) o aplay roda (rc=0);
++ *     com o mux em ZERO dá EIO — o AIF do macro não liga no DAPM e a
++ *     interface CODEC_DMA não é habilitada;
++ *   - idem na captura com 'TX DEC0 MUX'=SWR_MIC;
++ *   - rotear o MESMO FE (MultiMedia1) nos dois sentidos corrompe a sessão do
++ *     q6routing (um port_id por sessão) -> ADM_CMD_DEVICE_OPEN_V5 EBADPARAM.
++ *
++ * Base: etapa5 (reset do WCD937x em <&lpass_tlmm 6>, link do alto-falante
++ * preservado). Mudanças:
++ *   1. clock do rxmacro com os ids de RX (bug do sm7150.dtsi, ver etapa10);
++ *   2. audio-routing = o do stock/upstream, ligando macro <-> codec
++ *      (IN1_HPHL<-HPHL_OUT ... TX SWR_ADC2<-ADC2_OUTPUT). Substitui as rotas
++ *      "WCD AIF Playback" da etapa9, que deixavam o codec sempre ligado;
++ *   3. FE MultiMedia2 só de captura (as sessões ASM/ADM ficam separadas);
++ *   4. MultiMedia1 só de playback.
++ */
++#include "sm7150-motorola-hanoip-audio-etapa5.dts"
++
++&rxmacro {
++	clocks = <&q6afecc LPASS_CLK_ID_RX_CORE_MCLK LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
++		 <&q6afecc LPASS_CLK_ID_RX_CORE_NPL_MCLK LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
++		 <&q6afecc LPASS_HW_MACRO_VOTE LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
++		 <&vamacro>;
++};
++
++&q6asmdai {
++	dai@0 {
++		direction = <Q6ASM_DAI_RX>;
++	};
++
++	dai@1 {
++		reg = <MSM_FRONTEND_DAI_MULTIMEDIA2>;
++		direction = <Q6ASM_DAI_TX>;
++	};
++};
++
++&{/sound} {
++	/* stock qcom,audio-routing (sem os widgets de máquina "Analog Mic") */
++	audio-routing =
++		"AMIC1", "MIC BIAS1",
++		"AMIC2", "MIC BIAS2",
++		"AMIC3", "MIC BIAS3",
++		"IN1_HPHL", "HPHL_OUT",
++		"IN2_HPHR", "HPHR_OUT",
++		"IN3_AUX", "AUX_OUT",
++		"TX SWR_ADC0", "ADC1_OUTPUT",
++		"TX SWR_ADC2", "ADC2_OUTPUT";
++
++	mm2-dai-link {
++		link-name = "MultiMedia2";
++
++		cpu {
++			sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA2>;
++		};
++	};
++};
+diff --git a/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa13.dts b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa13.dts
+new file mode 100644
+index 00000000..a78ccfcb
+--- /dev/null
++++ b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa13.dts
+@@ -0,0 +1,24 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * ÁUDIO — ETAPA 13: etapa12 + estabilidade do SoundWire RX + limiares de MBHC.
++ *
++ * 1. &swr_rx: qcom,clock-stop-not-supported (precisa do patch
++ *    "soundwire: qcom: allow DT to opt out of clock stop"). Medido na etapa12:
++ *    com runtime PM em auto, 6 de 8 ciclos "autosuspend -> play" falham
++ *    (link failed to connect, escravo RX UNATTACHED, DPN_PortCtrl -5): o
++ *    master RX perde o contexto quando o rx-macro desliga o MCLK, e o resume
++ *    rápido de clock-stop não reinicializa. Com a propriedade, o resume faz
++ *    reset + init + re-enumeração.
++ * 2. &wcd9370: limiares de MBHC do stock (qcom,msm-mbhc-hs-mic-max/min
++ *    -threshold-mv = 2700/116) no lugar dos defaults do driver (1700/50).
++ */
++#include "sm7150-motorola-hanoip-audio-etapa12.dts"
++
++&swr_rx {
++	qcom,clock-stop-not-supported;
++};
++
++&wcd9370 {
++	qcom,mbhc-headset-vthreshold-microvolt = <2700000>;
++	qcom,mbhc-headphone-vthreshold-microvolt = <116000>;
++};
+diff --git a/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa14.dts b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa14.dts
+new file mode 100644
+index 00000000..3b344abc
+--- /dev/null
++++ b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa14.dts
+@@ -0,0 +1,19 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * ÁUDIO — ETAPA 14: etapa13 + IRQ de wake do SoundWire TX.
++ *
++ * O MBHC (detecção do fone) avisa por interrupção do escravo TX. Com o
++ * master TX em runtime suspend (clock stop), ela só chega pela IRQ de wake.
++ * Medido na etapa13: com o master TX suspenso, plugar o fone gera 0
++ * interrupções; com ele forçado acordado, "Headphone Jack"/"Mic Jack" = on.
++ * O stock declara no tx_swr_master:
++ *     interrupts = <0 0x128 0>, <0 0x1f4 0>;  (swr_master_irq, swr_wake_irq)
++ * O qcom-soundwire do mainline pega a segunda IRQ (índice 1) como wake.
++ */
++#include "sm7150-motorola-hanoip-audio-etapa13.dts"
++
++&swr_tx {
++	interrupts = <GIC_SPI 296 IRQ_TYPE_LEVEL_HIGH>,
++		     <GIC_SPI 500 IRQ_TYPE_LEVEL_HIGH>;
++	interrupt-names = "core", "wakeup";
++};
+diff --git a/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa2.dts b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa2.dts
+new file mode 100644
+index 00000000..1c01f6ef
+--- /dev/null
++++ b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa2.dts
+@@ -0,0 +1,41 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * ÁUDIO — ETAPA 2: reset REAL do codec (LPI GPIO24) + pinctrl estendido.
++ *
++ * Contexto medido:
++ *   - etapa 0: o codec enumera (sdw:2/3) sem reset, mas fica UNATTACHED
++ *   - etapa 1: com MFD e reset fictício, o probe estoura -110 na
++ *     "Initialization not complete" — o attach do SoundWire só acontece depois
++ *     de um reset de verdade (as IRQs do master marcavam 0 disparos)
++ *   - para usar o LPI GPIO24 foi preciso estender o pinctrl sm7150-lpass-lpi
++ *     de 14 para 32 pinos (o stock declara qcom,num-gpios = <0x20>).
++ *
++ * Esta variante depende de um KERNEL NOVO (pinctrl com 32 pinos). A U-Boot
++ * sozinha não basta.
++ *
++ * Reset: LPI GPIO24, ativo em nível baixo (stock: func2 / output-high quando
++ * ativo, output-low no sleep). Estado de pino "gpio" (índice 0 no driver) —
++ * se o attach não acontecer, o próximo teste é mux explícito.
++ */
++#include <dt-bindings/gpio/gpio.h>
++#include "sm7150-motorola-hanoip-audio-etapa1.dts"
++
++&lpass_tlmm {
++	/* o hardware tem 32 pinos; o dtsi antigo declarava 14 */
++	gpio-ranges = <&lpass_tlmm 0 0 32>;
++
++	wcd_reset_active: wcd-reset-active-state {
++		pins = "gpio24";
++		function = "gpio";
++		drive-strength = <16>;
++	};
++};
++
++&wcd9370 {
++	reset-gpios = <&lpass_tlmm 24 GPIO_ACTIVE_LOW>;
++	pinctrl-0 = <&wcd_reset_active>;
++	pinctrl-names = "default";
++
++	qcom,mbhc-buttons-vthreshold-microvolt = <75000 150000 237000 500000
++						  500000 500000 500000 500000>;
++};
+diff --git a/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa3.dts b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa3.dts
+new file mode 100644
+index 00000000..1cb2e84c
+--- /dev/null
++++ b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa3.dts
+@@ -0,0 +1,22 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * ÁUDIO — ETAPA 3: corrige o tamanho do mapeamento do pinctrl LPI.
++ *
++ * Causa do Oops da etapa 2 (medida no dmesg):
++ *   lpi_gpio_read -> lpi_gpio_get_direction -> gpiochip_add_data
++ *   "Unable to handle kernel paging request at virtual address ..."
++ * O dtsi declara reg = <0 0x62b52000 0 0xe000> — 14 páginas, uma por pino dos
++ * 14 que o driver antigo conhecia. O pino 24 fica no offset 0x18000 e o driver
++ * faz ioremap exatamente do tamanho do reg, então a leitura cai fora do
++ * mapeamento.
++ *
++ * O stock declara qcom,num-gpios = <0x20> e qcom,lpi-offset-tbl com
++ * 0x0, 0x1000, ..., 0x1f000 — ou seja, 32 pinos e 0x20000 de janela.
++ * Aqui só estendemos a janela: o kernel novo (pinctrl com 32 pinos e nomes)
++ * já conhece os pinos.
++ */
++#include "sm7150-motorola-hanoip-audio-etapa2.dts"
++
++&lpass_tlmm {
++	reg = <0 0x62b52000 0 0x20000>;
++};
+diff --git a/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa4.dts b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa4.dts
+new file mode 100644
+index 00000000..882103e5
+--- /dev/null
++++ b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa4.dts
+@@ -0,0 +1,40 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * ÁUDIO — ETAPA 4: reset do codec pelo MUX 2 do LPASS (o que o Android faz).
++ *
++ * Base do achado (fonte do vendor, pinctrl-slpi.c):
++ *   - o driver SLPI escreve o INDICE da funcao no campo mux do pino
++ *   - o enum do vendor e' GPIO=0, func1=1, func2=2, ...
++ *   - no stock do hanoip, o pino 24 (reset do WCD) e' muxado em "func2" (=2)
++ *     com output-high, e "func2" NAO e' o modo GPIO.
++ * Conclusao: no Android o reset do codec nao e' um GPIO comum; ele e' roteado
++ * por uma funcao alternativa do LPASS. Nas etapas 0..3 deixamos o pino em
++ * "gpio" (mux 0), entao o codec nunca saia de reset e ficava UNATTACHED.
++ *
++ * O kernel desta variante tem, no driver sm7150-lpass-lpi, uma funcao
++ * "wcd_rst" posicionada no INDICE 2 do pino 24 (mesmo truque que o mainline ja
++ * usa nos pinos 1 e 5 para casar o valor de mux do vendor).
++ *
++ * janela de registradores: 0x20000 (32 pinos), como na etapa 3.
++ */
++#include "sm7150-motorola-hanoip-audio-etapa1.dts"
++
++&lpass_tlmm {
++	reg = <0 0x62b52000 0 0x20000>;
++	gpio-ranges = <&lpass_tlmm 0 0 32>;
++
++	wcd_reset_active: wcd-reset-active-state {
++		pins = "gpio24";
++		function = "wcd_rst";
++		drive-strength = <16>;
++	};
++};
++
++&wcd9370 {
++	reset-gpios = <&lpass_tlmm 24 GPIO_ACTIVE_LOW>;
++	pinctrl-0 = <&wcd_reset_active>;
++	pinctrl-names = "default";
++
++	qcom,mbhc-buttons-vthreshold-microvolt = <75000 150000 237000 500000
++						  500000 500000 500000 500000>;
++};
+diff --git a/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa5.dts b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa5.dts
+new file mode 100644
+index 00000000..8e340493
+--- /dev/null
++++ b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa5.dts
+@@ -0,0 +1,36 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * ÁUDIO — ETAPA 5: reset do codec no LPI pino 6 (o pino certo).
++ *
++ * Por que mudou (investigação do vendor + outros ports):
++ *   - no stock do hanoip o pinctrl LPI tem 32 gpios num único nó, com offsets
++ *     lineares; o dtsi do mainline mapeia só 0x62b52000 + 0xe000 (14 pinos) e
++ *     anota que 0x62b40000 + 0x12000 (18 páginas) é o espaço do SSC.
++ *     Portanto: gpio0..17 do vendor = bloco SSC; gpio18..31 = bloco AP, e o
++ *     pino AP n corresponde ao vendor gpio (n + 18).
++ *   - o stock usa "msm_cdc_pinctrl@24" = vendor gpio24 = AP pino 6.
++ *   - o port do MESMO SoC (sm7150-xiaomi-sweet.dts) usa exatamente
++ *     reset-gpios = <&lpass_tlmm 6 GPIO_ACTIVE_LOW>.
++ * Conclusão: o pino já existe no driver mainline (0..13). Não precisa estender
++ * pinctrl, não precisa mux 2 (que causou RCU stall) e NÃO precisa kernel novo.
++ *
++ * Esta variante roda com o kernel do PRE-GOLD.
++ */
++#include "sm7150-motorola-hanoip-audio-etapa1.dts"
++
++&lpass_tlmm {
++	wcd_reset_active: wcd-reset-active-state {
++		pins = "gpio6";
++		function = "gpio";
++		drive-strength = <16>;
++	};
++};
++
++&wcd9370 {
++	reset-gpios = <&lpass_tlmm 6 GPIO_ACTIVE_LOW>;
++	pinctrl-0 = <&wcd_reset_active>;
++	pinctrl-names = "default";
++
++	qcom,mbhc-buttons-vthreshold-microvolt = <75000 150000 237000 500000
++						  500000 500000 500000 500000>;
++};
+diff --git a/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa6.dts b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa6.dts
+new file mode 100644
+index 00000000..1e711b1f
+--- /dev/null
++++ b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa6.dts
+@@ -0,0 +1,44 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * ÁUDIO — ETAPA 6: arrays de portas do SoundWire com 6 entradas (tamanho real).
++ *
++ * Evidência (dmesg do etapa5):
++ *   qcom-soundwire 62ed0000: din-ports (5) mismatch with controller (6)
++ *   qcom-soundwire 62ef0000: dout-ports (5) mismatch with controller (6)
++ * O dtsi upstream declara 5 portas; o hardware do hanoip reporta 6. O codec usa
++ * as portas 1..5 (qcom,rx-port-mapping = <1 2 3 4 5> / tx <2 3 4 5>), e com
++ * arrays de 5 entradas a porta 5 fica sem configuração — o que explica o
++ * stream morrer (EIO) mesmo com hw_params retornando 0 em todos os DAIs.
++ *
++ * Aqui só estendemos os arrays para 6 entradas e casamos din/dout com o
++ * hardware. Nada mais muda em relação à etapa5 (reset no LPI pino 6).
++ */
++#include "sm7150-motorola-hanoip-audio-etapa5.dts"
++
++&swr_tx {
++	qcom,din-ports = <6>;
++	qcom,dout-ports = <1>;
++	qcom,ports-sinterval-low =	/bits/ 8 <0x01 0x03 0x03 0x03 0x03 0x03>;
++	qcom,ports-offset1 =		/bits/ 8 <0x00 0x00 0x00 0x00 0x00 0x00>;
++	qcom,ports-offset2 =		/bits/ 8 <0x00 0x00 0x00 0x00 0x00 0x00>;
++	qcom,ports-hstart =		/bits/ 8 <0xff 0xff 0xff 0xff 0xff 0xff>;
++	qcom,ports-hstop =		/bits/ 8 <0xff 0xff 0xff 0xff 0xff 0xff>;
++	qcom,ports-word-length =	/bits/ 8 <0xff 0xff 0xff 0xff 0xff 0xff>;
++	qcom,ports-block-pack-mode =	/bits/ 8 <0xff 0xff 0xff 0xff 0xff 0xff>;
++	qcom,ports-block-group-count =	/bits/ 8 <0xff 0xff 0xff 0xff 0xff 0xff>;
++	qcom,ports-lane-control =	/bits/ 8 <0x01 0x01 0x01 0x01 0x01 0x01>;
++};
++
++&swr_rx {
++	qcom,din-ports = <1>;
++	qcom,dout-ports = <6>;
++	qcom,ports-sinterval-low =	/bits/ 8 <0x03 0x3f 0x1f 0x03 0x03 0x03>;
++	qcom,ports-offset1 =		/bits/ 8 <0x00 0x00 0x0b 0x01 0x01 0x01>;
++	qcom,ports-offset2 =		/bits/ 8 <0x00 0x00 0x0b 0x00 0x00 0x00>;
++	qcom,ports-hstart =		/bits/ 8 <0xff 0x03 0xff 0xff 0xff 0xff>;
++	qcom,ports-hstop =		/bits/ 8 <0xff 0x06 0xff 0xff 0xff 0xff>;
++	qcom,ports-word-length =	/bits/ 8 <0x01 0x07 0x04 0xff 0xff 0xff>;
++	qcom,ports-block-pack-mode =	/bits/ 8 <0xff 0x00 0x01 0xff 0xff 0xff>;
++	qcom,ports-block-group-count =	/bits/ 8 <0xff 0xff 0xff 0xff 0x00 0x00>;
++	qcom,ports-lane-control =	/bits/ 8 <0x01 0x00 0x00 0x00 0x00 0x00>;
++};
+diff --git a/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa7.dts b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa7.dts
+new file mode 100644
+index 00000000..10c6ddfc
+--- /dev/null
++++ b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa7.dts
+@@ -0,0 +1,20 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * ÁUDIO — ETAPA 7: card SEM o link do alto-falante.
++ *
++ * Diagnóstico (log ASoC com dynamic debug):
++ *   "ASoC: found 2 new BE paths" -> open BE Speaker Playback + open BE WCD Playback
++ *   "close FE MultiMedia1"       -> o frontend fecha e o write volta EIO
++ * O card conecta SEMPRE os dois backends (codec e alto-falante). O backend do
++ * alto-falante (amp smart AW882xx) falha e derruba o stream inteiro — por isso
++ * o teste com o mixer do alto-falante ligado funcionava e o do codec não.
++ *
++ * Aqui o link do alto-falante é REMOVIDO do card, deixando apenas o codec.
++ * Isso isola mic/earpiece/fone. O alto-falante continua funcionando no PRE-GOLD
++ * (onde o card não tem os links do codec).
++ */
++#include "sm7150-motorola-hanoip-audio-etapa5.dts"
++
++&{/sound} {
++	/delete-node/ speaker-dai-link;
++};
+diff --git a/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa8.dts b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa8.dts
+new file mode 100644
+index 00000000..b5895d37
+--- /dev/null
++++ b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa8.dts
+@@ -0,0 +1,22 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * ÁUDIO — ETAPA 8: canais do SoundWire do HANOIP (não do sweet).
++ *
++ * Origem dos valores: stock DT do hanoip, propriedade qcom,rx_swr_ch_map:
++ *   9 10 13 11 12 14 15 16  (na ordem dos canais do escravo: hph_l, hph_r,
++ *   clsh, comp_l, comp_r, lo, dsd_r, dsd_l — mesma ordem que o exemplo do
++ *   binding qcom,wcd937x-sdw.yaml descreve).
++ * O mainline espera esses canais em qcom,rx-channel-mapping (8 bytes). Até aqui
++ * estávamos usando os valores do xiaomi-sweet (1 2 1 1 2 1 1 2), que são os
++ * canais do master *daquela* placa — não os do hanoip. Com o mapa errado o
++ * codec recebe dados em canais que não existem nele, o stream morre logo
++ * depois de começar (EIO) e o DSP não reporta nada (bate com o medido).
++ */
++#include "sm7150-motorola-hanoip-audio-etapa7.dts"
++
++&swr_rx {
++	wcd937x_rx: codec@0,4 {
++		qcom,rx-port-mapping = <1 2 3 4 5>;
++		qcom,rx-channel-mapping = /bits/ 8 <9 10 13 11 12 14 15 16>;
++	};
++};
+diff --git a/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa9.dts b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa9.dts
+new file mode 100644
+index 00000000..28f6b70a
+--- /dev/null
++++ b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-audio-etapa9.dts
+@@ -0,0 +1,33 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * ÁUDIO — ETAPA 9: audio-routing no card (o que faltava para o DAPM fechar).
++ *
++ * Diagnóstico que levou aqui (medido):
++ *   - durante um aplay, os 413 registradores do codec NÃO mudam (diff = 0),
++ *     ou seja o codec nunca é energizado;
++ *   - o dump do regmap é ao vivo (toggling EAR_RDAC muda 62 registradores),
++ *     então o problema não é cache;
++ *   - as rotas internas do wcd937x vão de "RX1/RX2/RX3" até as saídas
++ *     (HPHL/HPHR/EAR), mas NADA liga o widget do AIF ("WCD AIF Playback") a
++ *     RX1/RX2/RX3, nem o "WCD AIF Capture" aos ADC*_OUTPUT;
++ *   - no sm8250-mtp (que funciona) o card declara `audio-routing` justamente
++ *     para fechar esse caminho. O nosso card (audio2.dts) nunca teve.
++ *
++ * Aqui adicionamos o roteamento mínimo: playback (AIF -> RX1/2/3), captura
++ * (ADC*_OUTPUT -> AIF Capture) e as alimentações de MIC BIAS.
++ * Base: etapa7 (card só com o codec, sem o alto-falante).
++ */
++#include "sm7150-motorola-hanoip-audio-etapa7.dts"
++
++&{/sound} {
++	audio-routing =
++		"RX1", "WCD AIF Playback",
++		"RX2", "WCD AIF Playback",
++		"RX3", "WCD AIF Playback",
++		"WCD AIF Capture", "ADC1_OUTPUT",
++		"WCD AIF Capture", "ADC2_OUTPUT",
++		"WCD AIF Capture", "ADC3_OUTPUT",
++		"AMIC1", "MIC BIAS1",
++		"AMIC2", "MIC BIAS2",
++		"AMIC3", "MIC BIAS3";
++};
+diff --git a/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cam-etapa1.dts b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cam-etapa1.dts
+new file mode 100644
+index 00000000..ae05c3c0
+--- /dev/null
++++ b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cam-etapa1.dts
+@@ -0,0 +1,20 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * CÂMERA — ETAPA 1: só o CAMSS (CSIPHY/CSID/VFE), sem sensor.
++ *
++ * Base: PRE-GOLD-20261028-1707 (áudio etapa14). Objetivo: o qcom-camss sobe
++ * (media graph em /dev/media0) e o gerador de padrão interno do CSID gen2
++ * (CSID_TPG_CTRL, 0x600) leva um frame até a memória pela VFE/RDI, sem
++ * tocar em sensor, CCI, MCLK ou reguladores de câmera.
++ *
++ * Conferido antes (docs/kernel/checkpoint-2026-10-28-camera.txt):
++ *  - clocks, IRQs, power domains e interconnects pedidos pelo driver para o
++ *    sm7150 existem neste nó; os regs do CSID ficam dentro da VFE
++ *    (VFE+0x4000 = 0xacb3000/0xacba000, iguais ao stock);
++ *  - os 14 stream IDs da SMMU são os do contexto "ife" do Android.
++ */
++#include "sm7150-motorola-hanoip-audio-etapa14.dts"
++
++&camss {
++	status = "okay";
++};
+diff --git a/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cam-etapa2.dts b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cam-etapa2.dts
+new file mode 100644
+index 00000000..4cc105f1
+--- /dev/null
++++ b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cam-etapa2.dts
+@@ -0,0 +1,82 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * CÂMERA — ETAPA 2: primeiro sensor, OV02B1B (traseira, profundidade).
++ *
++ * Base: cam-etapa1 (CAMSS validado com o TPG do CSID). Só este sensor é
++ * declarado. Valores de docs/kernel/checkpoint-2026-10-28-camera.txt:
++ *   CCI0 master1 0x3d, VIO L13A 1,8 V, AVDD gpio46 (2,8 V, divide com o
++ *   S5K4H7), MCLK3 24 MHz (gpio16), reset gpio26 ativo-baixo,
++ *   1 lane MIPI 660 Mbps (link 330 MHz) na lane física 0 do CSIPHY3.
++ * Rails/MCLK/reset já validados na leitura de ID de 26/10
++ * (work/cameras-20261026/step1-camid). Driver: work/cameras-20261028/ov02b10.
++ */
++#include <dt-bindings/clock/qcom,sm7150-camcc.h>
++#include "sm7150-motorola-hanoip-cam-etapa1.dts"
++
++/ {
++	cam_rear_aux_avdd: regulator-cam-rear-aux-avdd {
++		compatible = "regulator-fixed";
++		regulator-name = "cam_rear_depth_wide_avdd_2p8";
++		regulator-min-microvolt = <2800000>;
++		regulator-max-microvolt = <2800000>;
++		gpio = <&tlmm 46 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		startup-delay-us = <1000>;
++		vin-supply = <&vreg_bob>;
++	};
++};
++
++&tlmm {
++	cam_mclk3_default: cam-mclk3-default-state {
++		pins = "gpio16";
++		function = "cam_mclk";
++		drive-strength = <2>;
++		bias-disable;
++	};
++};
++
++&cci0 {
++	status = "okay";
++};
++
++&cci0_i2c1 {
++	clock-frequency = <400000>;
++
++	ov02b1b: camera@3d {
++		compatible = "ovti,ov02b10";
++		reg = <0x3d>;
++
++		clocks = <&camcc CAMCC_MCLK3_CLK>;
++		clock-names = "eclk";
++		assigned-clocks = <&camcc CAMCC_MCLK3_CLK>;
++		assigned-clock-rates = <24000000>;
++
++		dovdd-supply = <&vreg_l13a_1p8>;
++		avdd-supply = <&cam_rear_aux_avdd>;
++
++		reset-gpios = <&tlmm 26 GPIO_ACTIVE_LOW>;
++
++		pinctrl-0 = <&cam_mclk3_default>;
++		pinctrl-names = "default";
++
++		port {
++			ov02b1b_ep: endpoint {
++				data-lanes = <1>;
++				link-frequencies = /bits/ 64 <330000000>;
++				remote-endpoint = <&csiphy3_ep>;
++			};
++		};
++	};
++};
++
++&camss {
++	ports {
++		port@3 {
++			csiphy3_ep: endpoint {
++				clock-lanes = <7>;
++				data-lanes = <0>;
++				remote-endpoint = <&ov02b1b_ep>;
++			};
++		};
++	};
++};
+diff --git a/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cam-etapa3.dts b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cam-etapa3.dts
+new file mode 100644
+index 00000000..8062409d
+--- /dev/null
++++ b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cam-etapa3.dts
+@@ -0,0 +1,25 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * CÂMERA — ETAPA 3: etapa2 + alimentação dos CSIPHY.
++ *
++ * Etapa2 medida: o OV02B1B sobe (ID ok, link ao CSIPHY3), o stream liga sem
++ * erro, mas nenhum frame chega e o CSIPHY lê versão 0x0. O camss caiu em
++ * dummy para vdda-phy/vdda-pll, e no aparelho a L3C (1,2 V) estava com
++ * use_count 0. O Android alimenta cada CSIPHY com mipi-csi-vdd = PM6150L L3
++ * (L3C, 1,2 V) e refgen (qcom,refgen-regulator @ ff1000), mais o GDSC do Titan.
++ */
++#include "sm7150-motorola-hanoip-cam-etapa2.dts"
++
++&camss {
++	vdda-phy-supply = <&refgen>;
++	vdda-pll-supply = <&vreg_l3c_1p23>;
++};
++
++/*
++ * O refgen também serve o PHY do DSI (display), que hoje funciona só porque
++ * o bootloader o deixou ligado (use_count 0 no mainline). Sem always-on, o
++ * camss o desligaria ao fim do stream e poderia apagar a tela.
++ */
++&refgen {
++	regulator-always-on;
++};
+diff --git a/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cam-s5k4h7.dts b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cam-s5k4h7.dts
+new file mode 100644
+index 00000000..4773f58c
+--- /dev/null
++++ b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cam-s5k4h7.dts
+@@ -0,0 +1,139 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * CÂMERA — S5K4H7 (traseira wide/macro, 8 MP), slot 3.
++ *
++ * Reconstrução (29/10) do DTS da S5K4H7 que se chamava cam-etapa3: aquele
++ * arquivo foi sobrescrito em 28/10 20:35 pela etapa3 da OV02B1B (alimentação
++ * dos CSIPHY), e o U-Boot 9668a6dc... que leu "chip id 0x487b" se perdeu.
++ * Valores: checkpoint-2026-10-28-camera.txt e o camid de 26/10
++ * (sm7150-motorola-hanoip-pmos-camid.dts, ID lido nesses mesmos rails):
++ *   CCI0 master1 0x2d, VIO L13A 1,8 V, VANA gpio46 2,8 V (divide com o
++ *   OV02B1B), VDIG gpio33 1,2 V, MCLK1 24 MHz (gpio14), reset gpio24
++ *   ativo-baixo, CSIPHY1 4 lanes, link 366 MHz.
++ * Base: cam-etapa1 (só camss). Inclui a alimentação dos CSIPHY da etapa3 da
++ * OV02B1B, validada lá. Driver: work/cameras-20261028/s5k4h7.
++ */
++#include <dt-bindings/clock/qcom,sm7150-camcc.h>
++#include "sm7150-motorola-hanoip-cam-etapa1.dts"
++
++/ {
++	cam_rear_aux_avdd: regulator-cam-rear-aux-avdd {
++		compatible = "regulator-fixed";
++		regulator-name = "cam_rear_depth_wide_avdd_2p8";
++		regulator-min-microvolt = <2800000>;
++		regulator-max-microvolt = <2800000>;
++		gpio = <&tlmm 46 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		startup-delay-us = <1000>;
++		vin-supply = <&vreg_bob>;
++	};
++
++	cam_rear_wide_dvdd: regulator-cam-rear-wide-dvdd {
++		compatible = "regulator-fixed";
++		regulator-name = "cam_rear_wide_dvdd_1p2";
++		regulator-min-microvolt = <1200000>;
++		regulator-max-microvolt = <1200000>;
++		gpio = <&tlmm 33 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		startup-delay-us = <1000>;
++		vin-supply = <&vreg_s8c_1p2>;
++	};
++
++	/* VCM supply shared by the main and wide AF motors (stock gpio-regulator@5). */
++	cam_rear_afvdd: regulator-cam-rear-afvdd {
++		compatible = "regulator-fixed";
++		regulator-name = "cam_rear_main_wide_afvdd_2p8";
++		regulator-min-microvolt = <2800000>;
++		regulator-max-microvolt = <2800000>;
++		gpio = <&tlmm 64 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		startup-delay-us = <1000>;
++		vin-supply = <&vreg_bob>;
++	};
++};
++
++&tlmm {
++	cam_mclk1_default: cam-mclk1-default-state {
++		pins = "gpio14";
++		function = "cam_mclk";
++		drive-strength = <2>;
++		bias-disable;
++	};
++};
++
++&cci0 {
++	status = "okay";
++};
++
++&cci0_i2c1 {
++	clock-frequency = <1000000>;	/* FM+; base DT default, 29/10 */
++
++	s5k4h7: camera@2d {
++		compatible = "samsung,s5k4h7";
++		reg = <0x2d>;
++
++		clocks = <&camcc CAMCC_MCLK1_CLK>;
++		clock-names = "eclk";
++		assigned-clocks = <&camcc CAMCC_MCLK1_CLK>;
++		assigned-clock-rates = <24000000>;
++
++		vio-supply = <&vreg_l13a_1p8>;
++		vana-supply = <&cam_rear_aux_avdd>;
++		vdig-supply = <&cam_rear_wide_dvdd>;
++
++		reset-gpios = <&tlmm 24 GPIO_ACTIVE_LOW>;
++
++		/*
++		 * Android: sensor-position-roll 90, yaw 180 (same as the
++		 * OV02B1B, slot 2); this stack needs 270 for upright images.
++		 */
++		orientation = <1>;
++		rotation = <270>;
++		lens-focus = <&s5k4h7_vcm>;
++
++		pinctrl-0 = <&cam_mclk1_default>;
++		pinctrl-names = "default";
++
++		port {
++			s5k4h7_ep: endpoint {
++				data-lanes = <1 2 3 4>;
++				link-frequencies = /bits/ 64 <366000000>;
++				remote-endpoint = <&csiphy1_ep>;
++			};
++		};
++	};
++
++	/*
++	 * Stock actuator@1 (cci0 master1, actuator-src of slot 3) uses the
++	 * mot_hanoip_dw9714 profile, but its init list writes 0x02 (PD), 0x06
++	 * (AAC presc), 0x07 (AAC time): the DW9768 register map. With VAF on,
++	 * only 0x0c acks on this bus (29/10 scan) and dw9768 init + DAC writes
++	 * there succeed; the DW9714 protocol does not.
++	 */
++	s5k4h7_vcm: camera-lens@c {
++		compatible = "dongwoon,dw9768";
++		reg = <0x0c>;
++		vin-supply = <&vreg_l13a_1p8>;
++		vdd-supply = <&cam_rear_afvdd>;
++	};
++};
++
++&camss {
++	vdda-phy-supply = <&refgen>;
++	vdda-pll-supply = <&vreg_l3c_1p23>;
++
++	ports {
++		port@1 {
++			csiphy1_ep: endpoint {
++				clock-lanes = <7>;
++				data-lanes = <0 1 2 3>;
++				remote-endpoint = <&s5k4h7_ep>;
++			};
++		};
++	};
++};
++
++/* Igual à etapa3: o refgen também alimenta o PHY do DSI (tela). */
++&refgen {
++	regulator-always-on;
++};
+diff --git a/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cam-tres.dts b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cam-tres.dts
+new file mode 100644
+index 00000000..1ba63bf9
+--- /dev/null
++++ b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-cam-tres.dts
+@@ -0,0 +1,183 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * CÂMERAS — três sensores no mesmo boot (29/10):
++ *   slot 3 S5K4H7 traseira wide + VCM DW9714  (cam-s5k4h7 v3, validada)
++ *   slot 0 S5KHM2 traseira principal 108 MP  CCI0 m0 0x56, CSIPHY0
++ *   slot 1 OV32B  frontal 32 MP              CCI1 m0 0x10, CSIPHY2
++ * Rails, MCLK e reset da principal e da frontal são os do camid de 26/10
++ * (IDs 0x1ad2 e 0x3242 lidos nesses mesmos valores). Modo/lanes/link vêm
++ * do sensormodule vendor (mode-params.py): S5KHM2 4000x3000 D-PHY
++ * (0x0111 = 2) 3 lanes a 1012.32 MHz; OV32B 3264x2448 4 lanes a 414 MHz.
++ * O mapeamento físico das lanes NÃO está confirmado (usado 0..n-1).
++ * Driver dos dois novos: work/cameras-20261028/hanoip-cam.
++ */
++#include "sm7150-motorola-hanoip-cam-s5k4h7.dts"
++
++/ {
++	cam_rear_main_avdd: regulator-cam-rear-main-avdd {
++		compatible = "regulator-fixed";
++		regulator-name = "cam_rear_main_avdd_2p8";
++		regulator-min-microvolt = <2800000>;
++		regulator-max-microvolt = <2800000>;
++		gpio = <&tlmm 72 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		startup-delay-us = <1000>;
++		vin-supply = <&vreg_bob>;
++	};
++
++	cam_front_avdd: regulator-cam-front-avdd {
++		compatible = "regulator-fixed";
++		regulator-name = "cam_front_avdd_2p8";
++		regulator-min-microvolt = <2800000>;
++		regulator-max-microvolt = <2800000>;
++		gpio = <&tlmm 65 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		startup-delay-us = <1000>;
++		vin-supply = <&vreg_bob>;
++	};
++
++	cam_front_dvdd: regulator-cam-front-dvdd {
++		compatible = "regulator-fixed";
++		regulator-name = "cam_front_dvdd_1p1";
++		regulator-min-microvolt = <1100000>;
++		regulator-max-microvolt = <1100000>;
++		gpio = <&tlmm 93 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		startup-delay-us = <1000>;
++		vin-supply = <&vreg_s8c_1p2>;
++	};
++};
++
++&tlmm {
++	cam_mclk0_default: cam-mclk0-default-state {
++		pins = "gpio13";
++		function = "cam_mclk";
++		drive-strength = <2>;
++		bias-disable;
++	};
++
++	cam_mclk2_default: cam-mclk2-default-state {
++		pins = "gpio15";
++		function = "cam_mclk";
++		drive-strength = <2>;
++		bias-disable;
++	};
++};
++
++&cci0_i2c0 {
++	clock-frequency = <1000000>;	/* FM+; base DT default, 29/10 */
++
++	s5khm2: camera@56 {
++		compatible = "samsung,s5khm2";
++		reg = <0x56>;
++
++		clocks = <&camcc CAMCC_MCLK0_CLK>;
++		clock-names = "eclk";
++		assigned-clocks = <&camcc CAMCC_MCLK0_CLK>;
++		assigned-clock-rates = <24000000>;
++
++		vio-supply = <&vreg_l13a_1p8>;
++		vana-supply = <&cam_rear_main_avdd>;
++		vdig-supply = <&vreg_l6a_1p2>;	/* set to 1.104 V by the driver */
++
++		reset-gpios = <&tlmm 23 GPIO_ACTIVE_LOW>;
++
++		/* Android: roll 90, yaw 180, as the other rear sensors. */
++		orientation = <1>;
++		rotation = <270>;
++		lens-focus = <&s5khm2_vcm>;
++
++		pinctrl-0 = <&cam_mclk0_default>;
++		pinctrl-names = "default";
++
++		/*
++		 * C-PHY, 3 trios (29/10): as D-PHY the CSIPHY0 status showed no
++		 * lane activity in any lane order/settle, while the sensor
++		 * counted frames; modes 1/3/4/5 (864.6 MHz out) would need
++		 * 2.88 Gbps per D-PHY lane, above the SM7150 limit. 0x0111 = 2
++		 * is SMIA++ "CSI-2", not proof of D-PHY.
++		 */
++		port {
++			s5khm2_ep: endpoint {
++				bus-type = <1>;	/* MEDIA_BUS_TYPE_CSI2_CPHY */
++				data-lanes = <1 2 3>;
++				link-frequencies = /bits/ 64 <1012320000>;
++				remote-endpoint = <&csiphy0_ep>;
++			};
++		};
++	};
++
++	/*
++	 * Stock actuator@0 (cci0 master0), profile "mot_hanoip_dw9800": acks at
++	 * 0x0c with VAF on (29/10 read-only probe). Driven by hanoip-vcm with
++	 * the vendor init list (ofilm_mot_hanoip_s5khm2 list 16).
++	 */
++	s5khm2_vcm: camera-lens@c {
++		compatible = "dongwoon,dw9800";
++		reg = <0x0c>;
++		vin-supply = <&vreg_l13a_1p8>;
++		vdd-supply = <&cam_rear_afvdd>;
++	};
++};
++
++&cci1 {
++	status = "okay";
++};
++
++&cci1_i2c0 {
++	clock-frequency = <1000000>;	/* FM+; base DT default, 29/10 */
++
++	ov32b: camera@10 {
++		compatible = "ovti,ov32b";
++		reg = <0x10>;
++
++		clocks = <&camcc CAMCC_MCLK2_CLK>;
++		clock-names = "eclk";
++		assigned-clocks = <&camcc CAMCC_MCLK2_CLK>;
++		assigned-clock-rates = <24000000>;
++
++		vio-supply = <&vreg_l13a_1p8>;
++		vana-supply = <&cam_front_avdd>;
++		vdig-supply = <&cam_front_dvdd>;
++
++		reset-gpios = <&tlmm 25 GPIO_ACTIVE_LOW>;
++
++		/*
++		 * Android: roll 270, yaw 0. The rear sensors need 360 - roll
++		 * in this stack, so 90 here; NOT verified on screen yet.
++		 */
++		orientation = <0>;
++		rotation = <90>;
++
++		pinctrl-0 = <&cam_mclk2_default>;
++		pinctrl-names = "default";
++
++		port {
++			ov32b_ep: endpoint {
++				data-lanes = <1 2 3 4>;
++				link-frequencies = /bits/ 64 <414000000>;
++				remote-endpoint = <&csiphy2_ep>;
++			};
++		};
++	};
++};
++
++&camss {
++	ports {
++		port@0 {
++			csiphy0_ep: endpoint {
++				bus-type = <1>;	/* MEDIA_BUS_TYPE_CSI2_CPHY */
++				data-lanes = <0 1 2>;
++				remote-endpoint = <&s5khm2_ep>;
++			};
++		};
++
++		port@2 {
++			csiphy2_ep: endpoint {
++				clock-lanes = <7>;
++				data-lanes = <0 1 2 3>;
++				remote-endpoint = <&ov32b_ep>;
++			};
++		};
++	};
++};
+diff --git a/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-clusteridle-test.dts b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-clusteridle-test.dts
+new file mode 100644
+index 00000000..4383695f
+--- /dev/null
++++ b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-clusteridle-test.dts
+@@ -0,0 +1,29 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * Variante de TESTE: religa o colapso de cluster (L3/CX/AOSS).
++ *
++ * Por que precisou de um arquivo:
++ *   a cadeia do perif-batt herda, no fim, o sm7150-motorola-hanoip-
++ *   cpuidle-local-diagnostic.dts, que faz
++ *       &cluster_pd { /delete-property/ domain-idle-states; };
++ *   porque em 25/10 o colapso de cluster produziu TELA PRETA. Resultado: hoje
++ *   o kernel registra apenas S0 no domínio de cluster (ver
++ *   /sys/kernel/debug/pm_genpd/power-domain-cluster/idle_states) e o aparelho
++ *   roda, na prática, em idle "local-only".
++ *
++ * O que esta variante faz:
++ *   devolve os tres estados que o dtsi define — cluster-sleep-0 (PC),
++ *   cluster-sleep-1 (CX retention) e cluster-sleep-2 (AOSS) — mantendo TODO o
++ *   resto igual ao perif-batt (8 CPUs, cpufreq nos dois clusters, OTG, bateria,
++ *   display). Assim o teste isola o colapso de cluster, sem outras variáveis.
++ *
++ * RISCO CONHECIDO: tela preta ao colapsar o cluster. Nada e' gravado em
++ * particao; o retorno e' bootar a imagem do pre-GOLD.
++ */
++#include "sm7150-motorola-hanoip-pmos-perif-batt.dts"
++
++&cluster_pd {
++	domain-idle-states = <&cluster_sleep_pc
++			      &cluster_sleep_cx_ret
++			      &cluster_aoss_sleep>;
++};
+diff --git a/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-clusteridle-venus.dts b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-clusteridle-venus.dts
+new file mode 100644
+index 00000000..4940cc4f
+--- /dev/null
++++ b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-clusteridle-venus.dts
+@@ -0,0 +1,25 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * Variante de TESTE: habilita o Venus (decode/encode de vídeo) sobre a base
++ * atual (cluster-idle test), sem mudar mais nada.
++ *
++ * Por que:
++ *   o nó &venus existe no sm7150.dtsi mas está status="disabled" e sem
++ *   firmware-name. O driver (venus-core/venus-dec/venus-enc, CONFIG_VIDEO_-
++ *   QCOM_VENUS=m) já está compilado e o patch "media: venus: add SM7150
++ *   resources (experimental)" já está no fonte do kernel (sm7150_res,
++ *   compatible qcom,sm7150-venus). Falta só o DT.
++ *
++ * Firmware: o hanoip-firmware aponta /usr/lib/firmware/qcom/sm7150/motorola/
++ *   hanoip/venus.mdt (+ b00..b04) para o vendor do Android. Por isso o
++ *   firmware-name abaixo usa esse caminho.
++ *
++ * Uso: fastboot boot desta U-Boot + kernel de sempre. Nada é gravado em
++ *   partição. Retorno = bootar a U-Boot do PRE-GOLD.
++ */
++#include "sm7150-motorola-hanoip-clusteridle-test.dts"
++
++&venus {
++	firmware-name = "qcom/sm7150/motorola/hanoip/venus.mdt";
++	status = "okay";
++};
+diff --git a/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-perif-batt.dts b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-perif-batt.dts
+new file mode 100644
+index 00000000..99bb250a
+--- /dev/null
++++ b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-pmos-perif-batt.dts
+@@ -0,0 +1,57 @@
++// SPDX-License-Identifier: BSD-3-Clause
++#include "sm7150-motorola-hanoip-pmos-perif.dts"
++
++/*
++ * "perif" + the battery state-of-charge curve of THIS device.
++ *
++ * qcom_qg turns the open-circuit-voltage estimate into a percentage with
++ * power_supply_batinfo_ocv2cap(). Without an ocv-capacity-table it falls back
++ * to a linear 3.2 V - 4.45 V mapping (~12.5 mV per percent), which followed
++ * every ADC wobble and load transient: the reported percentage wandered
++ * (measured 93% -> 91% in 26 s with 0 mA).
++ *
++ * The table below is NOT generic: it is the pc-temp-v1 LUT of the pack profile
++ * the Android build on this phone uses (S88731AA1-mc50-ATL-4V45-6000mah,
++ * column 25 C), extracted with scripts/battery_curve_from_android.py.
++ * The only edited point is 0%, where the model's 3.000 V cut-off is replaced
++ * by a realistic end-of-discharge voltage (3.400 V).
++ *
++ * Cross-check: Android reported 3.836 V at 54% while charging at 500 mA; this
++ * curve gives 3.90 V at 54% (~50 mV, the IR drop of that current).
++ *
++ * It only changes what is reported. The charger path in this port is
++ * read-only for monitoring, and charging itself is opt-in and separate
++ * (see docs/PLANO-BATERIA-ENERGIA.md and the qcom_smbx charge control).
++ */
++&hanoip_battery {
++	/*
++	 * Internal resistance used to remove the IR drop before the OCV lookup.
++	 * This is the whole loop (cell + protection + connector + sense), not
++	 * the cell datasheet AC value: 30 mOhm under-compensated so badly that
++	 * the estimate ran ~7 points high while charging at 440 mA.
++	 *
++	 * Two independent derivations agree on ~200 mOhm:
++	 *  - downstream reference: Android reported 3.836 V at 54% while
++	 *    charging at 500 mA, and this curve gives 3.935 V for 54%
++	 *    -> 99 mV / 500 mA = 197 mOhm;
++	 *  - on this device: ~7 points of overshoot at 440 mA, and the curve is
++	 *    14.8 mV per point there -> 104 mV / 440 mA = 235 mOhm (6 points:
++	 *    202 mOhm).
++	 * See docs/kernel/checkpoint-2026-10-27-bateria-RESUMO.txt, section 15.
++	 */
++	factory-internal-resistance-micro-ohms = <200000>;
++
++	/* SOC (%) -> open circuit voltage (uV), from the Motorola/Qualcomm model */
++	ocv-capacity-celsius = <25>;
++	ocv-capacity-table-0 = <4446500 100>, <4388900 95>,
++			       <4320900 90>, <4272600 85>,
++			       <4198600 80>, <4151100 75>,
++			       <4084000 70>, <4043400 65>,
++			       <3991500 60>, <3945800 55>,
++			       <3889800 50>, <3868900 45>,
++			       <3842200 40>, <3828400 35>,
++			       <3813600 30>, <3804800 25>,
++			       <3780800 20>, <3755900 15>,
++			       <3711100 10>, <3682200 5>,
++			       <3400000 0>;
++};
+diff --git a/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-rescue-test.dts b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-rescue-test.dts
+new file mode 100644
+index 00000000..a5bfd741
+--- /dev/null
++++ b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip-rescue-test.dts
+@@ -0,0 +1,26 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * Variante de RESGATE: mesmo DT da clusteridle-test, mas com dois servicos
++ * mascarados no boot, para isolar um travamento observado em 28/10 09:35.
++ *
++ * Sintoma: o initramfs monta a raiz, o systemd inicia e a tela para em
++ *   "systemd[1]: System time advanced to timestamp on /var/lib/systemd/timesync/..."
++ * sem USB (nem usb0, nem console gadget) e sem continuar o boot.
++ *
++ * Suspeitos (ambos introduzidos por mim horas antes):
++ *   1. hanoip-rtc.service  -> faz `date -s` para +11 anos durante o boot
++ *                             (ordered Before=time-set.target, DefaultDependencies=no)
++ *   2. hanoip-ssc.service  -> Type=oneshot que espera o ADSP subir; depois do
++ *                             suspend o ADSP ficou 'crashed' e ele pode ficar
++ *                             preso nos retries
++ *
++ * Este DT so acrescenta systemd.mask=... ao bootargs. Serve para entrar no
++ * sistema e consertar; nao e' para uso normal.
++ */
++#include "sm7150-motorola-hanoip-clusteridle-test.dts"
++
++/ {
++	chosen {
++		bootargs = "earlycon=msm_geni_serial,0xa88000 console=ttyMSM0,115200n8 console=ttyGS0 console=ramoops console=tty1 loglevel=8 ignore_loglevel panic_on_oops=1 panic=5 pause_on_oops=5 pstore.backend=ramoops clk_ignore_unused consoleblank=0 vt.global_cursor_default=0 systemd.mask=hanoip-rtc.service systemd.mask=hanoip-ssc.service";
++	};
++};
+diff --git a/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip.dts b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip.dts
+old mode 100644
+new mode 100755
+index 3161c8bd..9834e57f
+--- a/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip.dts
++++ b/dts/upstream/src/arm64/qcom/sm7150-motorola-hanoip.dts
+@@ -54,7 +54,16 @@
+ 		ranges;
+ 
+ 		stdout-path = "serial0:115200n8";
+-		bootargs = "earlycon=msm_geni_serial,0xa88000 console=ttyMSM0,115200n8 console=ttyGS0 console=ramoops console=tty1 loglevel=8 ignore_loglevel panic_on_oops=1 panic=5 pause_on_oops=5 pstore.backend=ramoops clk_ignore_unused consoleblank=0 vt.global_cursor_default=0 maxcpus=6 cpuidle.off=1 cpufreq.off=1 idle=poll";
++		/*
++		 * NAO reintroduzir maxcpus=6 nem cpuidle.off=1/cpufreq.off=1/idle=poll
++		 * aqui. Com maxcpus=6 o kernel fecha as capacidades do sistema com os
++		 * A55 e depois RECUSA o CPU6 ("Detected conflict for capability 80
++		 * (Spectre-v2)"); cpuidle.off/cpufreq.off desligam justamente o que se
++		 * quer; e idle=poll nao existe em arm64. No historico isso limitou o
++		 * aparelho a 6 nucleos por semanas. Os 8 nucleos e o cpufreq nos dois
++		 * clusters foram validados em 25/10 e de novo em 28/10.
++		 */
++		bootargs = "earlycon=msm_geni_serial,0xa88000 console=ttyMSM0,115200n8 console=ttyGS0 console=ramoops console=tty1 loglevel=8 ignore_loglevel panic_on_oops=1 panic=5 pause_on_oops=5 pstore.backend=ramoops clk_ignore_unused consoleblank=0 vt.global_cursor_default=0";
+ 
+ 		framebuffer@9c000000 {
+ 			compatible = "simple-framebuffer";
+@@ -584,6 +593,19 @@
+ 
+ &pm6150_rtc {
+ 	status = "okay";
++
++	/*
++	 * O driver calcula time = contador_cru + offset, e o offset vem de uma
++	 * celula nvmem que este DT nao declara (nem ha a alternativa
++	 * qcom,uefi-rtc-info). Resultado medido em 28/10: read_time devolvia
++	 * 1974-08-15 (o contador cru do PMIC, ~19.066 dias atras) e set_time
++	 * falhava com -ENODEV, entao o RTC nunca acertava.
++	 *
++	 * allow-set-time faz o driver escrever o contador do PMIC direto. Com
++	 * isso "hwclock -w" grava a hora certa de forma permanente (a PMIC
++	 * mantem o contador) e o relogio nao volta para 1974 a cada boot.
++	 */
++	allow-set-time;
+ };
+ 
+ &pm6150_typec {
+@@ -594,13 +616,35 @@
+ 	connector {
+ 		compatible = "usb-c-connector";
+ 
+-		power-role = "source";
++		/*
++		 * A telefone e' SINK: ele RECEBE energia (carrega), e o TCPM do
++		 * kernel negocia PD.
++		 *
++		 * Com power-role = "source" (valor que veio do port de referencia
++		 * do Xiaomi) o TCPM registrava a porta como FONTE PD: apresentava
++		 * Rp/VCONN na linha CC e um carregador USB-C nunca ligava o VBUS.
++		 * Medido com carregador de 100 W: APSD_STATUS = 0x00, ONLINE = 0,
++		 * nada de carga; o aparelho so carregava quando o ABL ja tinha
++		 * estabelecido o VBUS antes do kernel subir.
++		 *
++		 * "sink" sozinho nao serve: o TCPM falha no probe com -EINVAL sem
++		 * sink-pdos. Entao: papel dual (a porta registra) com sink-pdos
++		 * contendo APENAS 5 V. Sem PDO de 9/12 V o VBUS nunca sobe acima de
++		 * 5 V -- e' a escolha conservadora de proposito.
++		 */
++		power-role = "dual";
+ 		data-role = "dual";
+ 		self-powered;
+ 
++		/* 5 W = 5 V * 1 A, o mesmo teto de entrada que o driver programa. */
++		op-sink-microwatt = <5000000>;
++
+ 		source-pdos = <PDO_FIXED(5000, 3000, PDO_FIXED_DUAL_ROLE |
+ 			       PDO_FIXED_USB_COMM | PDO_FIXED_DATA_SWAP)>;
+ 
++		sink-pdos = <PDO_FIXED(5000, 3000, PDO_FIXED_DUAL_ROLE |
++			     PDO_FIXED_USB_COMM | PDO_FIXED_DATA_SWAP)>;
++
+ 		ports {
+ 			#address-cells = <1>;
+ 			#size-cells = <0>;
+@@ -845,7 +889,22 @@
+ };
+ 
+ &usb_1_dwc3 {
+-	dr_mode = "peripheral";
++	/*
++	 * OTG: o controlador passa a poder ser HOST, nao so' device.
++	 *
++	 * Quem decide o papel a cada plugue e' o TCPM, olhando as linhas CC:
++	 * periferico (Rd) -> somos source/host (xHCI carrega, UDC some, o
++	 * regulador pm6150_vbus e' habilitado pelo proprio TCPM e 5 V saem
++	 * pela porta); PC (Rp) -> somos sink/device (gadget sobe como hoje).
++	 *
++	 * Sem "role-switch-default-mode" o padrao do dwc3, verificado em
++	 * drivers/usb/dwc3/drd.c, e' PERIPHERAL: no boot sem cabo o aparelho
++	 * continua sendo dispositivo e o SSH por USB segue funcionando.
++	 * Espelha o sm7150-google-sunfish.dts, que e' o mesmo SoC e o mesmo
++	 * PMIC com OTG funcionando.
++	 */
++	dr_mode = "otg";
++	usb-role-switch;
+ 	maximum-speed = "high-speed";
+ 	phys = <&usb_1_hsphy>;
+ 	phy-names = "usb2-phy";
+diff --git a/dts/upstream/src/arm64/qcom/sm7150.dtsi b/dts/upstream/src/arm64/qcom/sm7150.dtsi
+index bb447a4f..da29fe02 100644
+--- a/dts/upstream/src/arm64/qcom/sm7150.dtsi
++++ b/dts/upstream/src/arm64/qcom/sm7150.dtsi
+@@ -643,7 +643,14 @@
+ 	};
+ 
+ 	pmu-a76 {
+-		compatible = "arm,cortex-a78-pmu";
++		/*
++		 * A76, não A78: o nó se chama pmu-a76 e o cluster é Cortex-A76
++		 * (Kryo 470 Gold). O compatible estava "arm,cortex-a78-pmu",
++		 * herdado do fork. Funcionalmente o init é o mesmo
++		 * (PMUV3_INIT_SIMPLE nos dois), mas o nome do PMU registrado sai
++		 * errado (armv8_cortex_a78) e confunde qualquer análise de perf.
++		 */
++		compatible = "arm,cortex-a76-pmu";
+ 		interrupts = <GIC_PPI 7 IRQ_TYPE_LEVEL_LOW>;
+ 	};
+ 

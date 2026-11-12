@@ -1,0 +1,48 @@
+From 64c6f3ccc8c49b6fa8554bc732c8370e64390706 Mon Sep 17 00:00:00 2001
+From: Jens Reidel <adrian@travitia.xyz>
+Date: Thu, 30 Jan 2025 05:04:19 +0100
+Subject: [PATCH 078/194] sound: soc: codecs: aw88261: Allow AW88263S
+
+Signed-off-by: Jens Reidel <adrian@travitia.xyz>
+---
+ sound/soc/codecs/aw88261.c | 4 ++--
+ sound/soc/codecs/aw88261.h | 1 +
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/sound/soc/codecs/aw88261.c b/sound/soc/codecs/aw88261.c
+index 287d29b69..5df969e91 100644
+--- a/sound/soc/codecs/aw88261.c
++++ b/sound/soc/codecs/aw88261.c
+@@ -1263,7 +1263,7 @@ static int aw88261_init(struct aw88261 *aw88261, struct i2c_client *i2c, struct
+ 		dev_err(&i2c->dev, "%s read chipid error. ret = %d", __func__, ret);
+ 		return ret;
+ 	}
+-	if (chip_id != AW88261_CHIP_ID) {
++	if (chip_id != AW88261_CHIP_ID && chip_id != AW88263S_CHIP_ID) {
+ 		dev_err(&i2c->dev, "unsupported device id = %x", chip_id);
+ 		return -ENXIO;
+ 	}
+@@ -1278,7 +1278,7 @@ static int aw88261_init(struct aw88261 *aw88261, struct i2c_client *i2c, struct
+ 	aw_dev->i2c = i2c;
+ 	aw_dev->regmap = regmap;
+ 	aw_dev->dev = &i2c->dev;
+-	aw_dev->chip_id = AW88261_CHIP_ID;
++	aw_dev->chip_id = chip_id;
+ 	aw_dev->acf = NULL;
+ 	aw_dev->prof_info.prof_desc = NULL;
+ 	aw_dev->prof_info.count = 0;
+diff --git a/sound/soc/codecs/aw88261.h b/sound/soc/codecs/aw88261.h
+index f16f9f8c4..0cc85af55 100644
+--- a/sound/soc/codecs/aw88261.h
++++ b/sound/soc/codecs/aw88261.h
+@@ -552,6 +552,7 @@
+ }
+ 
+ enum aw88261_id {
++	AW88263S_CHIP_ID = 0x2032,
+ 	AW88261_CHIP_ID = 0x2113,
+ };
+ 
+-- 
+2.43.0
+
