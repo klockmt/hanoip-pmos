@@ -4,7 +4,7 @@
 pkgname=device-motorola-hanoip
 pkgdesc="Motorola Moto G (60)"
 pkgver=0
-pkgrel=52
+pkgrel=53
 _qrtr_rev=29e36ae164389580a0f8ea7a7fdb728140ae978d
 _pdmapper_rev=5ecd2fe926aca7abfe40724177f63b942cff3947
 url="https://postmarketos.org"
@@ -17,6 +17,7 @@ depends="
 	firmware-qcom-sm7150
 	mkbootimg-osm0sis
 	postmarketos-base
+	python3
 	soc-qcom
 	soc-qcom-qbootctl
 	tailscale
@@ -59,6 +60,8 @@ source="
 	hanoip-tqftpserv.initd
 	hanoip-watchdog
 	hanoip-watchdog.initd
+	hanoip-dashboard
+	hanoip-dashboard.service
 	org.freedesktop.login1.service
 	pd-mapper-subsys-fallback.patch
 	tqftpserv-subsys-fallback.patch
@@ -167,6 +170,11 @@ package() {
 	install -Dm755 "$srcdir/hanoip-thermal.initd" "$pkgdir/etc/init.d/hanoip-thermal"
 	install -Dm755 "$srcdir/hanoip-watchdog" "$pkgdir/usr/bin/hanoip-watchdog"
 	install -Dm755 "$srcdir/hanoip-watchdog.initd" "$pkgdir/etc/init.d/hanoip-watchdog"
+	install -Dm755 "$srcdir/hanoip-dashboard" "$pkgdir/usr/bin/hanoip-dashboard"
+	install -Dm644 "$startdir/dashboard/index.html" "$pkgdir/usr/share/hanoip-dashboard/index.html"
+	install -Dm644 "$srcdir/hanoip-dashboard.service" "$pkgdir/etc/systemd/system/hanoip-dashboard.service"
+	# The dashboard reads its package revision from here: nothing else on the image records it.
+	printf '%s\n' "$pkgrel" > "$pkgdir/usr/share/device-motorola-hanoip/pkgrel"
 	install -Dm644 "$srcdir/org.freedesktop.login1.service" "$pkgdir/usr/share/device-motorola-hanoip/org.freedesktop.login1.service"
 
 	# Mainline systemd units and scripts (installed here, moved to mainline subpackage by amove)
@@ -353,6 +361,8 @@ e2718a5060419afccb775e70f07e91cd28df068b59e7712c9d1caa490869726f24655d9e22dc1b8c
 9aa163137d78b802f924cb38341102abd7c36129689220587a1b4a26bc528c23ac27de7cff6c85f266d059a30d41df3a25c45b2f03cbdaaffacb083fee619619  hanoip-tqftpserv.initd
 d73f8a395f5f4a886322cc6dc042b1bbe5cdd0f0a7f92123350874b312f7884b52d7031bcd08299a1adece5f22abc2705be9b04f2b987f746c8af466c2502e61  hanoip-watchdog
 833a8bef7313c05857e423034ade9dc22724e850e2d5eff5f583cb779d370586b732acaa8e452c9acfca213b798fc1310e78ff1c2a5b3e2ddca9e0ac6b6cab3d  hanoip-watchdog.initd
+d9febdb60702e7f7249222379f5606e5dd76c0afaaec8bff2b5331f654ec74cb4278bf5e6c68bdd7e801239cbdf5a38a59e5a9e5ffa472bc8f8749e6bedd6366  hanoip-dashboard
+fc825b7148a181054778326f8595c2ba483c1e519495d46bd35cd1e612d8d4365969117180550da5e93cc40a9b52f5723e46a6c114b93490726260da7acd3241  hanoip-dashboard.service
 123071b96bb753cb017c28959fdc8f9a7bb479fd837ba46709a97409b40b86a66861de5ff4cf4a3520bb5fc64d570828e30f358268fb787995034d86e0d6acfd  org.freedesktop.login1.service
 777d1dfc321840b6569981fc552742bac0b6c64e48f68c458775121fc1056017c371903862657de2c16eb98ff8942e9d3fbb52261735341ab172ed60752eba20  pd-mapper-subsys-fallback.patch
 0669d496aaa63bc654f8ea63b6f51426035e72b587d11ed17cd960b07a341ecbf705fdbd93fb04f0e07b6ed11f7c93a25148446b7c4bc266778ae9ad2f54f6b0  tqftpserv-subsys-fallback.patch
@@ -392,7 +402,7 @@ ca85d44d47dfbf71723236f0ddc0d655da6d513584db3ab4b35ccfe98530ee796689bc88c2d59956
 1ef6c1b720e3a034141cb0aa1bb9c9af79163125cdae51b88cf3f1a2f8ea885ee7c30d24bfeab1bd1b35b3dd483a6b386dee5d0e30544b1ef8f2cb2cc221dd6a  kernel-cmdline.mainline.conf
 6f5bb8bbb6b0c88fc3ded4702375050d46f9226c7e453af42475ffaeb443e63264e69e324e4ecf449c192ad9488a61b141999a7f592f915f541b9406aba993f9  hanoip-usb-gadget
 1bc1bbcc21170ace4e1f6610b39ca5f9545acf52cf18325d4724e79af44cb4626f18cf082f00d627d4ba41467c2e59de79e1f8b378fd9f8c5e75d3bdaaff7d30  hanoip-usb-gadget.service
-be38012b5545c5897d4acc89e1c7a1f66e913b616aef72bc75b4cbc2f2d125ed48aa3936f1adb289f12a81d9113ed406cec1f13e8d205260e4b656564f535e34  hanoip.preset
+0e92cb2d320433beb390865698e38a8ebe6e5db87958a982accc929b1ad7b5ad5ab10146f1c7fa9a40a7006c0fc602a1d3b3e36577027b961cd848f91d4bf3a1  hanoip.preset
 a7d7f15455264025e1d9d411af7f733ea2d3bace44d3920e3d328b3596bf454494e2e11c83231836f317773b6d7c24517cd7335f305d619f649dcf75621692b0  hanoip-health
 f7a55fa78f777b6bd8f59faed0370ce2a4147db68e41f93136c13384ccee61b9121c3fb02edc2f4515f5ccd18fc5150bd51426ba629e3becd9efbab92fc7a192  hanoip-health.service
 e8b7ee04edbc67e19c2936a8971f05b217488e6f72f5498afc942d9e3db04a126670c9a989182e32bec9aac26936f5014472538ea4b2279f6b9e2472afd37a09  adguardhome.service
