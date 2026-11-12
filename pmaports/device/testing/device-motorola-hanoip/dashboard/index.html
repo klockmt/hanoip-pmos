@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Estado do servidor</title>
+<style>
+:root {
+	--ground: #f3f5f6;
+	--ink: #1a2226;
+	--muted: #56646d;
+	--rule: #d3dadf;
+	--ok: #1f6b3c;
+	--warn: #7a5200;
+	--bad: #9b2c22;
+	--focus: #1f4f7a;
+	color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) {
+		--ground: #141a1f;
+		--ink: #e2e8ec;
+		--muted: #98a6b0;
+		--rule: #2a343c;
+		--ok: #8fcf9f;
+		--warn: #e8c170;
+		--bad: #ef8f85;
+		--focus: #9cc4e8;
+	}
+}
+:root[data-theme="dark"] {
+	--ground: #141a1f;
+	--ink: #e2e8ec;
+	--muted: #98a6b0;
+	--rule: #2a343c;
+	--ok: #8fcf9f;
+	--warn: #e8c170;
+	--bad: #ef8f85;
+	--focus: #9cc4e8;
+}
+* { box-sizing: border-box; }
+body {
+	margin: 0;
+	padding: 16px;
+	background: var(--ground);
+	color: var(--ink);
+	font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+	font-variant-numeric: tabular-nums;
+	overflow-wrap: anywhere;
+}
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+header {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	align-items: flex-end;
+	gap: 0.5rem 1.5rem;
+	max-width: 60rem;
+	margin: 0 auto 1rem;
+}
+h1 { margin: 0; font-size: 1.25rem; font-weight: 650; }
+#fresh { margin: 0.2rem 0 0; color: var(--muted); font-size: 0.9rem; }
+body[data-stale] #fresh { color: var(--warn); }
+.slot { margin: 0; text-align: right; color: var(--muted); font-size: 0.9rem; }
+.slot-letter { display: block; font-size: 2.75rem; font-weight: 300; line-height: 1; color: var(--ink); }
+#msg { max-width: 60rem; margin: 0 auto 1rem; color: var(--bad); font-weight: 600; }
+#msg:empty { display: none; }
+main {
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: 0 2.5rem;
+	align-items: start;
+	max-width: 60rem;
+	margin: 0 auto;
+}
+section { padding: 0.75rem 0 1rem; border-top: 1px solid var(--rule); break-inside: avoid; }
+h2 { margin: 0 0 0.35rem; font-size: 0.95rem; font-weight: 650; }
+.row {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 1rem;
+	padding: 0.2rem 0;
+}
+dt { color: var(--muted); flex: 0 1 auto; min-width: 0; }
+dd { margin: 0; text-align: right; min-width: 0; }
+[data-tone="ok"] { color: var(--ok); }
+[data-tone="warn"] { color: var(--warn); }
+[data-tone="bad"] { color: var(--bad); }
+details { max-width: 60rem; margin: 1.25rem auto 0; border-top: 1px solid var(--rule); padding-top: 0.75rem; }
+summary { cursor: pointer; font-weight: 650; font-size: 0.95rem; }
+pre {
+	margin: 0.5rem 0 0;
+	font: 0.85rem/1.4 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+@media (min-width: 52rem) {
+	main { grid-template-columns: 1fr 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+	* { transition: none !important; animation: none !important; }
+}
+</style>
+</head>
+<body>
+<header>
+	<div>
+		<h1>Estado do servidor</h1>
+		<p id="fresh">Aguardando a primeira leitura.</p>
+	</div>
+	<p class="slot"><span class="slot-letter" data-f="boot.slot" data-fmt="slot">n/a</span>slot ativo</p>
+</header>
+<p id="msg" role="status"></p>
+
+<main>
+	<section aria-labelledby="h-sistema">
+		<h2 id="h-sistema">Sistema</h2>
+		<dl>
+			<div class="row"><dt>Tempo ligado</dt><dd data-f="system.uptime_s" data-fmt="uptime">n/a</dd></div>
+			<div class="row"><dt>Reinícios</dt><dd data-f="system.reboots" data-fmt="num">n/a</dd></div>
+			<div class="row"><dt>Processos mortos por falta de memória</dt><dd data-f="system.oom_kills" data-fmt="num">n/a</dd></div>
+			<div class="row"><dt>Memória RAM em uso</dt><dd data-f="system.ram" data-fmt="usage" data-total="total_gb">n/a</dd></div>
+			<div class="row"><dt>zram</dt><dd data-f="system.zram" data-fmt="usage" data-total="size_gb">n/a</dd></div>
+		</dl>
+	</section>
+
+	<section aria-labelledby="h-boot">
+		<h2 id="h-boot">Boot</h2>
+		<dl>
+			<div class="row"><dt>Slot ativo</dt><dd data-f="boot.slot" data-fmt="slot">n/a</dd></div>
+			<div class="row"><dt>Slot marcado como bom</dt><dd data-f="boot.slot_successful" data-fmt="bool">n/a</dd></div>
+		</dl>
+	</section>
+
+	<section aria-labelledby="h-armazenamento">
+		<h2 id="h-armazenamento">Armazenamento</h2>
+		<dl>
+			<div class="row"><dt>NAS montado</dt><dd data-f="storage.nas.mounted" data-fmt="bool">n/a</dd></div>
+			<div class="row"><dt>Uso do btrfs</dt><dd data-f="storage.nas" data-fmt="usage" data-total="total_gb">n/a</dd></div>
+			<div class="row"><dt>Último scrub</dt><dd data-f="storage.scrub.state" data-fmt="text">n/a</dd></div>
+			<div class="row"><dt>Scrub terminou em</dt><dd data-f="storage.scrub.finished_at" data-fmt="time">n/a</dd></div>
+			<div class="row"><dt>Erros no scrub</dt><dd data-f="storage.scrub.errors" data-fmt="errors">n/a</dd></div>
+		</dl>
+	</section>
+
+	<section aria-labelledby="h-rede">
+		<h2 id="h-rede">Rede</h2>
+		<dl>
+			<div class="row"><dt>Wi-Fi conectado</dt><dd data-f="network.wifi.up" data-fmt="bool">n/a</dd></div>
+			<div class="row"><dt>Rede Wi-Fi</dt><dd data-f="network.wifi.ssid" data-fmt="text">n/a</dd></div>
+			<div class="row"><dt>Tailscale no ar</dt><dd data-f="network.tailscale.up" data-fmt="bool">n/a</dd></div>
+			<div class="row"><dt>Samba no tailnet</dt><dd data-f="network.samba_tailnet.active" data-fmt="bool">n/a</dd></div>
+		</dl>
+	</section>
+
+	<section aria-labelledby="h-servicos">
+		<h2 id="h-servicos">Serviços</h2>
+		<dl>
+			<div class="row"><dt>sshd</dt><dd data-f="services.sshd" data-fmt="svc">n/a</dd></div>
+			<div class="row"><dt>Samba</dt><dd data-f="services.samba" data-fmt="svc">n/a</dd></div>
+			<div class="row"><dt>Bot do Telegram</dt><dd data-f="services.bot" data-fmt="svc">n/a</dd></div>
+			<div class="row"><dt>Contêineres em execução</dt><dd data-f="services.containers.running" data-fmt="num">n/a</dd></div>
+			<div class="row"><dt>Nomes dos contêineres</dt><dd data-f="services.containers.names" data-fmt="list">n/a</dd></div>
+		</dl>
+	</section>
+
+	<section aria-labelledby="h-watchdog">
+		<h2 id="h-watchdog">Watchdog</h2>
+		<dl>
+			<div class="row"><dt>Último feed</dt><dd data-f="watchdog.last_feed_s_ago" data-fmt="ago">n/a</dd></div>
+			<div class="row"><dt>Resets pelo watchdog</dt><dd data-f="watchdog.resets" data-fmt="num">n/a</dd></div>
+		</dl>
+	</section>
+
+	<section aria-labelledby="h-versao">
+		<h2 id="h-versao">Versão</h2>
+		<dl>
+			<div class="row"><dt>Kernel</dt><dd data-f="version.kernel" data-fmt="text">n/a</dd></div>
+			<div class="row"><dt>pkgrel</dt><dd data-f="version.pkgrel" data-fmt="text">n/a</dd></div>
+		</dl>
+	</section>
+</main>
+
+<details>
+	<summary>Texto bruto de /status</summary>
+	<pre data-f="status_text" data-fmt="text">n/a</pre>
+</details>
+
+<script>
+(function () {
+	'use strict';
+	var PERIOD_MS = 5000;
+	var TIMEOUT_MS = 4000;
+	var NA = 'n/a';
+	var nf = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
+	var timer = null;
+	var inFlight = false;
+	var lastGood = null;
+	var lastGoodAt = 0;
+	var failure = null;
+
+	function isNum(v) { return typeof v === 'number' && isFinite(v); }
+	function get(obj, path) {
+		var v = obj;
+		var keys = path.split('.');
+		for (var i = 0; i < keys.length; i++) {
+			if (v == null || typeof v !== 'object') return null;
+			v = v[keys[i]];
+		}
+		return v === undefined ? null : v;
+	}
+	// Each formatter gets the raw value and returns text. Only null means "n/a": 0 and false show as themselves.
+	var text = function (v) { return v == null || v === '' ? NA : String(v); };
+	var FMT = {
+		text: text,
+		num: function (v) { return isNum(v) ? nf.format(v) : text(v); },
+		bool: function (v) { return v === true ? 'sim' : v === false ? 'não' : NA; },
+		ago: function (v) { return isNum(v) ? 'há ' + nf.format(v) + ' s' : text(v); },
+		time: function (v) { return isNum(v) ? new Date(v * 1000).toLocaleString('pt-BR') : text(v); },
+		uptime: function (v) {
+			if (!isNum(v)) return text(v);
+			var s = Math.floor(v), d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+			return d ? d + ' d ' + h + ' h ' + m + ' min' : h ? h + ' h ' + m + ' min' : m + ' min';
+		},
+		slot: function (v) { return v === 'a' ? 'A' : v === 'b' ? 'B' : NA; },
+		svc: function (v) { return text(v); },
+		list: function (v) { return Array.isArray(v) ? (v.length ? v.join(', ') : 'nenhum') : NA; },
+		errors: function (v) { return isNum(v) ? nf.format(v) : text(v); },
+		usage: function (v, el) {
+			if (v == null || typeof v !== 'object') return NA;
+			var total = v[el.getAttribute('data-total')];
+			var amount = isNum(v.used_gb) && isNum(total) ? nf.format(v.used_gb) + ' de ' + nf.format(total) + ' GB' : null;
+			if (isNum(v.used_pct)) return nf.format(v.used_pct) + ' %' + (amount ? ' (' + amount + ')' : '');
+			return amount || NA;
+		}
+	};
+	// Colour is a second cue; the text always says the state.
+	function tone(fmt, v) {
+		if (fmt === 'svc') return v === 'started' ? 'ok' : v === 'crashed' ? 'bad' : '';
+		if (fmt === 'errors') return v === 0 ? 'ok' : isNum(v) ? 'bad' : '';
+		return '';
+	}
+
+	function render(d) {
+		var cells = document.querySelectorAll('[data-f]');
+		for (var i = 0; i < cells.length; i++) {
+			var el = cells[i];
+			var fmt = el.getAttribute('data-fmt') || 'text';
+			var v = get(d, el.getAttribute('data-f'));
+			el.textContent = FMT[fmt](v, el);
+			var t = tone(fmt, v);
+			if (t) el.setAttribute('data-tone', t); else el.removeAttribute('data-tone');
+		}
+	}
+
+	function paintAge() {
+		var fresh = document.getElementById('fresh');
+		if (!lastGood) {
+			fresh.textContent = failure ? 'Nenhum dado recebido ainda.' : 'Aguardando a primeira leitura.';
+			return;
+		}
+		var age = Math.max(0, Math.round((Date.now() - lastGoodAt) / 1000));
+		fresh.textContent = failure
+			? 'Desatualizado: último dado recebido há ' + nf.format(age) + ' s.'
+			: 'Atualizado há ' + nf.format(age) + ' s.';
+		if (failure) document.body.setAttribute('data-stale', ''); else document.body.removeAttribute('data-stale');
+	}
+
+	function reasonOf(e) {
+		if (e.name === 'AbortError') return 'tempo esgotado';
+		if (e.name === 'SyntaxError') return 'resposta sem JSON válido';
+		if (e.httpStatus) return 'HTTP ' + e.httpStatus;
+		return 'sem conexão com o servidor';
+	}
+
+	function poll() {
+		if (inFlight) return;
+		inFlight = true;
+		var wasFailing = failure !== null;
+		var ctl = new AbortController();
+		var timeout = setTimeout(function () { ctl.abort(); }, TIMEOUT_MS);
+		fetch('/api/status', { cache: 'no-store', signal: ctl.signal, headers: { Accept: 'application/json' } })
+			.then(function (r) {
+				if (!r.ok) { var e = new Error('http'); e.httpStatus = r.status; throw e; }
+				return r.json();
+			})
+			.then(function (d) {
+				lastGood = d;
+				lastGoodAt = Date.now();
+				failure = null;
+				render(d);
+				document.getElementById('msg').textContent = wasFailing ? 'Conexão restabelecida.' : '';
+			})
+			.catch(function (e) {
+				failure = reasonOf(e);
+				document.getElementById('msg').textContent = 'Não foi possível ler /api/status: ' + failure + '.'
+					+ (lastGood ? ' Os valores mostrados são os últimos recebidos.' : '');
+			})
+			.then(function () {
+				clearTimeout(timeout);
+				inFlight = false;
+				paintAge();
+			});
+	}
+
+	// Poll only while the page is visible: nothing runs in a background tab.
+	function start() { if (timer) return; poll(); timer = setInterval(poll, PERIOD_MS); }
+	function stop() { clearInterval(timer); timer = null; }
+	document.addEventListener('visibilitychange', function () {
+		if (document.hidden) stop(); else start();
+	});
+	if (!document.hidden) start();
+})();
+</script>
+</body>
+</html>
