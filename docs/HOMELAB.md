@@ -32,7 +32,14 @@ Until this page is rewritten, [`DURANIUM.md`](DURANIUM.md) (the sections dated 2
 `hanoip-dashboard` (device package, `hanoip-dashboard.service`, a dynamic user, no root and no sudo) serves one page
 and its data on the Tailscale address only, port 8080:
 
-- `http://<tailnet-address>:8080/` is the page; it asks `/api/status` every 5 s, and only while the tab is visible.
+- `http://<tailnet-address>:8080/` is the page; it asks `/api/status` only while the tab is visible. The page's own
+  period is `PERIOD_MS` in `dashboard/index.html` (5 s until the page is changed to 1 s).
+- The live figures (CPU and its clocks, GPU, RAM, battery, power, body and the temperatures, the network rates, uptime,
+  RAM, zram, OOM kills, watchdog) are read from the files on each request, at most 0.9 s old: a fresh answer every
+  second. CPU and network rates are deltas between two samples, so the first answer after start has them null.
+- Ping, services, the NAS disk and its scrub, Wi-Fi, Tailscale, the boot slot and the `/status` text come from
+  `hanoip-status` and the commands, at most every 10 s (`slow_at` in the JSON is when they were read). A request never
+  waits for them after the first one; it gets the last result, and a refresh runs in the background only while a page asks.
 - `/api/status` is the JSON: the `/status` text, system (uptime, reboots, OOM kills, RAM, zram), boot (slot from the
   ABL, and whether it is marked successful), storage (the NAS disk and its last scrub), network (Wi-Fi, Tailscale,
   Samba on the tailnet), services, watchdog and versions (kernel and the package's pkgrel).

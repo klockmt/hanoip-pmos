@@ -2,8 +2,13 @@
 # Read-only status of the phone for the dashboard. `hanoip-dashboard --data` prints the JSON document the page reads;
 # with no argument it serves it on the Tailscale address: the page at /, the document at /api/status, nothing else.
 # A value that cannot be read is null, never estimated. The request is only matched against those two paths; no
-# request data reaches a command. The document is built at most once per TTL, so two open tabs cost one run.
+# request data reaches a command. Two parts: the fast part is file reads in Python, sampled at most every FAST_TTL
+# (CPU and network rates are deltas between two samples); the slow part is hanoip-status and the commands, refreshed
+# at most every SLOW_TTL in a background thread that only a request starts, so a request never waits for it after the
+# first one. Where the fast part cannot read a figure, the status text's figure stands in (the rates never do).
 # Tests move the paths and commands with HANOIP_* variables (scripts/test-dashboard); the unit sets none of them.
+import fnmatch
+import glob
 import http.server
 import ipaddress
 import json
@@ -20,7 +25,10 @@ PROC = os.environ.get("HANOIP_PROC_DIR", "/proc")
 SYS = os.environ.get("HANOIP_SYS_DIR", "/sys")
 SHARE = os.environ.get("HANOIP_SHARE_DIR", "/usr/share/device-motorola-hanoip")
 PAGE = os.environ.get("HANOIP_DASHBOARD_PAGE", "/usr/share/hanoip-dashboard/index.html")
-TTL = float(os.environ.get("HANOIP_DASHBOARD_TTL", "4"))
+ML_STATE = os.environ.get("HANOIP_ML_STATE", "/run/hanoip-ml-charge.state")
+SLOW_TTL = float(os.environ.get("HANOIP_DASHBOARD_TTL", "10"))
+FAST_TTL = 0.9
+CLOCK = time.monotonic
 
 
 def read(path):
@@ -279,9 +287,7 @@ def grp(m, i):
 def metrics(status):
     """The figures of the status text for the charts, read from the same lines as hanoip-status prints them. Each
     field is null when its own figure does not parse; the rest of its line is kept."""
-    if status is None:
-        return None
-    lines = status.splitlines()
+    lines = (status or "").splitlines()
     cpu, gpu, ram = row(lines, "CPU - ", 3), row(lines, "GPU - ", 4), row(lines, "RAM - ", 3)
     rom, bat = row(lines, "ROM - ", 3), row(lines, "Battery - ", 4)
     srv, body = row(lines, "Server - ", 2), row(lines, "Body - ", 1)
@@ -315,7 +321,160 @@ def metrics(status):
     }
 
 
-def collect():
+# The fast part. Each figure is read from the file hanoip-status reads it from, with the same rules (the same
+# fallbacks for a supply that has no usb or present file, the same rounding); scripts/test-dashboard compares them.
+# A supply directory that is not there is not read at all, so the status text's figure stands in for it.
+NO_FALLBACK = {("cpu", "used_pct"), ("net", "rx_kbit"), ("net", "tx_kbit")}  # rates need two samples
+FAST = {}
+FAST_LOCK = threading.Lock()
+
+
+def val(path):
+    return num((text(path) or "").strip())
+
+
+def zone_temp(*patterns):
+    """The hottest thermal zone whose type matches a pattern, in °C with one decimal; None when there is none."""
+    temps = []
+    for z in glob.glob(f"{SYS}/class/thermal/thermal_zone*"):
+        if any(fnmatch.fnmatchcase((text(f"{z}/type") or "").strip(), p) for p in patterns):
+            v = val(f"{z}/temp")
+            if v is not None:
+                temps.append(v)
+    return float("%.1f" % (max(temps) / 1000)) if temps else None
+
+
+def cpu_counters():
+    """Total and idle jiffies of the cpu line of /proc/stat, summed as hanoip-status sums them (8 fields)."""
+    for line in (text(f"{PROC}/stat") or "").splitlines():
+        p = line.split()
+        if p[:1] == ["cpu"]:
+            v = [num(x) for x in p[1:9]]
+            return (sum(v), v[3] + v[4]) if len(v) == 8 and None not in v else None
+    return None
+
+
+def default_iface():
+    for line in (text(f"{PROC}/net/route") or "").splitlines()[1:]:
+        p = line.split()
+        if len(p) >= 2 and p[1] == "00000000" and re.fullmatch(r"[\w.-]+", p[0]):
+            return p[0]
+    return None
+
+
+def fast_sample(prev, mono):
+    """One sample of the fast figures, the deltas against the previous sample `prev` taken `mono` seconds before."""
+    cpu = cpu_counters()
+    iface = default_iface()
+    rx = tx = None
+    if iface:
+        rx = val(f"{SYS}/class/net/{iface}/statistics/rx_bytes")
+        tx = val(f"{SYS}/class/net/{iface}/statistics/tx_bytes")
+    dt = None if prev is None else mono - prev["mono"]
+    used = rx_kbit = tx_kbit = None
+    if dt and prev["cpu"] and cpu and cpu[0] > prev["cpu"][0]:
+        total = cpu[0] - prev["cpu"][0]
+        used = ((total - (cpu[1] - prev["cpu"][1])) * 100) // total
+    pn = prev["net"] if dt and prev else None
+    if pn and None not in (rx, tx, pn[1], pn[2]) and pn[0] == iface and rx >= pn[1] and tx >= pn[2]:
+        rx_kbit = int((rx - pn[1]) * 8 / 1000 / dt)
+        tx_kbit = int((tx - pn[2]) * 8 / 1000 / dt)
+
+    ps = f"{SYS}/class/power_supply"
+    bat = f"{ps}/battery" if os.path.isdir(f"{ps}/battery") else f"{ps}/qcom_qg"
+    usb = f"{ps}/usb" if os.path.isdir(f"{ps}/usb") else f"{ps}/hanoip-pm6150-monitor-charger"
+    batw = charging = bypass = suspended = present = None
+    cur = volt = None
+    if os.path.isdir(bat):
+        cur, volt = val(f"{bat}/current_now"), val(f"{bat}/voltage_now")
+        if cur is not None and volt is not None:
+            batw = float("%.2f" % (abs(cur) * volt / 1e12))
+        status = text(f"{bat}/status")
+        charging = None if status is None else status.strip() == "Charging"
+        suspended = val(f"{bat}/input_suspend") or 0
+        chg_on = val(f"{bat}/charging_enabled")
+        if chg_on is None:  # the charge limit's own state, as hanoip-status reads it
+            chg_on = 1 if (text(ML_STATE) or "off").strip() == "on" else 0
+    if os.path.isdir(usb):
+        present = val(f"{usb}/present")
+        if present is None:
+            present = val(f"{usb}/online") or 0
+    if present is not None and suspended is not None and os.path.isdir(bat):
+        bypass = present == 1 and suspended == 0 and chg_on == 0
+    watts = source = None
+    if present is not None and suspended is not None:
+        if present == 1 and suspended == 0:
+            ci = val(f"{usb}/input_current_now")
+            if ci is None:
+                ci = val(f"{usb}/current_now") or 0
+            watts, source = float("%.2f" % (ci * (val(f"{usb}/voltage_now") or 0) / 1e12)), "cable"
+        elif batw is not None:
+            watts, source = batw, "battery"
+
+    kgsl = f"{SYS}/class/kgsl/kgsl-3d0"
+    if os.path.isdir(kgsl):
+        busy = (text(f"{kgsl}/gpu_busy_percentage") or "").split()[:1]
+        gpu_used = int(busy[0]) if busy and busy[0].isdigit() else None
+        hz = val(f"{kgsl}/gpuclk")
+        rs = text(f"{kgsl}/device/power/runtime_status")
+        gpu_on = None if rs is None else rs.strip() == "active"
+    else:
+        gpu_used = None  # the mainline GPU has no busy figure
+        hz = val(f"{SYS}/class/devfreq/5000000.gpu/cur_freq")
+        gpu_on = None if hz is None else hz > 0
+    freqs = [v for v in (val(f) for f in glob.glob(f"{SYS}/devices/system/cpu/cpufreq/policy*/scaling_cur_freq"))
+             if v is not None]
+    volts = None if volt is None else float("%.2f" % (volt / 1e6))
+    temp = val(f"{bat}/temp") if os.path.isdir(bat) else None
+    metrics_fast = {
+        "cpu": {"used_pct": used, "mhz_min": min(freqs) // 1000 if freqs else None,
+                "mhz_max": max(freqs) // 1000 if freqs else None,
+                "temp_c": zone_temp("cpu-*-usr", "cpu[0-9]*-thermal")},
+        "gpu": {"used_pct": gpu_used, "mhz": None if hz is None else hz // 1000000,
+                "temp_c": zone_temp("gpuss-*-usr", "gpuss[0-9]*-thermal"), "on": gpu_on},
+        "ram_temp_c": zone_temp("ddr-usr", "ddr-thermal"),
+        "rom": {"temp_c": zone_temp("nvm-therm-adc")},
+        "battery": {"pct": val(f"{bat}/capacity") if os.path.isdir(bat) else None, "volts": volts,
+                    "cycles": val(f"{bat}/cycle_count") if os.path.isdir(bat) else None,
+                    "temp_c": None if temp is None else float("%.1f" % (temp / 10)), "watts": batw,
+                    "charging": charging, "bypass": bypass},
+        "power": {"watts": watts, "source": source},
+        "body_temp_c": zone_temp("quiet_therm", "pm6150-thermal"),
+        "net": {"iface": iface, "rx_kbit": rx_kbit, "tx_kbit": tx_kbit},
+    }
+    doc = {"at": int(time.time()), "metrics": metrics_fast,
+           "system": {"uptime_s": uptime_s(), "oom_kills": oom_kills(), "ram": ram(), "zram": zram()},
+           "watchdog": watchdog()}
+    return {"mono": mono, "cpu": cpu, "net": (iface, rx, tx), "doc": doc}
+
+
+def fast_part():
+    with FAST_LOCK:
+        now = CLOCK()
+        if not FAST or now - FAST["mono"] >= FAST_TTL:
+            FAST.update(fast_sample(FAST or None, now))
+        return FAST["doc"]
+
+
+def pick(fast_v, slow_v, field):
+    """The fast figure, or the status text's when the fast part cannot read it; the two rates never fall back."""
+    if fast_v is None and field not in NO_FALLBACK:
+        return slow_v
+    return fast_v
+
+
+def merged(slow, fast):
+    out = {}
+    for k, v in slow.items():
+        if isinstance(v, dict):
+            out[k] = {f: pick(fast.get(k, {}).get(f), sv, (k, f)) for f, sv in v.items()}
+        else:
+            out[k] = pick(fast.get(k), v, (k,))
+    return out
+
+
+# The slow part: hanoip-status and the commands. Each field is safe on its own, so this does not raise.
+def collect_slow():
     nas_doc = nas()
     mounted = bool(nas_doc and nas_doc["mounted"])
     status = status_text()
@@ -323,29 +482,75 @@ def collect():
         "at": int(time.time()),
         "status_text": status,
         "metrics": metrics(status),
-        "system": {"uptime_s": uptime_s(), "reboots": reboots(), "oom_kills": oom_kills(), "ram": ram(),
-                   "zram": zram()},
+        "reboots": reboots(),
         "boot": {"slot": boot_slot(), "slot_successful": slot_successful()},
         "storage": {"nas": nas_doc, "scrub": scrub() if mounted else None},
         "network": {"wifi": wifi(), "tailscale": {"up": tailscale_up()},
                     "samba_tailnet": {"active": samba_active()}},
         "services": {"sshd": unit_state("sshd"), "samba": unit_state("smb"), "bot": unit_state("hanoip-bot"),
                      "containers": containers()},
-        "watchdog": watchdog(),
         "version": version(),
     }
 
 
-CACHE_LOCK = threading.Lock()
-cache = {"at": None, "body": None}
+def build(slow, fast):
+    return {
+        "at": fast["at"],
+        "slow_at": slow["at"],
+        "status_text": slow["status_text"],
+        "metrics": merged(slow["metrics"], fast["metrics"]),
+        "system": {"uptime_s": fast["system"]["uptime_s"], "reboots": slow["reboots"],
+                   "oom_kills": fast["system"]["oom_kills"], "ram": fast["system"]["ram"],
+                   "zram": fast["system"]["zram"]},
+        "boot": slow["boot"],
+        "storage": slow["storage"],
+        "network": slow["network"],
+        "services": slow["services"],
+        "watchdog": fast["watchdog"],
+        "version": slow["version"],
+    }
+
+
+def collect():
+    """Both parts now, for --data: the first fast sample, so no CPU or network rate."""
+    return build(collect_slow(), fast_part())
+
+
+SLOW_LOCK = threading.Lock()
+SLOW = {"mono": None, "doc": None, "busy": None}  # busy: the Event of the refresh running now
+
+
+def refresh_slow(done):
+    try:
+        doc = collect_slow()
+        with SLOW_LOCK:
+            SLOW.update(mono=CLOCK(), doc=doc)
+    finally:
+        with SLOW_LOCK:
+            SLOW["busy"] = None
+        done.set()
+
+
+def slow_part():
+    """The last slow result. A request starts a refresh when the result is older than SLOW_TTL and none runs; it
+    waits only when there is no result yet, and otherwise answers at once with the previous one."""
+    with SLOW_LOCK:
+        if SLOW["doc"] is not None and CLOCK() - SLOW["mono"] < SLOW_TTL:
+            return SLOW["doc"]
+        if SLOW["busy"] is None:
+            SLOW["busy"] = threading.Event()
+            threading.Thread(target=refresh_slow, args=(SLOW["busy"],), daemon=True).start()
+        waiting, done = SLOW["doc"] is None, SLOW["busy"]
+    if waiting:
+        done.wait()
+    with SLOW_LOCK:
+        return SLOW["doc"]
 
 
 def document():
-    with CACHE_LOCK:
-        if cache["at"] is None or time.monotonic() - cache["at"] >= TTL:
-            cache["body"] = json.dumps(collect()).encode()
-            cache["at"] = time.monotonic()
-        return cache["body"]
+    slow = slow_part()
+    fast = fast_part()
+    return json.dumps(build(slow, fast)).encode()
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
