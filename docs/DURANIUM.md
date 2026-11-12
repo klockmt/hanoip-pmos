@@ -460,6 +460,11 @@ them and the `.efi` to `/var/tmp/hanoip-update/` on the phone, `/usr/lib/systemd
 `$HANOIP_BACKUP_DIR/2026-11-11-before-uboot/`), and the tests that need a broken boot on purpose (sshd down, watchdog,
 Wi-Fi loss). The 24-72 hour run is the owner's.
 
+**Owner's report, 2026-11-12:** one full day in service, with one reboot in the middle, started by the owner. Measured on
+the phone (UTC): the boot from 02:28 to 17:47 (about 15 h 19 min), the owner's `systemd-reboot` at 17:47:54, then the
+boot up since 17:48 (6 h 06 min at 23:55). About 21 h 27 min of service across the two boots. The 24 h without a restart
+is therefore **not measured yet**; it is open until one boot reaches 24 h.
+
 ## Update 26111201: the redesigned dashboard on the phone (2026-11-12)
 
 - **Build.** `scripts/pmb build --force device-motorola-hanoip` gave `pkgrel 54`; `scripts/duranium-image
