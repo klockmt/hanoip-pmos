@@ -33,7 +33,7 @@ Until this page is rewritten, [`DURANIUM.md`](DURANIUM.md) (the sections dated 2
 and its data on the Tailscale address only, port 8080:
 
 - `http://<tailnet-address>:8080/` is the page; it asks `/api/status` only while the tab is visible. The page's own
-  period is `PERIOD_MS` in `dashboard/index.html` (5 s until the page is changed to 1 s).
+  period is `PERIOD_MS` in `dashboard/index.html` (1 s).
 - The live figures (CPU and its clocks, GPU, RAM, battery, power, body and the temperatures, the network rates, uptime,
   RAM, zram, OOM kills, watchdog) are read from the files on each request, at most 0.9 s old: a fresh answer every
   second. CPU and network rates are deltas between two samples, so the first answer after start has them null.
