@@ -383,3 +383,17 @@ rollback of a bad image; then the stability list of step 6 (ten reboots, panic, 
 - **Not done:** the NAS disk (it never appeared on the bus, in either role); slot b and `boot_a` (the cable); a boot
   with sshd down (the health script's reboot after ten minutes is only covered by `scripts/test-duranium-boot`); a
   watchdog test on Duranium; Wi-Fi loss; a 24 to 72 h run.
+
+### The NAS disk, once it was switched on (2026-11-12, 00:00 UTC)
+
+- The disk (`152d:0583`, 465.8 GB, btrfs `hd-a` and `hd-b`) appears on the hub and both units mount it by hand
+  (`systemctl start`), read-write with `compress=zstd`; `smb` and `syncthing` start. A disk that arrives after the boot is
+  **not** mounted by itself: the mounts are only tried at boot.
+- `/mnt/hd-a/obsidian` belonged to the 4.14's number for syncthing, which is `adguardhome` here: the owner step of
+  `scripts/restore-server` had run while the disk was away. Done by hand with the same command; Syncthing then scanned
+  the folder ("Ready to synchronize"). No file on the disk is left without a user or group.
+- Samba: port 445 answers over the tailnet and not on the LAN (Wi-Fi and Ethernet addresses), and an anonymous
+  `smbclient -L` is refused. A login with the share's password from a client was not tried.
+- After the forced host role (the entry above) the whole hub is at 12 Mbit/s and a raw read of the disk did not finish
+  256 MB in 90 s. The services were stopped and the disk unmounted again, so the hub can be unplugged and plugged back
+  in, which is what gave 480 Mbit/s earlier that evening.
