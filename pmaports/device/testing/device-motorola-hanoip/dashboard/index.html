@@ -72,6 +72,12 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 @media (min-width: 640px) { .t { grid-column: span var(--mw, 4); } }
 @media (min-width: 960px) { .t { grid-column: span var(--dw, 6); } }
 @media (max-width: 479px) { .t { grid-column: 1 / -1; } }
+/* desktop: every row adds up to 12 columns; a tile stretched by a taller neighbour gives the room to its chart */
+@media (min-width: 960px) {
+	.hero .checks { align-self: stretch; display: grid; grid-template-columns: 1fr 1fr; column-gap: 24px; }
+	.t > .chart { flex: 1; }
+	.t > .chart > .spark { flex: 1; height: auto; min-height: 5.5rem; }
+}
 .checks { width: 100%; }
 .checks > div > dt { font-size: 0.8125rem; }
 .t {
@@ -286,7 +292,7 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 		</dl>
 	</section>
 
-	<section class="t" style="--i:4;--pw:2;--mw:2;--dw:4" aria-labelledby="h-temp">
+	<section class="t" style="--i:4;--pw:2;--mw:2;--dw:6" aria-labelledby="h-temp">
 		<h2 id="h-temp">Temperaturas</h2>
 		<div class="trow"><span class="lbl">Processador</span><b data-k="t.cpu">n/a</b><figure class="chart mini" data-chart="t_cpu" role="img" aria-label="Processador"><svg class="spark" viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="area"/><path class="line"/></svg></figure></div>
 		<div class="trow"><span class="lbl">GPU</span><b data-k="t.gpu">n/a</b><figure class="chart mini" data-chart="t_gpu" role="img" aria-label="GPU"><svg class="spark" viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="area"/><path class="line"/></svg></figure></div>
@@ -296,7 +302,7 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 		<div class="trow"><span class="lbl">Corpo</span><b data-k="t.body">n/a</b><figure class="chart mini" data-chart="t_body" role="img" aria-label="Corpo"><svg class="spark" viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="area"/><path class="line"/></svg></figure></div>
 	</section>
 
-	<section class="t" style="--i:5;--pw:1;--mw:2;--dw:3" aria-labelledby="h-memoria">
+	<section class="t" style="--i:5;--pw:1;--mw:2;--dw:4" aria-labelledby="h-memoria">
 		<h2 id="h-memoria">Memória</h2>
 		<div class="ringbox">
 			<svg class="ring" viewBox="0 0 120 120" aria-hidden="true" focusable="false"><circle class="track" cx="60" cy="60" r="50"/><circle class="fill" data-ring="ram" cx="60" cy="60" r="50" pathLength="100" transform="rotate(-90 60 60)"/></svg>
@@ -311,7 +317,7 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 		</div>
 	</section>
 
-	<section class="t" style="--i:6;--pw:1;--mw:2;--dw:5" aria-labelledby="h-ping">
+	<section class="t" style="--i:6;--pw:1;--mw:2;--dw:8" aria-labelledby="h-ping">
 		<h2 id="h-ping">Ping</h2>
 		<p class="v-m" data-k="ping.ms">n/a</p>
 		<p class="sm" data-k="ping.host">n/a</p>
@@ -352,7 +358,7 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 		</dl>
 	</section>
 
-	<section class="t" style="--i:9;--pw:1;--mw:2;--dw:4" aria-labelledby="h-watchdog">
+	<section class="t" style="--i:9;--pw:1;--mw:2;--dw:6" aria-labelledby="h-watchdog">
 		<h2 id="h-watchdog">Watchdog</h2>
 		<p class="v-m" data-k="wd.age">n/a</p>
 		<p class="cap">Aviso após 60 s sem feed</p>
@@ -396,7 +402,7 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 		</dl>
 	</section>
 
-	<section class="t" style="--i:12;--pw:1;--mw:2;--dw:4" aria-labelledby="h-sistema">
+	<section class="t" style="--i:12;--pw:1;--mw:2;--dw:3" aria-labelledby="h-sistema">
 		<h2 id="h-sistema">Sistema</h2>
 		<dl class="kv">
 			<div><dt>Tempo ligado</dt><dd data-k="sys.up2">n/a</dd></div>
@@ -406,7 +412,7 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 		</dl>
 	</section>
 
-	<section class="t" style="--i:13;--pw:1;--mw:2;--dw:4" aria-labelledby="h-versao">
+	<section class="t" style="--i:13;--pw:1;--mw:2;--dw:3" aria-labelledby="h-versao">
 		<h2 id="h-versao">Versão</h2>
 		<dl class="kv">
 			<div><dt>Kernel</dt><dd data-k="ver.kernel">n/a</dd></div>
