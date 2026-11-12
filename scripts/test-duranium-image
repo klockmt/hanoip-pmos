@@ -1,0 +1,54 @@
+#!/bin/sh
+# scripts/duranium-image without a phone or a build: the extra tree it makes must not give root an authorized_keys.
+# The image's tmpfiles line copied /usr/share/hanoip/authorized_keys to /root/.ssh at every boot (docs/DURANIUM.md,
+# item 5). The login user's lines must stay as they were. The build is a stand-in that only prints its arguments.
+set -eu
+cd "$(dirname "$0")/.."
+fail() { echo "FAIL: $*" >&2; exit 1; }
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+# A fake repo root: its own .env, so the test never reads the real one; pmaports is the real tree.
+root=$tmp/root
+mkdir -p "$root/scripts" "$tmp/dur/scripts" "$tmp/pmb/packages/edge/aarch64" "$tmp/coll/firmware/vendor/firmware_mnt/image"
+cp scripts/env.sh scripts/duranium-image "$root/scripts/"
+ln -s "$PWD/pmaports" "$root/pmaports"
+printf '#!/bin/sh\necho "build-image $*"\n' > "$tmp/dur/scripts/build-image.py"
+chmod +x "$tmp/dur/scripts/build-image.py"
+echo 'ssh-ed25519 AAAATESTPUBLICKEY test@test' > "$tmp/key.pub"
+for n in adsp.mbn modem.mbn ipa_fws.mbn wlanmdsp.mbn pd.jsn bdwlan_hanoip_ipa.bin; do
+	: > "$tmp/coll/firmware/vendor/firmware_mnt/image/$n"
+done
+# The apks the script copies: their names come from the APKBUILDs, as the script reads them.
+rel=$(sed -n 's/^pkgrel=//p' pmaports/device/testing/device-motorola-hanoip/APKBUILD)
+kver=$(sed -n 's/^pkgver=//p' pmaports/device/testing/linux-motorola-hanoip-mainline/APKBUILD)
+krel=$(sed -n 's/^pkgrel=//p' pmaports/device/testing/linux-motorola-hanoip-mainline/APKBUILD)
+for a in "device-motorola-hanoip-0-r$rel" "device-motorola-hanoip-kernel-mainline-0-r$rel" \
+	"device-motorola-hanoip-mainline-0-r$rel" "device-motorola-hanoip-modem-0-r$rel" \
+	"linux-motorola-hanoip-mainline-$kver-r$krel"; do
+	: > "$tmp/pmb/packages/edge/aarch64/$a.apk"
+done
+cat > "$root/.env" <<EOF
+HANOIP_USER=tester
+HANOIP_SSH_KEY=$tmp/key
+HANOIP_COLLECTION_DIR=$tmp/coll
+PMB_WORK=$tmp/pmb
+HANOIP_DURANIUM_DIR=$tmp/dur
+EOF
+
+out=$(sh "$root/scripts/duranium-image" 2>&1) || fail "duranium-image failed: $out"
+tf=$tmp/dur/hanoip-extra/usr/lib/tmpfiles.d/20-hanoip-ssh.conf
+[ -f "$tf" ] || fail "no tmpfiles file was made"
+
+# Root gets nothing: no line may name /root/.ssh, so no boot copies a key there.
+grep -q '/root/\.ssh' "$tf" && fail "the tmpfiles file still gives root an authorized_keys (/root/.ssh)"
+
+# The login user keeps its directory and its key file, byte for byte.
+h=/home u=tester
+for l in \
+	"d $h/$u/.ssh 0700 $u $u -" \
+	"C $h/$u/.ssh/authorized_keys 0600 $u $u - /usr/share/hanoip/authorized_keys"; do
+	grep -qxF "$l" "$tf" || fail "the login user line is missing or changed: $l"
+done
+[ -f "$tmp/dur/hanoip-extra/usr/share/hanoip/authorized_keys" ] || fail "the shared authorized_keys file is missing"
+echo "ok    test-duranium-image"
