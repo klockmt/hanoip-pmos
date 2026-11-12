@@ -83,6 +83,12 @@ Every bug gets an automated test that fails before the fix and passes after (`sc
 | Samba or Syncthing writes into an empty mount point and fills the phone's own flash while the HD is away | `nofail` lets the boot go on without the disk, and the services then see a plain directory on the root filesystem | `chattr +i /mnt/hd-a /mnt/hd-b` while they are unmounted (a write then fails with `Operation not permitted`); Syncthing also refuses a folder without its `.stfolder` marker | docs only |
 | A SMART self-test ends as `Aborted by host` | The drive was powered off or dropped during the test | Start it again and leave the disk alone until it ends (about 77 minutes for the extended test) | docs only |
 
+## Status dashboard
+
+| Symptom | Cause | Rule | Where enforced |
+|---|---|---|---|
+| The page's numbers changed only every ~6 s although it polled every 5 s | One collection ran `hanoip-status` (5.4 s: three pings to the gateway, three to 1.1.1.1, 1 s of sampling) and the server cached the whole document for 4 s | The live figures are read in Python per request (at most 0.9 s old, deltas between cached samples). `hanoip-status` runs at most every 10 s and no request after the first one waits for it; the last result is served while a refresh runs | `scripts/test-dashboard` (section 6: the figures equal `hanoip-status`, the cache, the TTLs, a request during a refresh) |
+
 ## Packaging
 
 | Symptom | Cause | Rule | Where enforced |
