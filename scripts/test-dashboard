@@ -207,4 +207,11 @@ fi
 grep -q 'not serving' "$dir/noaddr.log" || fail "no message without a Tailscale address"
 echo "address: ok"
 
+# The package writes its pkgrel into /usr/share/device-motorola-hanoip; abuild stops when the directory is missing
+# (the build of r53 failed on it). The directory must be created on the line before the write.
+apk=pmaports/device/testing/device-motorola-hanoip/APKBUILD
+prev=$(grep -B1 'device-motorola-hanoip/pkgrel"' "$apk" | head -1)
+case $prev in *'install -d "$pkgdir/usr/share/device-motorola-hanoip"'*) ;; *) fail "APKBUILD writes pkgrel without creating its directory" ;; esac
+echo "pkgrel dir: ok"
+
 echo "dashboard: all checks pass"

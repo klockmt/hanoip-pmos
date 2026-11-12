@@ -174,6 +174,7 @@ package() {
 	install -Dm644 "$startdir/dashboard/index.html" "$pkgdir/usr/share/hanoip-dashboard/index.html"
 	install -Dm644 "$srcdir/hanoip-dashboard.service" "$pkgdir/etc/systemd/system/hanoip-dashboard.service"
 	# The dashboard reads its package revision from here: nothing else on the image records it.
+	install -d "$pkgdir/usr/share/device-motorola-hanoip"
 	printf '%s\n' "$pkgrel" > "$pkgdir/usr/share/device-motorola-hanoip/pkgrel"
 	install -Dm644 "$srcdir/org.freedesktop.login1.service" "$pkgdir/usr/share/device-motorola-hanoip/org.freedesktop.login1.service"
 
