@@ -54,7 +54,8 @@ else
 	cp "$pub" "$x/usr/share/hanoip/authorized_keys"
 	chmod 644 "$x/usr/share/hanoip/authorized_keys"
 	{
-		printf 'd /root 0700 root root -\nd /root/.ssh 0700 root root -\nC /root/.ssh/authorized_keys 0600 root root - /usr/share/hanoip/authorized_keys\n'
+		# No line for root: a tmpfiles C here copied the key to /root/.ssh at every boot (docs/PITFALLS.md).
+		printf 'd /root 0700 root root -\n'
 		printf 'd /home/%s 0700 %s %s -\nd /home/%s/.ssh 0700 %s %s -\n' "$HANOIP_USER" "$HANOIP_USER" "$HANOIP_USER" "$HANOIP_USER" "$HANOIP_USER" "$HANOIP_USER"
 		printf 'C /home/%s/.ssh/authorized_keys 0600 %s %s - /usr/share/hanoip/authorized_keys\n' "$HANOIP_USER" "$HANOIP_USER" "$HANOIP_USER"
 	} > "$x/usr/lib/tmpfiles.d/20-hanoip-ssh.conf"
