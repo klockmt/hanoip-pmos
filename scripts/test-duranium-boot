@@ -20,6 +20,7 @@ echo "ip \$*" >> "$calls"
 case "\$*" in
 "-4 -o addr show dev usb0") [ -z "\${FAKE_USB:-}" ] || echo "5: usb0    inet 172.16.42.1/24 scope global usb0" ;;
 "-4 -o addr show dev wlan0") [ -z "\${FAKE_WLAN:-}" ] || echo "3: wlan0    inet 192.168.0.9/24 scope global wlan0" ;;
+"-4 -o addr show dev eth0") [ -z "\${FAKE_ETH:-}" ] || echo "4: eth0    inet 192.168.1.20/24 scope global eth0" ;;
 esac
 exit 0
 EOF2
@@ -55,6 +56,9 @@ FAKE_SSHD=1 FAKE_USB=1 health 20
 grep -qx 'qbootctl -m' "$calls" && [ -e "$tmp/up" ] && ! grep -q '^reboot' "$calls" || fail "a reachable phone (sshd, usb0) was not marked good"
 FAKE_SSHD=1 FAKE_WLAN=1 health 20
 grep -qx 'qbootctl -m' "$calls" || fail "a phone reachable over Wi-Fi was not marked good"
+# Ethernet through the USB hub is the only way in when Wi-Fi is down (docs/DURANIUM.md): an address on eth0 counts too.
+FAKE_SSHD=1 FAKE_ETH=1 health 20
+grep -qx 'qbootctl -m' "$calls" && [ -e "$tmp/up" ] || fail "a phone reachable over Ethernet only (eth0) was not marked good"
 # The image's command line always says androidboot.slot_suffix=_a, which is what qbootctl takes as the current slot: a boot
 # from slot b would mark slot a, and the ABL would give up on b. The slot comes from the ABL's own arguments instead.
 printf '#!/bin/sh\necho "${FAKE_SLOT:-}"\n' > "$bin/hanoip-ml-abl-slot"; chmod +x "$bin/hanoip-ml-abl-slot"
@@ -64,7 +68,7 @@ FAKE_SLOT=_a FAKE_SSHD=1 FAKE_USB=1 health 20
 grep -qx 'qbootctl -m a' "$calls" || fail "a boot from slot a did not mark slot a good"
 FAKE_SSHD= FAKE_USB=1 health 20
 ! grep -q '^qbootctl' "$calls" && grep -qx 'reboot -f' "$calls" || fail "a phone with no sshd was marked good, or never rebooted"
-FAKE_SSHD=1 FAKE_USB= FAKE_WLAN= health 20
+FAKE_SSHD=1 FAKE_USB= FAKE_WLAN= FAKE_ETH= health 20
 ! grep -q '^qbootctl' "$calls" && grep -qx 'reboot -f' "$calls" && [ ! -e "$tmp/up" ] || fail "a phone with no address was marked good, or never rebooted"
 FAKE_SSHD=1 FAKE_USB= health 700
 grep -qx 'reboot -f' "$calls" || fail "past the deadline at the first look, it did not reboot"
