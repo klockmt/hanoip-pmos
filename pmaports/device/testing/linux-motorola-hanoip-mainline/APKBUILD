@@ -37,7 +37,7 @@ makedepends="
 "
 
 _base_tree=30fd2ef82912c26cf3a58ad0ba6afc375fa851ac # git tree of tag v7.3
-_tree=0cf5808c14ddfce6e191b2fa6aeefbbf6cb38709      # v7.3 + the patches: the tree that booted on the phone
+_tree=398868f4629ed0d0e211f575957adaf24450eded      # v7.3 + the patches (0127 with dr_mode otg): not booted yet, the tree that booted was 0cf5808c
 source="
 	https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-$pkgver.tar.xz
 	0001-FROMLIST-dt-bindings-cpufreq-qcom-hw-Add-the-SM7150-.patch
