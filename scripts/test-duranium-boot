@@ -201,4 +201,20 @@ grep -qx 'enable tailscaled.service' "$d/hanoip.preset" || fail "tailscaled.serv
 # pd-mapper starts before hanoip-modem, which loads the remoteproc modules it needs: it fails at first and must be allowed to retry
 # (2026-11-10: five tries in five seconds, then the system stayed degraded for good).
 grep -qx 'StartLimitIntervalSec=0' "$d/hanoip-pd-mapper.service" || fail "hanoip-pd-mapper.service gives up after five quick failures"
+# --- /etc/local.d on Duranium: nothing runs that directory (no rc-local unit on systemd), so a unit runs the scripts that
+# still apply. Not 20-hanoip-qbootctl: on Duranium /proc/cmdline says _a on every slot, so qbootctl -m would mark the wrong slot
+# (hanoip-health marks the one the ABL started). Every script it runs must be installed by package().
+lu=$d/hanoip-local.service
+[ -f "$lu" ] || fail "hanoip-local.service is missing: /etc/local.d is not run on Duranium"
+grep -qx '	hanoip-local.service' "$apk" || fail "hanoip-local.service is not in source="
+grep -qF '"$srcdir/hanoip-local.service" "$pkgdir/etc/systemd/system/hanoip-local.service"' "$apk" || fail "package() does not install hanoip-local.service"
+sed -n '/^mainline()/,/^}/p' "$apk" | grep -qF 'etc/systemd/system/hanoip-local.service' || fail "mainline() does not move hanoip-local.service"
+grep -qxF 'enable hanoip-local.service' "$d/hanoip.preset" || fail "hanoip-local.service is not enabled by hanoip.preset"
+grep -qx 'WantedBy=multi-user.target' "$lu" && grep -qx 'Type=oneshot' "$lu" && grep -qx 'RemainAfterExit=yes' "$lu" || fail "hanoip-local.service is not a oneshot that stays active"
+grep -qx 'After=tailscaled.service' "$lu" || fail "hanoip-local.service does not wait for tailscaled (the DNS switch needs it)"
+for s in 10-hanoip-console 30-hanoip-cpufreq 40-hanoip-tailscale-dns; do
+	grep -qx "ExecStart=-/etc/local.d/$s.start" "$lu" || fail "hanoip-local.service does not run $s.start"
+	grep -qF "\"\$pkgdir/etc/local.d/$s.start\"" "$apk" || fail "$s.start is not installed by package()"
+done
+! grep -v '^#' "$lu" | grep -q 'qbootctl' || fail "hanoip-local.service runs qbootctl, which marks the wrong slot on Duranium"
 echo "ok    test-duranium-boot"

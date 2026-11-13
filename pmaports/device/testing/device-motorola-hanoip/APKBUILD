@@ -104,6 +104,7 @@ source="
 	hanoip.preset
 	hanoip-health
 	hanoip-health.service
+	hanoip-local.service
 	adguardhome.service
 	smb.service
 	syncthing.service
@@ -215,6 +216,7 @@ package() {
 	install -Dm644 "$srcdir/hanoip-usb-gadget.service" "$pkgdir/etc/systemd/system/hanoip-usb-gadget.service"
 	install -Dm755 "$srcdir/hanoip-health" "$pkgdir/usr/bin/hanoip-health"
 	install -Dm644 "$srcdir/hanoip-health.service" "$pkgdir/etc/systemd/system/hanoip-health.service"
+	install -Dm644 "$srcdir/hanoip-local.service" "$pkgdir/etc/systemd/system/hanoip-local.service"
 	install -Dm644 "$srcdir/hanoip.preset" "$pkgdir/usr/lib/systemd/system-preset/10-hanoip.preset"
 	ln -s /dev/null "$pkgdir/etc/systemd/system/qbootctl.service"
 	# Bluetooth is unused; its MAC unit, started by udev, timed out now and then and left the system degraded. An empty
@@ -325,6 +327,7 @@ mainline() {
 		etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony \
 		usr/bin/hanoip-usb-gadget etc/systemd/system/hanoip-usb-gadget.service \
 		usr/bin/hanoip-health etc/systemd/system/hanoip-health.service \
+		etc/systemd/system/hanoip-local.service \
 		usr/lib/systemd/system-preset etc/systemd/system/qbootctl.service etc/udev/rules.d/90-bootmac-bluetooth.rules \
 		etc/systemd/system/adguardhome.service etc/systemd/system/smb.service etc/systemd/system/syncthing.service etc/systemd/system/mnt-hd\\x2da.mount etc/systemd/system/mnt-hd\\x2db.mount usr/lib/sysusers.d/20-hanoip-services.conf \
 		etc/systemd/system/hanoip-thermal.service etc/systemd/system/hanoip-led.service \
@@ -403,9 +406,10 @@ ca85d44d47dfbf71723236f0ddc0d655da6d513584db3ab4b35ccfe98530ee796689bc88c2d59956
 1ef6c1b720e3a034141cb0aa1bb9c9af79163125cdae51b88cf3f1a2f8ea885ee7c30d24bfeab1bd1b35b3dd483a6b386dee5d0e30544b1ef8f2cb2cc221dd6a  kernel-cmdline.mainline.conf
 6f5bb8bbb6b0c88fc3ded4702375050d46f9226c7e453af42475ffaeb443e63264e69e324e4ecf449c192ad9488a61b141999a7f592f915f541b9406aba993f9  hanoip-usb-gadget
 1bc1bbcc21170ace4e1f6610b39ca5f9545acf52cf18325d4724e79af44cb4626f18cf082f00d627d4ba41467c2e59de79e1f8b378fd9f8c5e75d3bdaaff7d30  hanoip-usb-gadget.service
-0e92cb2d320433beb390865698e38a8ebe6e5db87958a982accc929b1ad7b5ad5ab10146f1c7fa9a40a7006c0fc602a1d3b3e36577027b961cd848f91d4bf3a1  hanoip.preset
+fbdb8b5f518da8aa494612205bb7344ded67606619fa0bbcd4bf745fa9c513141fef5ef338bfa38a5aac25276da0208744dcc1d3ec2ca08944e28fe9357cf2ee  hanoip.preset
 a7d7f15455264025e1d9d411af7f733ea2d3bace44d3920e3d328b3596bf454494e2e11c83231836f317773b6d7c24517cd7335f305d619f649dcf75621692b0  hanoip-health
 f7a55fa78f777b6bd8f59faed0370ce2a4147db68e41f93136c13384ccee61b9121c3fb02edc2f4515f5ccd18fc5150bd51426ba629e3becd9efbab92fc7a192  hanoip-health.service
+9a4ca1d97abaec198ef830542b92f5c17ab675223aae363b42e922bc7dd3a0db64939e419dbf2cdbf8f2784273b7da74585665c828c2ea6b38b3869bc5889c92  hanoip-local.service
 e8b7ee04edbc67e19c2936a8971f05b217488e6f72f5498afc942d9e3db04a126670c9a989182e32bec9aac26936f5014472538ea4b2279f6b9e2472afd37a09  adguardhome.service
 46369919006d0b53419468cf48035eefa53411c63d1e418a80217c5dd81150d746710b4773a93c502540aaefc162d96e369cd341348def86f51cdcad2eb13abb  smb.service
 e30f6431ad38b980b3a78b5f2e3b1a353a2221c181da8a37fe5027643c1a5c736acc153faf269b3ad07a9c9eeabfa29e87513851896f953f1bde826646281028  syncthing.service
