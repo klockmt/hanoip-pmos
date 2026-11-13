@@ -47,6 +47,40 @@ if HANOIP_WAIT=0 HANOIP_CONFIGFS=$tmp/cfg2 HANOIP_UDC_DIR=$tmp/udc HANOIP_NETDIR
 	fail "the gadget script succeeded without a UDC"
 fi
 
+# --- the USB role at boot: a hub on the cable gets the host role when no PC enumerates the gadget (docs/DURANIUM.md, #28) ---
+role=$tmp/role typec=$tmp/typec udcs=$tmp/udcs cfgr=$tmp/cfgr
+echo 0 > "$tmp/uptime"
+mkdir -p "$udcs/a600000.usb" "$typec" "$cfgr"
+usbrole() { # usbrole yes|no UDC_STATE: the role is device, the Type-C partner is there or not, the gadget is in that state
+	echo device > "$role"; rm -rf "$typec/port0-partner"
+	[ "$1" = yes ] && mkdir -p "$typec/port0-partner"
+	echo "$2" > "$udcs/a600000.usb/state"
+	return 0
+}
+roleenv() { HANOIP_ROLE=$role HANOIP_TYPEC_DIR=$typec HANOIP_UDC_DIR=$udcs HANOIP_CONFIGFS=$cfgr HANOIP_WAIT=2 HANOIP_ONCE=1 "$@"; }
+usbrole yes "not attached"
+roleenv sh "$d/hanoip-usb-role" boot || fail "the USB role script failed at boot"
+[ "$(cat "$role")" = host ] || fail "a hub on the cable with no PC enumerating the gadget did not get the host role at boot (no Ethernet, no disk)"
+usbrole yes configured
+roleenv sh "$d/hanoip-usb-role" boot || fail "the USB role script failed at boot"
+[ "$(cat "$role")" = device ] || fail "a PC on the cable (gadget configured) was taken to the host role: usb0 would be lost"
+usbrole no "not attached"
+roleenv sh "$d/hanoip-usb-role" boot || fail "the USB role script failed at boot"
+[ "$(cat "$role")" = device ] || fail "nothing on the cable, but the role was changed"
+# Once the hub is unplugged the port goes back to the device role and the gadget comes back, so a PC plugged in later works.
+echo host > "$role"; rm -rf "$typec/port0-partner"; : > "$calls"
+roleenv sh "$d/hanoip-usb-role" watch || fail "the USB role script failed while watching"
+[ "$(cat "$role")" = device ] && grep -qx 'systemctl restart hanoip-usb-gadget' "$calls" || fail "the hub was unplugged but the port stayed in the host role (a PC cannot get in until reboot)"
+echo host > "$role"; mkdir -p "$typec/port0-partner"
+roleenv sh "$d/hanoip-usb-role" watch || fail "the USB role script failed while watching"
+[ "$(cat "$role")" = host ] || fail "the watch gave the device role back while the hub was still on the cable"
+# While the port has the host role the gadget has no UDC: it must step aside, not wait for one and fail the boot.
+echo host > "$role"
+HANOIP_ROLE=$role HANOIP_WAIT=0 HANOIP_CONFIGFS=$tmp/cfg3 HANOIP_UDC_DIR=$tmp/udc HANOIP_NETDIR=$tmp/net sh "$d/hanoip-usb-gadget" || fail "the gadget failed while the port has the host role (it must step aside)"
+[ ! -e "$tmp/cfg3/usb_gadget/hanoip" ] || fail "the gadget configured itself while the port has the host role"
+echo device > "$role"
+rm -rf "$typec/port0-partner"
+
 # --- the health script ---
 health() { # health UPTIME  (env FAKE_SSHD FAKE_USB FAKE_WLAN set by the caller)
 	echo "$1" > "$tmp/uptime"; : > "$calls"; rm -f "$tmp/up"
@@ -89,6 +123,14 @@ echo "$pk" | grep -q 'usr/lib/systemd/system-preset/10-hanoip.preset' || fail "p
 grep -qx '	hanoip.preset' "$apk" || fail "hanoip.preset is not in source="
 for u in hanoip-usb-gadget.service hanoip-health.service hanoip-charge.service hanoip-modem.service; do
 	grep -qx "enable $u" "$d/hanoip.preset" || fail "$u is not enabled by hanoip.preset"
+done
+for u in hanoip-usb-role.service hanoip-usb-role-watch.service; do
+	grep -qx "enable $u" "$d/hanoip.preset" || fail "$u is not enabled by hanoip.preset"
+	grep -qx "	$u" "$apk" || fail "$u is not in source="
+done
+for f in hanoip-usb-role hanoip-usb-role.service hanoip-usb-role-watch.service; do
+	echo "$pk" | grep -qF "\"\$srcdir/$f\"" || fail "package() does not install $f"
+	sed -n '/^mainline()/,/^}/p' "$apk" | grep -qF "$f" || fail "mainline() does not move $f"
 done
 ! echo "$pk" | grep -q 'ln -s .*wants/' || fail "package() still enables units with links in /etc, which preset-all removes"
 echo "$pk" | grep -q 'qbootctl.service' || fail "qbootctl.service (marks the slot good at multi-user.target, before anything is checked) is not masked"

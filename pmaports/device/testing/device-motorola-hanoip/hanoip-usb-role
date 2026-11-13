@@ -1,0 +1,41 @@
+#!/bin/sh
+# Duranium on the hanoip: the role of the USB-C port when something is on the cable. A hub is a source that enumerates
+# nothing on the gadget; when the partner was there at boot the port came up in the device role, and the hub got no
+# Ethernet and no disk (docs/DURANIUM.md "USB role at boot", #28). `boot` gives the host role when a partner is present and
+# no PC has the gadget configured within the wait; `watch` gives the device role back once the partner is gone, so a PC
+# plugged in later reaches usb0 again. Paths and times can be moved with HANOIP_ROLE / HANOIP_TYPEC_DIR / HANOIP_UDC_DIR /
+# HANOIP_CONFIGFS / HANOIP_WAIT / HANOIP_ONCE (the test does).
+set -u
+role=${HANOIP_ROLE:-/sys/class/usb_role/a600000.usb-role-switch/role}
+typec=${HANOIP_TYPEC_DIR:-/sys/class/typec}
+udcdir=${HANOIP_UDC_DIR:-/sys/class/udc}
+cfg=${HANOIP_CONFIGFS:-/sys/kernel/config}/usb_gadget/hanoip
+wait=${HANOIP_WAIT:-20}
+partner() { [ -e "$typec/port0-partner" ]; }
+configured() { grep -qx configured "$udcdir"/*/state 2>/dev/null; }
+boot() {
+	partner || return 0
+	i=0
+	while [ "$i" -lt "$wait" ]; do
+		configured && return 0
+		sleep 1; i=$((i + 1))
+	done
+	# The gadget was bound before this wait: unbind it, the controller loses its UDC in the host role.
+	[ -e "$cfg/UDC" ] && { echo > "$cfg/UDC" || true; }
+	echo host > "$role" && logger -t hanoip-usb-role "partner on the cable and no PC after ${wait}s: host role" || true
+}
+watch() {
+	while :; do
+		if [ "$(cat "$role" 2>/dev/null)" = host ] && ! partner; then
+			echo device > "$role" && logger -t hanoip-usb-role "partner gone: device role back" || true
+			systemctl restart hanoip-usb-gadget || true
+		fi
+		[ -n "${HANOIP_ONCE:-}" ] && return 0
+		sleep 2
+	done
+}
+case ${1:-} in
+boot) boot ;;
+watch) watch ;;
+*) echo "usage: hanoip-usb-role boot|watch" >&2; exit 2 ;;
+esac

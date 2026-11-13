@@ -3,6 +3,8 @@
 # Same IDs as stage 1 of the Alpine root (docs/MAINLINE.md), so the PC's setup keeps working. The DHCP server for the PC
 # is pmOS's unudhcpd@usb0. Every path can be moved with HANOIP_CONFIGFS / HANOIP_UDC_DIR / HANOIP_NETDIR (the test does).
 set -eu
+# In the host role the controller has no UDC: step aside (hanoip-usb-role gives the device role back when the hub is gone).
+[ "$(cat "${HANOIP_ROLE:-/sys/class/usb_role/a600000.usb-role-switch/role}" 2>/dev/null)" = host ] && exit 0
 cfg=${HANOIP_CONFIGFS:-/sys/kernel/config}/usb_gadget/hanoip
 udcdir=${HANOIP_UDC_DIR:-/sys/class/udc}
 wait=${HANOIP_WAIT:-60}
