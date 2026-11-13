@@ -193,6 +193,7 @@ for p in adguardhome samba-server samba-common-tools syncthing btop btrfs-progs 
 	hwloc-tools iperf3 libdrm-tests libstdc++ memtester musl-utils openssl smartmontools stress-ng sudo-rs tar tzdata wget; do
 	echo "$deps" | grep -qw -- "$p" || fail "the mainline subpackage does not depend on $p (the 4.14 server had it)"
 done
+echo "$deps" | grep -qw iw || fail "the mainline subpackage does not depend on iw (the Wi-Fi link: the band, channel and signal)"
 echo "$deps" | grep -q 'openrc\|postmarketos-base\|mkinitfs\|apk-tools' && fail "the mainline subpackage depends on an OpenRC/pmOS 4.14 piece"
 
 # What a headless server must not run or listen on. Nura's preset (80-duranium.preset) enables avahi, rtkit, oomd and getty@;

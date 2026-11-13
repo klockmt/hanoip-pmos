@@ -304,6 +304,7 @@ mainline() {
 		gcompat
 		hwloc-tools
 		iperf3
+		iw
 		libdrm-tests
 		libstdc++
 		memtester
