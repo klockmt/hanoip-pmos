@@ -407,7 +407,7 @@ new file mode 100755
 index 000000000..e037f443f
 --- /dev/null
 +++ b/arch/arm64/boot/dts/qcom/sm7150-motorola-hanoip.dts
-@@ -0,0 +1,905 @@
+@@ -0,0 +1,906 @@
 +// SPDX-License-Identifier: BSD-3-Clause
 +/*
 + * Motorola Moto G60 (hanoip) - SM7150 (sdmmagpie)
@@ -1262,7 +1262,8 @@ index 000000000..e037f443f
 +};
 +
 +&usb_1_dwc3 {
-+	dr_mode = "peripheral";
++	dr_mode = "otg";
++	usb-role-switch;
 +	maximum-speed = "high-speed";
 +	phys = <&usb_1_hsphy>;
 +	phy-names = "usb2-phy";
