@@ -1,0 +1,15 @@
+[Unit]
+Description=Run the device package's boot scripts (/etc/local.d) that still apply on systemd
+After=tailscaled.service
+Wants=tailscaled.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# A failing script does not stop the others (the leading "-"). 20-hanoip-qbootctl is not run: hanoip-health marks the slot.
+ExecStart=-/etc/local.d/10-hanoip-console.start
+ExecStart=-/etc/local.d/30-hanoip-cpufreq.start
+ExecStart=-/etc/local.d/40-hanoip-tailscale-dns.start
+
+[Install]
+WantedBy=multi-user.target

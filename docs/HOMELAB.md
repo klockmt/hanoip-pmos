@@ -93,12 +93,13 @@ and core files are not written.
 `systemctl is-system-running` says `running` when nothing failed (checked 2026-11-12, no failed unit). `hanoip-status` prints
 the health of the phone, one group of values per line (`hanoip-status -h` says what each is and where it is read).
 
-**`/etc/local.d` does not run on Duranium.** The device package installs four scripts there (`10-hanoip-console`,
-`20-hanoip-qbootctl`, `30-hanoip-cpufreq`, `40-hanoip-tailscale-dns`), but nothing on Duranium runs that directory: the
-phone has no `rc-local` unit (checked 2026-11-12). The slot marking moved to `hanoip-health`, which does work (the boot at
-17:48 UTC marked `_b`). The other three are not applied at boot: the console setting, the CPU governor and the Tailscale
-DNS switch. The DNS state itself holds (below). **Open bug:** the boot-time part needs a systemd unit, and a test in
-`scripts/test-duranium-boot`, before it is fixed; not done yet.
+**`/etc/local.d` on Duranium.** The device package installs four scripts there (`10-hanoip-console`,
+`20-hanoip-qbootctl`, `30-hanoip-cpufreq`, `40-hanoip-tailscale-dns`). Nothing on systemd ran that directory (no `rc-local`
+unit on the phone, checked 2026-11-12), so the console setting, the CPU governor and the Tailscale DNS switch were not
+applied at boot. Now `hanoip-local.service` runs the first, third and fourth after `tailscaled`, and
+`scripts/test-duranium-boot` checks the unit. `20-hanoip-qbootctl` is left out on purpose: `hanoip-health` marks the slot
+the ABL started, and `qbootctl -m` would mark slot a on every boot. Not yet on the phone: it comes with the next image.
+The slot marking by `hanoip-health` is what worked on the phone (the boot at 17:48 UTC marked `_b`).
 
 The bot's secrets (token, owner id) live only on the phone in `/etc/hanoip/telegram.env`; they are never printed, logged or
 committed. The bot runs fixed commands: text from a message never reaches a shell.
