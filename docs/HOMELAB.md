@@ -74,7 +74,7 @@ a boot without them is still a clean boot.
 | `hanoip-thermal` | From 40 °C pauses charging, from 45 °C caps the CPU, at 55 °C warns on Telegram and powers off | `docs/BATTERY.md` |
 | `hanoip-bot` | The Telegram bot: `/up`, `/status`, `/status -h`, `/status -t=MIN -g=MIN`, `/stop`, `/notes` (lists them); only the owner's private chat. Its secrets are in `/etc/hanoip/telegram.env`, restored by `scripts/restore-server` | `hanoip-bot --alert TEXT` sends one message |
 | `hanoip-led` | The notification LED | `systemctl status hanoip-led` |
-| `hanoip-health` | Marks the A/B slot good after a boot that passes its checks; with the Ethernet-only path still open (#28) | `hanoip-status`, `fastboot getvar slot-successful:b` |
+| `hanoip-health` (a one-shot at boot, not a daemon) | Once sshd runs and the phone has an address (`usb0` 172.16.42.1, or `wlan0` or `eth0`), runs `qbootctl -m` for the slot the ABL started. If that has not happened within 600 s of the kernel start, it reboots (`reboot -f`), so the ABL counts a failed boot. The Ethernet-only path is still open (#28) | `journalctl -u hanoip-health`; `fastboot getvar slot-successful:b` |
 | `hanoip-usb-gadget` | The USB network (NCM) to the PC | `ip link` shows `usb0` |
 | `hanoip-modem` and its helpers (qrtr, pd-mapper, tqftpserv, rmtfs) | Brings the modem up, which runs the Wi-Fi firmware (subpackage `device-motorola-hanoip-modem`) | `dmesg` shows `icnss: WLAN FW is ready` |
 | `tailscaled` | The tailnet | `tailscale status` |
@@ -90,8 +90,15 @@ Switched off by the preset, because a headless server does not need them: avahi 
 the login prompt on the tty (`getty@`). LLMNR and mDNS are off in resolved (its stub stays; AdGuard binds loopback only),
 and core files are not written.
 
-`systemctl is-system-running` says `running` when nothing failed. `hanoip-status` prints the health of the phone in ten
-lines (`hanoip-status -h` says what each is and where it is read).
+`systemctl is-system-running` says `running` when nothing failed (checked 2026-11-12, no failed unit). `hanoip-status` prints
+the health of the phone, one group of values per line (`hanoip-status -h` says what each is and where it is read).
+
+**`/etc/local.d` does not run on Duranium.** The device package installs four scripts there (`10-hanoip-console`,
+`20-hanoip-qbootctl`, `30-hanoip-cpufreq`, `40-hanoip-tailscale-dns`), but nothing on Duranium runs that directory: the
+phone has no `rc-local` unit (checked 2026-11-12). The slot marking moved to `hanoip-health`, which does work (the boot at
+17:48 UTC marked `_b`). The other three are not applied at boot: the console setting, the CPU governor and the Tailscale
+DNS switch. The DNS state itself holds (below). **Open bug:** the boot-time part needs a systemd unit, and a test in
+`scripts/test-duranium-boot`, before it is fixed; not done yet.
 
 The bot's secrets (token, owner id) live only on the phone in `/etc/hanoip/telegram.env`; they are never printed, logged or
 committed. The bot runs fixed commands: text from a message never reaches a shell.
@@ -111,8 +118,10 @@ tailscale debug prefs | grep CorpDNS # must say false
 `resolv.conf` then points at the router again. Undo with `tailscale set --accept-dns=true`. The device package ships the
 firewall file for Tailscale (`52_hanoip-tailscale.nft`): everything arriving on `tailscale0`, and UDP 41641 (which lets
 two peers connect directly) only on `eth*` and `wlan*`. Logging in is still by hand, once: `tailscale up --accept-dns=false`.
-Whether the boot script that turned DNS off on the 4.14 (`/etc/local.d/40-hanoip-tailscale-dns.start`) has a systemd
-equivalent on Duranium is not checked yet; `hanoip-status` still warns if `resolv.conf` shows the Tailscale DNS.
+On Duranium (checked 2026-11-12): `CorpDNS` is false, and `/etc/resolv.conf` is systemd-resolved's stub (`127.0.0.53`,
+search `lan`). The script that reapplies this after a boot (`/etc/local.d/40-hanoip-tailscale-dns.start`) does not run
+(see "`/etc/local.d` does not run on Duranium" above), so a Tailscale that turns DNS back on is not undone at boot.
+`hanoip-status` still warns if `resolv.conf` shows the Tailscale DNS.
 
 ## AdGuard Home (secondary DNS, issue #25)
 
@@ -139,8 +148,10 @@ first), test a client, and check a reboot. The admin page is `127.0.0.1:3000` (r
 
 ## Firewall
 
-Files in `/etc/nftables.d`, loaded in name order, first match wins. The device package ships this repo's files; the
-pmOS ones come with the base system, as on the 4.14. Check the list on the phone after an update.
+`/etc/nftables.nft` is loaded at boot (enabled). It starts with `flush ruleset` and includes `/etc/nftables.d/*.nft` in name
+order; the first match wins. Checked on the phone on 2026-11-12: all the files below are there, and the effective input
+chain has policy `drop`, with SSH accepted only on `usb*` and `tailscale0` and dropped from any other interface, and
+Samba (139, 445) accepted only on `tailscale0`. `50_sshd.nft` is a symlink to pmOS's `nftables.avail`.
 
 | File | From | Does |
 |---|---|---|
@@ -148,7 +159,9 @@ pmOS ones come with the base system, as on the 4.14. Check the list on the phone
 | `02_hanoip-ssh.nft` | this repo | SSH only over `usb*` and `tailscale0` |
 | `03_hanoip-samba.nft` | this repo | Ports 139 and 445 only on `tailscale0` |
 | `10_dhcp.nft` | pmOS | DHCP on `usb*` and `wlan*` |
+| `50_ausweisapp2.nft`, `50_localsend.nft` | pmOS | Ports of those apps |
 | `50_sshd.nft` | pmOS | Accepts port 22 from everywhere; the file above wins first |
+| `51_hotspot.nft` | pmOS | Hotspot rules (accepts 53 on `wlan*`, used by AdGuard) |
 | `51_usb_inet.nft` | pmOS | Accepts **everything** coming in over `usb*` |
 | `52_hanoip-tailscale.nft` | this repo | Everything on `tailscale0`, UDP 41641 only on `eth*` and `wlan*` |
 
@@ -176,10 +189,12 @@ screen. The kernel log is still written; follow it over SSH.
 - **Containers**: user, PID and network namespaces, the `pids` and `devices` cgroups, `br_netfilter` (built in), `overlayfs`,
   `veth`, `macvlan`. Use `crun`: the `runc` of Alpine edge panics on 4.14 (the mainline kernel has not been tested with it).
   Not available on the 4.14: WireGuard (use Tailscale), `CFS_BANDWIDTH`, swarm/overlay networks.
-- **Watchdog**: the device package sets `RuntimeWatchdogSec=20` for systemd (`90-hanoip-watchdog.conf`), so PID 1 feeds the
-  watchdog and a hang of userspace makes systemd reboot the phone. U-Boot arms the hardware watchdog. `hanoip-watchdog`
-  (the 4.14 OpenRC feeder) is not in the preset. The Duranium boot with a stopped watchdog is not tested yet (open item 4
-  in [`DURANIUM.md`](DURANIUM.md)).
+- **Watchdog**: `/dev/watchdog0` is `qcom_wdt` with a 20 s timeout, active (checked 2026-11-12). systemd feeds it: the
+  device package sets `RuntimeWatchdogSec=20` (`90-hanoip-watchdog.conf`), and `systemctl show` reports
+  `RuntimeWatchdogUSec=20s` and `WatchdogDevice=/dev/watchdog0`. `hanoip-watchdog`, the 4.14 feeder that also reset the
+  phone when the network was lost, is not in the preset and does not run. The dashboard's watchdog ring reads the sysfs
+  timeout, so it shows the time since the last feed; its resets count reads `n/a`, because that count is kept by the
+  4.14 feeder. A stopped watchdog on Duranium is not tested (open item 4 in [`DURANIUM.md`](DURANIUM.md)).
 - **Kernel modules** load (patch 0010). The module tree has to come from the same build as the running kernel;
   `scripts/push-modules` copies it and checks the release.
 
@@ -262,11 +277,12 @@ scripts/hanoip-sudo reboot
   log is not written. Use `reboot` when the log matters.
 - **What recovers by itself, and what does not** (issue #17; the Duranium column is not tested yet):
 
-  | Failure | 4.14 server | Duranium |
+  | Failure | 4.14 server | Duranium (2026-11-12; none of it tested on the phone) |
   |---|---|---|
-  | Userspace hang | `hanoip-watchdog` fed `/dev/watchdog`; the phone reset in about a minute | systemd's `RuntimeWatchdogSec=20` feeds it; not tested |
-  | Network lost (gateway silent for 5 minutes, no USB link) | the watchdog service stopped feeding on purpose, up to 3 resets in a row, and told Telegram after the reset | not built on Duranium (the feeder is not in the preset) |
-  | Kernel hang | no, the Qualcomm watchdog had no device node | the hardware watchdog is armed by U-Boot; not tested |
+  | Userspace hang | `hanoip-watchdog` fed `/dev/watchdog`; the phone reset in about a minute | systemd feeds `qcom_wdt` (20 s); a hang of PID 1 stops the feed, so the hardware resets the phone. A hung service on its own does not |
+  | Network lost (gateway silent for 5 minutes, no USB link) | the watchdog service stopped feeding on purpose, up to 3 resets in a row, and told Telegram after the reset | not covered: no feeder runs |
+  | Kernel hang | no, the Qualcomm watchdog had no device node | `qcom_wdt` is armed and nothing feeds it, so it should reset in about 20 s |
+  | sshd down after a boot | not covered | `hanoip-health` reboots after 600 s without sshd and an address; the slot then counts a failed boot. `scripts/test-duranium-boot` covers the script, not the phone |
   | Power cut | not tested | not tested |
 
   On the 4.14, stopping the feeder was safe (the magic close was written); killing it with `kill -9` left the watchdog armed.
