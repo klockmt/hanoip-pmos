@@ -1,5 +1,7 @@
 # Enabled the way mkosi's `systemctl preset-all` keeps: links left in /etc by package() are removed by it.
 enable hanoip-usb-gadget.service
+enable hanoip-usb-role.service
+enable hanoip-usb-role-watch.service
 enable hanoip-health.service
 enable hanoip-local.service
 enable hanoip-charge.service

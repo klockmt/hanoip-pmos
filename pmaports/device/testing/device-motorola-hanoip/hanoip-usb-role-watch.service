@@ -1,0 +1,14 @@
+[Unit]
+Description=Give the USB-C port its device role back when the hub is unplugged
+Documentation=man:systemd.service(5)
+DefaultDependencies=no
+After=hanoip-usb-role.service
+
+[Service]
+ExecStart=/usr/bin/hanoip-usb-role watch
+Restart=on-failure
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=sysinit.target

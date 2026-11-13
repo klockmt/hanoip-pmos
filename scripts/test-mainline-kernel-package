@@ -60,4 +60,9 @@ done
 # boot through U-Boot's EFI reserves it, and the kernel then oopsed in fbcon at 0.46 s (2026-11-09, Duranium's first boot).
 grep -A1 '^+	if (info->fix.smem_start == 0x9c000000 &&$' "$ml/patches/0121-hanoip-simplefb.patch" | grep -q 'pfn_is_map_memory(' ||
 	fail "patch 0121 uses the linear mapping of the framebuffer without checking pfn_is_map_memory()"
+# The USB controller is the port's host path: "peripheral" makes host impossible, so the port never gets a hub (2026-11-12, the hub
+# wired to the phone never enumerated). The role comes from the Type-C connector through usb-role-switch, as in patch 0052.
+dts=$ml/patches/0127-hanoip-dts.patch
+grep -qx '^+	dr_mode = "otg";' "$dts" && grep -qx '^+	usb-role-switch;' "$dts" && ! grep -q '^+	dr_mode = "peripheral";' "$dts" ||
+	fail "patch 0127 gives the USB controller dr_mode other than otg, or no usb-role-switch (no host path)"
 echo "mainline kernel package: ok"

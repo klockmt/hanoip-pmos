@@ -9,7 +9,7 @@ set -eu
 . "$(dirname "$0")/env.sh"
 k=${HANOIP_MAINLINE_DIR:-$HANOIP_SRC_DIR/hanoip-mainline-7.3}
 BASE_TREE=30fd2ef82912c26cf3a58ad0ba6afc375fa851ac # git tree of tag v7.3
-TREE=0cf5808c14ddfce6e191b2fa6aeefbbf6cb38709      # v7.3 + kernel/mainline/patches: the tree that booted on the phone
+TREE=398868f4629ed0d0e211f575957adaf24450eded      # v7.3 + kernel/mainline/patches (0127 with dr_mode otg): not booted yet, the tree that booted was 0cf5808c
 KORG=https://cdn.kernel.org/pub/linux/kernel/v7.x
 GIT="git -c user.name=hanoip -c user.email=hanoip@localhost -c core.autocrlf=false"
 ml=$HANOIP_ROOT/kernel/mainline

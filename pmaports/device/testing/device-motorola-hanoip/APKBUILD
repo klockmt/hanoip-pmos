@@ -4,7 +4,7 @@
 pkgname=device-motorola-hanoip
 pkgdesc="Motorola Moto G (60)"
 pkgver=0
-pkgrel=54
+pkgrel=55
 _qrtr_rev=29e36ae164389580a0f8ea7a7fdb728140ae978d
 _pdmapper_rev=5ecd2fe926aca7abfe40724177f63b942cff3947
 url="https://postmarketos.org"
@@ -101,6 +101,9 @@ source="
 	kernel-cmdline.mainline.conf
 	hanoip-usb-gadget
 	hanoip-usb-gadget.service
+	hanoip-usb-role
+	hanoip-usb-role.service
+	hanoip-usb-role-watch.service
 	hanoip.preset
 	hanoip-health
 	hanoip-health.service
@@ -214,6 +217,9 @@ package() {
 	# links in /etc); qbootctl.service (pmOS marks the slot good at multi-user.target, before anything is checked) is masked: hanoip-health marks it.
 	install -Dm755 "$srcdir/hanoip-usb-gadget" "$pkgdir/usr/bin/hanoip-usb-gadget"
 	install -Dm644 "$srcdir/hanoip-usb-gadget.service" "$pkgdir/etc/systemd/system/hanoip-usb-gadget.service"
+	install -Dm755 "$srcdir/hanoip-usb-role" "$pkgdir/usr/bin/hanoip-usb-role"
+	install -Dm644 "$srcdir/hanoip-usb-role.service" "$pkgdir/etc/systemd/system/hanoip-usb-role.service"
+	install -Dm644 "$srcdir/hanoip-usb-role-watch.service" "$pkgdir/etc/systemd/system/hanoip-usb-role-watch.service"
 	install -Dm755 "$srcdir/hanoip-health" "$pkgdir/usr/bin/hanoip-health"
 	install -Dm644 "$srcdir/hanoip-health.service" "$pkgdir/etc/systemd/system/hanoip-health.service"
 	install -Dm644 "$srcdir/hanoip-local.service" "$pkgdir/etc/systemd/system/hanoip-local.service"
@@ -326,6 +332,7 @@ mainline() {
 		etc/NetworkManager/conf.d/hanoip-ml.conf \
 		etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony \
 		usr/bin/hanoip-usb-gadget etc/systemd/system/hanoip-usb-gadget.service \
+		usr/bin/hanoip-usb-role etc/systemd/system/hanoip-usb-role.service etc/systemd/system/hanoip-usb-role-watch.service \
 		usr/bin/hanoip-health etc/systemd/system/hanoip-health.service \
 		etc/systemd/system/hanoip-local.service \
 		usr/lib/systemd/system-preset etc/systemd/system/qbootctl.service etc/udev/rules.d/90-bootmac-bluetooth.rules \
@@ -404,9 +411,12 @@ fc7ae62bf0f2e70299a2b35098ea42d7b5b7fa5729ed93ab5be6705c725481fe38f0a95d29558f1f
 ca85d44d47dfbf71723236f0ddc0d655da6d513584db3ab4b35ccfe98530ee796689bc88c2d59956a4b34f59c19b2f5e7a6375c1225d7e59f7328c46698d5c48  hanoip-ml-charge
 1e4e231251adc837fb9924251ded484329d4669a2ca43a6f00818ed45a72052bedd15e1e02620f601d1511e50714762da9a1f8669f457a645e6262dd35bc96bb  hanoip-ml.conf
 1ef6c1b720e3a034141cb0aa1bb9c9af79163125cdae51b88cf3f1a2f8ea885ee7c30d24bfeab1bd1b35b3dd483a6b386dee5d0e30544b1ef8f2cb2cc221dd6a  kernel-cmdline.mainline.conf
-6f5bb8bbb6b0c88fc3ded4702375050d46f9226c7e453af42475ffaeb443e63264e69e324e4ecf449c192ad9488a61b141999a7f592f915f541b9406aba993f9  hanoip-usb-gadget
+ffbe8fbbc5a1620df17be2853f5a7b88136284bdc7c3c9d1b2f01f0ae8bb44f60e0f03779d9f7e69605c17941b64c49cc317f54719621788c5cb1e6c76b402fb  hanoip-usb-gadget
 1bc1bbcc21170ace4e1f6610b39ca5f9545acf52cf18325d4724e79af44cb4626f18cf082f00d627d4ba41467c2e59de79e1f8b378fd9f8c5e75d3bdaaff7d30  hanoip-usb-gadget.service
-fbdb8b5f518da8aa494612205bb7344ded67606619fa0bbcd4bf745fa9c513141fef5ef338bfa38a5aac25276da0208744dcc1d3ec2ca08944e28fe9357cf2ee  hanoip.preset
+c08b01b39d4bc6afaefd8935fc8012d82181b9e6c72f761929807448f844ec5cab0bfc7f433211eb7ac0aa8b08d7c38fd81e83cf1f86f9c8a44a3bc3e6ced4cb  hanoip-usb-role
+28df7e803002f9dae2ec6cc54b1050e549e340346518af6366bf7f58bcc4f3ce9020edcd791c5df800198716bcc2a2c7431540c6d055526473642826089430d4  hanoip-usb-role.service
+b0bf18d5039d61e5479202ba56670d10cc3d81685a3d19b7690327fcbd7e2062792a389bfbad60a018a66d80a7d05750d6404e9f1852adbf7902c4ac1dbdd511  hanoip-usb-role-watch.service
+9331e42a882f35be685c5e6c813960dd934fcba0b32205cb7b1ed61bafd2b8ebcb88f7c049a2695a10f6a952dfcbbe0d7b3a8e9b7a34b16f40691f07900531e1  hanoip.preset
 a7d7f15455264025e1d9d411af7f733ea2d3bace44d3920e3d328b3596bf454494e2e11c83231836f317773b6d7c24517cd7335f305d619f649dcf75621692b0  hanoip-health
 f7a55fa78f777b6bd8f59faed0370ce2a4147db68e41f93136c13384ccee61b9121c3fb02edc2f4515f5ccd18fc5150bd51426ba629e3becd9efbab92fc7a192  hanoip-health.service
 9a4ca1d97abaec198ef830542b92f5c17ab675223aae363b42e922bc7dd3a0db64939e419dbf2cdbf8f2784273b7da74585665c828c2ea6b38b3869bc5889c92  hanoip-local.service

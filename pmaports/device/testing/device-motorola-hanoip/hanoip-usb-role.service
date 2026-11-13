@@ -1,0 +1,16 @@
+[Unit]
+Description=USB-C port role when a hub is on the cable (host) or none (device)
+Documentation=man:systemd.service(5)
+DefaultDependencies=no
+After=hanoip-usb-gadget.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=120
+ExecStart=/usr/bin/hanoip-usb-role boot
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=sysinit.target
