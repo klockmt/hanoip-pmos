@@ -22,7 +22,16 @@ boot() {
 	done
 	# The gadget was bound before this wait: unbind it, the controller loses its UDC in the host role.
 	[ -e "$cfg/UDC" ] && { echo > "$cfg/UDC" || true; }
-	echo host > "$role" && logger -t hanoip-usb-role "partner on the cable and no PC after ${wait}s: host role" || true
+	# Only switching the role leaves a hub that was on the cable since boot at 12 Mbit/s (2026-11-14). A Type-C reconnection
+	# (port type source, then dual) makes it attach again like a replug: TCPM gives the host role and it comes up at 480.
+	pt=$typec/port0/port_type
+	if [ -w "$pt" ]; then
+		logger -t hanoip-usb-role "partner on the cable and no PC after ${wait}s: reconnecting the Type-C port as host" || true
+		echo source > "$pt"; sleep 4; echo dual > "$pt"
+		i=0
+		while [ "$i" -lt "$wait" ] && [ "$(cat "$role" 2>/dev/null)" != host ]; do sleep 1; i=$((i + 1)); done
+	fi
+	[ "$(cat "$role" 2>/dev/null)" = host ] || { echo host > "$role" && logger -t hanoip-usb-role "partner on the cable and no PC after ${wait}s: host role" || true; }
 }
 watch() {
 	while :; do

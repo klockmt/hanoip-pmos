@@ -62,7 +62,9 @@ recover() { # recover WHY: one attempt, and nothing unless the port has the host
 		log "the hub is gone: rebinding xhci-hcd.1.auto"
 		echo xhci-hcd.1.auto > "$xhci/unbind" 2>/dev/null || true
 		echo xhci-hcd.1.auto > "$xhci/bind" 2>/dev/null || true
-		back || { log "no hub after the rebind: role none, then host"; echo none > "$role" 2>/dev/null; sleep 2; echo host > "$role" 2>/dev/null; }
+		# A Type-C reconnection is what a replug does (2026-11-14: it brought a hub at 12 Mbit/s back at 480).
+		back || { log "no hub after the rebind: Type-C port source, then dual"; echo source > "$typec/port0/port_type" 2>/dev/null; sleep 4; echo dual > "$typec/port0/port_type" 2>/dev/null; }
+		back || { log "no hub after the Type-C reconnection: role none, then host"; echo none > "$role" 2>/dev/null; sleep 2; echo host > "$role" 2>/dev/null; }
 		back || { log "no hub after the role cycle: port 1 off, then on"; echo 1 > "$port/disable" 2>/dev/null; sleep 2; echo 0 > "$port/disable" 2>/dev/null; }
 		back || log "no hub after the port cycle: the disk stays away until the hub is plugged in again"
 	fi
