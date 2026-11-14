@@ -1,0 +1,106 @@
+#!/bin/sh
+# Duranium on the hanoip: brings the NAS disk back when the USB hub under the Type-C port drops (#28, docs/PITFALLS.md).
+# The xHCI can die under the hub ("HC died"): every device goes, and the hub comes back only with a replug, so the disk is
+# lost and btrfs can go read-only. `watch` looks every few seconds for three things: the hub gone while the partner stays
+# on the cable, a new "HC died" in the kernel log, a NAS mount gone read-only. `recover` stops smb and syncthing, lazily
+# unmounts the NAS, and only while the hub is missing rebinds the xHCI and then cycles the port's role and the port,
+# stopping as soon as the hub and the disk are back; then it starts the mounts and the services again. It acts only with
+# the port in the host role and a partner on the cable (a PC on the cable is in the device role), and at most $HANOIP_MAX
+# times an hour. `now` runs one recovery by hand. Paths and times come from HANOIP_* (test-duranium-boot sets them).
+set -u
+role=${HANOIP_ROLE:-/sys/class/usb_role/a600000.usb-role-switch/role}
+typec=${HANOIP_TYPEC_DIR:-/sys/class/typec}
+usbdev=${HANOIP_USBDEV_DIR:-/sys/bus/usb/devices}
+xhci=${HANOIP_XHCI_DIR:-/sys/bus/platform/drivers/xhci-hcd}
+port=${HANOIP_PORT_DIR:-/sys/bus/usb/devices/usb1-port1}
+labels=${HANOIP_LABELS:-/dev/disk/by-label}
+mounts=${HANOIP_MOUNTS:-/proc/mounts}
+state=${HANOIP_STATE:-/run/hanoip-usb-recover}
+wait=${HANOIP_WAIT:-10}
+max=${HANOIP_MAX:-3}
+poll=${HANOIP_POLL:-5}
+
+log() { logger -t hanoip-usb-recover "$*" || true; }
+partner() { [ -e "$typec/port0-partner" ]; }
+hub() { # the hub (1a86:8095) is enumerated on the bus
+	for d in "$usbdev"/*; do
+		[ "$(cat "$d/idVendor" 2>/dev/null)" = 1a86 ] && [ "$(cat "$d/idProduct" 2>/dev/null)" = 8095 ] && return 0
+	done
+	return 1
+}
+back() { # the hub and both NAS partitions are there, within $wait seconds
+	i=0
+	until hub && [ -e "$labels/hd-a" ] && [ -e "$labels/hd-b" ]; do
+		[ "$i" -lt "$wait" ] || return 1
+		sleep 1; i=$((i + 1))
+	done
+	return 0
+}
+mstate() { # mstate MOUNTPOINT: rw, ro or not mounted
+	awk -v m="$1" '$2 == m { print ($4 ~ /(^|,)ro(,|$)/ ? "ro" : "rw"); f = 1 } END { if (!f) print "not mounted" }' "$mounts"
+}
+nasro() { [ "$(mstate /mnt/hd-a)" = ro ] || [ "$(mstate /mnt/hd-b)" = ro ]; }
+kmsg() { dmesg 2>/dev/null | grep -c 'HC died'; }
+allowed() { # at most $max attempts in the last hour; the time of each one is kept in $state/attempts
+	mkdir -p "$state"
+	now=$(date +%s)
+	awk -v now="$now" '$1 > now - 3600' "$state/attempts" 2>/dev/null > "$state/attempts.new"
+	if [ "$(awk 'END { print NR }' "$state/attempts.new")" -ge "$max" ]; then rm -f "$state/attempts.new"; return 1; fi
+	echo "$now" >> "$state/attempts.new"
+	mv "$state/attempts.new" "$state/attempts"
+}
+recover() { # recover WHY: one attempt, and nothing unless the port has the host role and a partner is on the cable
+	partner && [ "$(cat "$role" 2>/dev/null)" = host ] || return 0
+	allowed || { log "$1: $max attempts in the last hour, leaving it to a person"; return 0; }
+	log "$1: stopping smb and syncthing, unmounting the NAS disk"
+	systemctl stop smb.service syncthing.service || true
+	umount -l /mnt/hd-a 2>/dev/null || true
+	umount -l /mnt/hd-b 2>/dev/null || true
+	if hub; then
+		log "the hub is still there: the mounts only"
+	else
+		log "the hub is gone: rebinding xhci-hcd.1.auto"
+		echo xhci-hcd.1.auto > "$xhci/unbind" 2>/dev/null || true
+		echo xhci-hcd.1.auto > "$xhci/bind" 2>/dev/null || true
+		back || { log "no hub after the rebind: role none, then host"; echo none > "$role" 2>/dev/null; sleep 2; echo host > "$role" 2>/dev/null; }
+		back || { log "no hub after the role cycle: port 1 off, then on"; echo 1 > "$port/disable" 2>/dev/null; sleep 2; echo 0 > "$port/disable" 2>/dev/null; }
+		back || log "no hub after the port cycle: the disk stays away until the hub is plugged in again"
+	fi
+	log "starting the NAS mounts and the services"
+	systemctl start 'mnt-hd\x2da.mount' 'mnt-hd\x2db.mount' || true
+	systemctl start smb.service syncthing.service || true
+	log "after the recovery: /mnt/hd-a $(mstate /mnt/hd-a), /mnt/hd-b $(mstate /mnt/hd-b), hub $(hub && echo back || echo missing)"
+	return 0
+}
+poll() { # one look: a reason to recover, or nothing; seen (the hub on this partner), dead and ro are kept in $state/watch
+	n=$(kmsg)
+	r=0; nasro && r=1
+	why=
+	if ! partner; then
+		seen=0
+	elif hub; then
+		seen=1
+	elif [ "$seen" = 1 ]; then
+		seen=0; why="the hub is gone with the partner on the cable"
+	fi
+	[ "$n" -gt "$dead" ] && why=${why:-"the xHCI died (HC died in the kernel log)"}
+	[ "$r" = 1 ] && [ "$ro" = 0 ] && why=${why:-"a NAS mount is read-only"}
+	dead=$n; ro=$r
+	[ -z "$why" ] || recover "$why"
+	mkdir -p "$state"
+	echo "$seen $dead $ro" > "$state/watch"
+}
+watch() {
+	# A first start takes what is there now as the baseline: an old "HC died" or a read-only mount does not start a recovery.
+	{ [ -r "$state/watch" ] && read -r seen dead ro < "$state/watch"; } || { seen=0; dead=$(kmsg); ro=0; nasro && ro=1; }
+	while :; do
+		poll
+		if [ -n "${HANOIP_ONCE:-}" ]; then return 0; fi
+		sleep "$poll"
+	done
+}
+case ${1:-} in
+watch) watch ;;
+now) recover "started by hand" ;;
+*) echo "usage: hanoip-usb-recover watch|now" >&2; exit 2 ;;
+esac

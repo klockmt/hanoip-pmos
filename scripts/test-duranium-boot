@@ -260,4 +260,123 @@ for s in 10-hanoip-console 30-hanoip-cpufreq 40-hanoip-tailscale-dns; do
 	grep -qF "\"\$pkgdir/etc/local.d/$s.start\"" "$apk" || fail "$s.start is not installed by package()"
 done
 ! grep -v '^#' "$lu" | grep -q 'qbootctl' || fail "hanoip-local.service runs qbootctl, which marks the wrong slot on Duranium"
+
+# --- the USB recovery: the NAS disk comes back when the hub under the Type-C port drops (#28, docs/PITFALLS.md) ---
+[ -f "$d/hanoip-usb-recover" ] || fail "hanoip-usb-recover is missing"
+sh -n "$d/hanoip-usb-recover" || fail "hanoip-usb-recover does not parse"
+# Every hardware path and state file comes from a HANOIP_* variable: a test run must never reach the PC's controller or mounts.
+! grep -v '^[[:space:]]*#' "$d/hanoip-usb-recover" | grep -E '/(sys|proc|run|dev)/' | grep -v '/dev/null' | grep -qv ':-/' || fail "hanoip-usb-recover has a fixed path to the hardware or to its state"
+rc=$tmp/recover
+mkdir -p "$rc"
+# Stand-ins: umount, dmesg (the kernel log is a file the test writes). sleep also brings the hub and both NAS partitions back
+# once the script has logged the text in FAKE_BACK: the hub comes back during that wait.
+printf '#!/bin/sh\necho "umount $*" >> "%s"\n' "$calls" > "$bin/umount"
+printf '#!/bin/sh\ncat "%s"\n' "$rc/kmsg" > "$bin/dmesg"
+cat > "$bin/sleep" <<EOF2
+#!/bin/sh
+n=\$(cat "$tmp/uptime"); echo \$((n + 100)) > "$tmp/uptime"
+if [ -n "\${FAKE_BACK:-}" ] && grep -qF "\$FAKE_BACK" "$calls"; then
+	mkdir -p "$rc/usb/1-1" "$rc/labels"
+	echo 1a86 > "$rc/usb/1-1/idVendor"; echo 8095 > "$rc/usb/1-1/idProduct"
+	: > "$rc/labels/hd-a"; : > "$rc/labels/hd-b"
+fi
+EOF2
+chmod +x "$bin"/*
+recover() { # recover FAKE_BACK ARGS...: the script with its stand-ins, one look (HANOIP_ONCE)
+	fb=$1; shift
+	env FAKE_BACK="$fb" HANOIP_ROLE=$rc/role HANOIP_TYPEC_DIR=$rc/typec HANOIP_USBDEV_DIR=$rc/usb HANOIP_XHCI_DIR=$rc/xhci \
+		HANOIP_PORT_DIR=$rc/port HANOIP_LABELS=$rc/labels HANOIP_MOUNTS=$rc/mounts HANOIP_STATE=$rc/state \
+		HANOIP_WAIT=2 HANOIP_MAX=3 HANOIP_ONCE=1 sh "$d/hanoip-usb-recover" "$@"
+}
+reset() { # the port in the host role, nothing on the cable, both NAS partitions gone, the NAS mounted read-write
+	rm -rf "$rc/usb" "$rc/labels" "$rc/typec" "$rc/state" "$rc/xhci" "$rc/port"
+	mkdir -p "$rc/usb" "$rc/labels" "$rc/typec" "$rc/xhci" "$rc/port"
+	echo host > "$rc/role"; echo 0 > "$rc/port/disable"; : > "$rc/xhci/unbind"; : > "$rc/xhci/bind"
+	: > "$rc/kmsg"; printf '/dev/sdb /mnt/hd-a btrfs rw,relatime 0 0\n' > "$rc/mounts"
+	: > "$calls"
+}
+set_partner() { if [ "$1" = on ]; then mkdir -p "$rc/typec/port0-partner"; else rm -rf "$rc/typec/port0-partner"; fi; }
+set_hub() { # the hub (1a86:8095) and both NAS partitions
+	if [ "$1" = on ]; then
+		mkdir -p "$rc/usb/1-1" "$rc/labels"; echo 1a86 > "$rc/usb/1-1/idVendor"; echo 8095 > "$rc/usb/1-1/idProduct"
+		: > "$rc/labels/hd-a"; : > "$rc/labels/hd-b"
+	else
+		rm -rf "$rc/usb/1-1" "$rc/labels"; mkdir -p "$rc/labels"
+	fi
+}
+inorder() { # inorder PATTERN...: each pattern first appears in $calls after the one before it
+	last=0
+	for p in "$@"; do
+		n=$(grep -nF -- "$p" "$calls" | head -n 1 | cut -d: -f1)
+		[ -n "$n" ] && [ "$n" -gt "$last" ] || return 1
+		last=$n
+	done
+}
+# Nothing with a PC on the cable (the port in the device role, where the gadget is configured) and nothing with no partner.
+reset; set_partner on; echo device > "$rc/role"
+recover "" now || fail "the USB recovery exited with an error with a PC on the cable"
+[ ! -s "$calls" ] && [ ! -s "$rc/xhci/unbind" ] || fail "a PC on the cable (the port in the device role) was touched by the recovery"
+reset; set_partner off
+recover "" now || fail "the USB recovery exited with an error with no partner"
+[ ! -s "$calls" ] && [ ! -s "$rc/xhci/unbind" ] || fail "no partner on the cable, but the recovery acted"
+# A charger on the Type-C port (a partner, no hub, DCP) never starts the recovery: it would stop the NAS services for nothing.
+reset; set_partner on
+recover "" watch || fail "the USB watch exited with an error on a charger"
+recover "" watch || fail "the USB watch exited with an error on a charger"
+[ ! -s "$calls" ] || fail "a partner with no hub (a charger) started the recovery, which stops the NAS services"
+# The hub seen with the partner on the cable, then gone with the partner still there: the steps in order, the hub not back.
+reset; set_partner on; set_hub on
+recover "" watch || fail "the USB watch exited with an error"
+[ ! -s "$calls" ] || fail "a hub on the cable started the recovery"
+set_hub off; : > "$calls"
+recover "" watch || fail "the USB watch exited with an error"
+inorder 'stopping smb and syncthing' 'umount -l /mnt/hd-a' 'rebinding xhci-hcd.1.auto' 'role none, then host' 'port 1 off, then on' \
+	'systemctl start mnt-hd' 'systemctl start smb.service syncthing.service' \
+	|| { cat "$calls" >&2; fail "the recovery did not run its steps in order (stop, unmount, rebind, role, port, mounts, services)"; }
+grep -qx xhci-hcd.1.auto "$rc/xhci/unbind" && grep -qx xhci-hcd.1.auto "$rc/xhci/bind" || fail "the xHCI was not rebound"
+[ "$(cat "$rc/port/disable")" = 0 ] && [ "$(cat "$rc/role")" = host ] || fail "the port was left disabled or in another role"
+# The hub back during the first wait (after the rebind): no role or port cycle, the services start again.
+reset; set_partner on; set_hub on; recover "" watch || fail "the USB watch exited with an error"
+set_hub off; : > "$calls"
+recover 'rebinding xhci-hcd.1.auto' watch || fail "the USB watch exited with an error"
+inorder 'rebinding xhci-hcd.1.auto' 'systemctl start smb.service syncthing.service' || { cat "$calls" >&2; fail "the services did not start after the rebind brought the hub back"; }
+! grep -q 'role none' "$calls" && ! grep -q 'port 1 off' "$calls" || fail "the hub came back after the rebind, but the role or the port was cycled anyway"
+# The hub back after the role cycle: the port is left alone.
+reset; set_partner on; set_hub on; recover "" watch || fail "the USB watch exited with an error"
+set_hub off; : > "$calls"
+recover 'role none, then host' watch || fail "the USB watch exited with an error"
+inorder 'role none, then host' 'systemctl start smb.service syncthing.service' || { cat "$calls" >&2; fail "the services did not start after the role cycle brought the hub back"; }
+! grep -q 'port 1 off' "$calls" || fail "the hub came back after the role cycle, but the port was cycled anyway"
+# At most three attempts an hour: a fourth within the hour is refused, the attempts of two hours ago do not count.
+reset; set_partner on; set_hub off; mkdir -p "$rc/state"
+now=$(date +%s); printf '%s\n%s\n%s\n' "$now" "$now" "$now" > "$rc/state/attempts"
+recover "" now || fail "the USB recovery exited with an error at the limit"
+grep -q 'leaving it to a person' "$calls" && ! grep -q 'stopping smb' "$calls" || fail "a fourth attempt within the hour ran"
+reset; set_partner on; set_hub off; mkdir -p "$rc/state"
+old=$((now - 7200)); printf '%s\n%s\n%s\n' "$old" "$old" "$old" > "$rc/state/attempts"
+recover "" now || fail "the USB recovery exited with an error"
+grep -q 'stopping smb' "$calls" || fail "the attempts of two hours ago still count against the limit"
+[ "$(awk 'END { print NR }' "$rc/state/attempts")" = 1 ] || fail "the attempts file keeps the attempts of two hours ago"
+# A NAS mount gone read-only with the hub still there: the mounts are cycled, the xHCI and the port are left alone.
+reset; set_partner on; set_hub on; recover "" watch || fail "the USB watch exited with an error"
+printf '/dev/sdb /mnt/hd-a btrfs ro,relatime 0 0\n' > "$rc/mounts"; : > "$calls"
+recover "" watch || fail "the USB watch exited with an error"
+inorder 'a NAS mount is read-only' 'umount -l /mnt/hd-a' 'the hub is still there' 'systemctl start mnt-hd' \
+	|| { cat "$calls" >&2; fail "a read-only NAS mount with the hub on the cable did not recover the mounts"; }
+[ ! -s "$rc/xhci/unbind" ] || fail "the hub was still there, but the xHCI was rebound (it takes the Ethernet down)"
+# "HC died" in the kernel log, a new one since the last look: the recovery runs too, and an unchanged log does nothing.
+reset; set_partner on; set_hub on; recover "" watch || fail "the USB watch exited with an error"
+echo 'xhci-hcd xhci-hcd.1.auto: HC died; cleaning up' > "$rc/kmsg"; : > "$calls"
+recover "" watch || fail "the USB watch exited with an error"
+inorder 'the xHCI died' 'the hub is still there' || { cat "$calls" >&2; fail "a new HC died in the kernel log did not start the recovery"; }
+: > "$calls"; recover "" watch || fail "the USB watch exited with an error"
+[ ! -s "$calls" ] || { cat "$calls" >&2; fail "the watch acted with nothing new in the kernel log and the hub on the cable"; }
+# The wiring: the preset enables the unit, the package installs and moves both files, and the unit runs the watch.
+for f in hanoip-usb-recover hanoip-usb-recover.service; do
+	grep -qE "^[[:space:]]+$f\$" "$apk" || fail "$f is not in source="
+	echo "$pk" | grep -qF "\"\$srcdir/$f\"" || fail "package() does not install $f"
+	sed -n '/^mainline()/,/^}/p' "$apk" | grep -qF "$f" || fail "mainline() does not move $f"
+done
+grep -qx 'enable hanoip-usb-recover.service' "$d/hanoip.preset" || fail "hanoip-usb-recover.service is not enabled by hanoip.preset"
+grep -qx 'ExecStart=/usr/bin/hanoip-usb-recover watch' "$d/hanoip-usb-recover.service" || fail "hanoip-usb-recover.service does not run the watch"
 echo "ok    test-duranium-boot"

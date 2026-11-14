@@ -104,6 +104,8 @@ source="
 	hanoip-usb-role
 	hanoip-usb-role.service
 	hanoip-usb-role-watch.service
+	hanoip-usb-recover
+	hanoip-usb-recover.service
 	hanoip.preset
 	hanoip-health
 	hanoip-health.service
@@ -220,6 +222,8 @@ package() {
 	install -Dm755 "$srcdir/hanoip-usb-role" "$pkgdir/usr/bin/hanoip-usb-role"
 	install -Dm644 "$srcdir/hanoip-usb-role.service" "$pkgdir/etc/systemd/system/hanoip-usb-role.service"
 	install -Dm644 "$srcdir/hanoip-usb-role-watch.service" "$pkgdir/etc/systemd/system/hanoip-usb-role-watch.service"
+	install -Dm755 "$srcdir/hanoip-usb-recover" "$pkgdir/usr/bin/hanoip-usb-recover"
+	install -Dm644 "$srcdir/hanoip-usb-recover.service" "$pkgdir/etc/systemd/system/hanoip-usb-recover.service"
 	install -Dm755 "$srcdir/hanoip-health" "$pkgdir/usr/bin/hanoip-health"
 	install -Dm644 "$srcdir/hanoip-health.service" "$pkgdir/etc/systemd/system/hanoip-health.service"
 	install -Dm644 "$srcdir/hanoip-local.service" "$pkgdir/etc/systemd/system/hanoip-local.service"
@@ -334,6 +338,7 @@ mainline() {
 		etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony \
 		usr/bin/hanoip-usb-gadget etc/systemd/system/hanoip-usb-gadget.service \
 		usr/bin/hanoip-usb-role etc/systemd/system/hanoip-usb-role.service etc/systemd/system/hanoip-usb-role-watch.service \
+		usr/bin/hanoip-usb-recover etc/systemd/system/hanoip-usb-recover.service \
 		usr/bin/hanoip-health etc/systemd/system/hanoip-health.service \
 		etc/systemd/system/hanoip-local.service \
 		usr/lib/systemd/system-preset etc/systemd/system/qbootctl.service etc/udev/rules.d/90-bootmac-bluetooth.rules \
@@ -417,7 +422,9 @@ ffbe8fbbc5a1620df17be2853f5a7b88136284bdc7c3c9d1b2f01f0ae8bb44f60e0f03779d9f7e69
 c08b01b39d4bc6afaefd8935fc8012d82181b9e6c72f761929807448f844ec5cab0bfc7f433211eb7ac0aa8b08d7c38fd81e83cf1f86f9c8a44a3bc3e6ced4cb  hanoip-usb-role
 28df7e803002f9dae2ec6cc54b1050e549e340346518af6366bf7f58bcc4f3ce9020edcd791c5df800198716bcc2a2c7431540c6d055526473642826089430d4  hanoip-usb-role.service
 b0bf18d5039d61e5479202ba56670d10cc3d81685a3d19b7690327fcbd7e2062792a389bfbad60a018a66d80a7d05750d6404e9f1852adbf7902c4ac1dbdd511  hanoip-usb-role-watch.service
-9331e42a882f35be685c5e6c813960dd934fcba0b32205cb7b1ed61bafd2b8ebcb88f7c049a2695a10f6a952dfcbbe0d7b3a8e9b7a34b16f40691f07900531e1  hanoip.preset
+a098f2b93a670a247db1d6b434b73bd3b4809964a361296bd510aa073b67b7ffc0a76bcc6bb7f05566802de5dd6ce980117ec1b5afd03d2bedf65c62257754ae  hanoip-usb-recover
+fb545cc61ac690aac8b9065587f3dc5d8e7b938c3ad2820c26e0430ac8f168660be375acf90c252d3febd5c3efb535f6cf48b1641e6be7edc43393c01b425f63  hanoip-usb-recover.service
+0b17922dd9d1e4de8f03dc7d5f7a75f1ffaff5e4f04fd327fe491379fd3aaf918d72af512efef884e09b2df964803badad3c819a16743ce534a326b21d119133  hanoip.preset
 a7d7f15455264025e1d9d411af7f733ea2d3bace44d3920e3d328b3596bf454494e2e11c83231836f317773b6d7c24517cd7335f305d619f649dcf75621692b0  hanoip-health
 f7a55fa78f777b6bd8f59faed0370ce2a4147db68e41f93136c13384ccee61b9121c3fb02edc2f4515f5ccd18fc5150bd51426ba629e3becd9efbab92fc7a192  hanoip-health.service
 9a4ca1d97abaec198ef830542b92f5c17ab675223aae363b42e922bc7dd3a0db64939e419dbf2cdbf8f2784273b7da74585665c828c2ea6b38b3869bc5889c92  hanoip-local.service
