@@ -1,0 +1,24 @@
+#!/bin/sh
+# Release gate for the server's 24 h run: reads the phone's uptime and passes once the current boot has run 24 h with no
+# hub or disk event in its kernel log (issue #28: the hub re-enumerating, the xHCI dying, a file system forced read-only).
+# Read-only on the phone. HANOIP_SSH replaces scripts/hanoip-sudo (the test does); HANOIP_MIN_UPTIME changes the 24 h.
+# Usage: scripts/check-uptime
+set -eu
+cd "$(dirname "$0")/.."
+ssh=${HANOIP_SSH:-scripts/hanoip-sudo}
+need=${HANOIP_MIN_UPTIME:-86400}
+up=$("$ssh" 'cut -d. -f1 /proc/uptime' | tail -1)
+case "$up" in ""|*[!0-9]*) echo "check-uptime: no uptime from the phone ('$up')" >&2; exit 1 ;; esac
+# The kernel log of this boot needs root; a count of 0 is printed when nothing matches.
+events=$("$ssh" "journalctl -k -b --no-pager 2>/dev/null | grep -cE 'HC died|USB disconnect|forced readonly|Read-only file system' || true" | tail -1)
+case "$events" in ""|*[!0-9]*) echo "check-uptime: no event count from the phone ('$events')" >&2; exit 1 ;; esac
+hours=$((up / 3600))
+if [ "$events" -gt 0 ]; then
+	echo "check-uptime: up ${hours} h, but this boot has $events hub or disk event(s) in the kernel log (issue #28): not counted" >&2
+	exit 1
+fi
+if [ "$up" -lt "$need" ]; then
+	echo "check-uptime: up ${hours} h of $((need / 3600)) h, no hub or disk event so far"
+	exit 1
+fi
+echo "check-uptime: up ${hours} h with no hub or disk event: the 24 h run passes"
