@@ -1,0 +1,116 @@
+#!/bin/sh
+# Checks the Ethernet-first Wi-Fi switch (hanoip-ethernet-wifi, its unit and the device package wiring) without the phone.
+# The loop runs against stand-ins: fake nmcli and ip log or answer their calls, a fake sleep moves the eth0 carrier from one
+# sample to the next, and PATH holds nothing else, so a real nmcli cannot run.
+set -eu
+cd "$(dirname "$0")/.."
+fail() { echo "FAIL: $*" >&2; exit 1; }
+pkg=pmaports/device/testing/device-motorola-hanoip
+apk=$pkg/APKBUILD
+script=$pkg/hanoip-ethernet-wifi
+unit=$pkg/hanoip-ethernet-wifi.service
+
+# --- 1. Wiring: the device package installs both files, the mainline subpackage moves them, the sums match ---
+[ -f "$script" ] || fail "$script is missing"
+[ -f "$unit" ] || fail "$unit is missing"
+[ -x "$script" ] || fail "$script is not executable (NetworkManager and systemd run it: 0755)"
+sh -n "$script" || fail "$script does not parse"
+for f in hanoip-ethernet-wifi hanoip-ethernet-wifi.service; do
+	grep -qE "^[[:space:]]+$f\$" "$apk" || fail "$f is not in source= of $apk"
+	h=$(sha512sum "$pkg/$f" | cut -d' ' -f1)
+	grep -qF "$h  $f" "$apk" || fail "sha512sums of $apk does not match $f"
+done
+grep -qF 'install -Dm755 "$srcdir/hanoip-ethernet-wifi" "$pkgdir/usr/bin/hanoip-ethernet-wifi"' "$apk" \
+	|| fail "package() does not install the script 0755 under /usr/bin"
+grep -qF 'install -Dm644 "$srcdir/hanoip-ethernet-wifi.service" "$pkgdir/etc/systemd/system/hanoip-ethernet-wifi.service"' "$apk" \
+	|| fail "package() does not install the unit 0644 under /etc/systemd/system"
+awk '/^mainline\(\)/,/^}/' "$apk" | grep -qF 'usr/bin/hanoip-ethernet-wifi etc/systemd/system/hanoip-ethernet-wifi.service' \
+	|| fail "mainline() does not move the script and the unit"
+grep -qxF 'enable hanoip-ethernet-wifi.service' "$pkg/hanoip.preset" || fail "hanoip.preset does not enable the unit (mkosi's preset-all would drop it)"
+echo "wiring: ok"
+
+# The unit: started after NetworkManager, Wi-Fi back on when it stops, and a crash restarts it after a pause (a crash loop
+# must not toggle the radio every second).
+grep -qxF 'After=NetworkManager.service' "$unit" || fail "$unit does not start after NetworkManager"
+grep -qxF 'Wants=NetworkManager.service' "$unit" || fail "$unit does not want NetworkManager"
+grep -qxF 'ExecStart=/usr/bin/hanoip-ethernet-wifi' "$unit" || fail "$unit does not run the script"
+grep -qxF 'ExecStopPost=-/usr/bin/nmcli radio wifi on' "$unit" || fail "$unit does not turn Wi-Fi on when it stops"
+grep -qxF 'Restart=on-failure' "$unit" || fail "$unit does not restart after a failure"
+grep -qE '^RestartSec=([1-9][0-9]+|[6-9])$' "$unit" || fail "$unit RestartSec is below the debounce"
+grep -qxF 'WantedBy=multi-user.target' "$unit" || fail "$unit is not wanted by multi-user.target"
+echo "unit: ok"
+
+# --- 2. Behaviour: one sample a second; Wi-Fi changes only after five samples in a row ---
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+bin=$tmp/bin; mkdir "$bin"
+# grep and cat are the only real tools on PATH; the script needs nothing else but the three stand-ins.
+for t in cat grep; do ln -s "$(command -v $t)" "$bin/$t"; done
+cat > "$bin/nmcli" <<'EOF'
+#!/bin/sh
+echo "nmcli $*" >> "$FAKE_CALLS"
+EOF
+cat > "$bin/ip" <<'EOF'
+#!/bin/sh
+case "$*" in
+*addr*) [ -n "${FAKE_IPV4:-}" ] && echo "2: eth0    inet 192.168.10.5/24 brd 192.168.10.255 scope global eth0" ;;
+*route*) [ -n "${FAKE_ROUTE:-}" ] && echo "default via 192.168.10.1 dev eth0" ;;
+esac
+exit 0
+EOF
+# One call per sample: the carrier of sample n+1 is word n+1 of FAKE_SEQ; the last word stays once the list is used up.
+cat > "$bin/sleep" <<'EOF'
+#!/bin/sh
+n=$(cat "$FAKE_N"); n=$((n + 1)); echo "$n" > "$FAKE_N"
+i=0
+for v in $FAKE_SEQ; do i=$((i + 1)); [ "$i" -eq "$n" ] && echo "$v" > "$FAKE_CARRIER"; done
+exit 0
+EOF
+chmod +x "$bin/nmcli" "$bin/ip" "$bin/sleep"
+calls=$tmp/calls
+mkdir -p "$tmp/sys/eth0"
+
+# run SEQ: the carrier of each sample (words, one sample each). FAKE_IPV4 and FAKE_ROUTE, when set, are the address and the
+# default route through eth0 that the stand-in ip reports for every sample.
+run() {
+	rm -f "$calls" "$tmp/n" "$tmp/err"
+	echo 1 > "$tmp/n"
+	n=0; for _ in $1; do n=$((n + 1)); done
+	echo "${1%% *}" > "$tmp/sys/eth0/carrier"
+	env -i PATH="$bin" FAKE_CALLS="$calls" FAKE_CARRIER="$tmp/sys/eth0/carrier" FAKE_SEQ="$1" FAKE_N="$tmp/n" \
+		FAKE_IPV4="${FAKE_IPV4:-}" FAKE_ROUTE="${FAKE_ROUTE:-}" HANOIP_SYSFS="$tmp/sys" HANOIP_WIFI_SAMPLES="$n" \
+		"$PWD/$script" >/dev/null 2>"$tmp/err" || { cat "$tmp/err" >&2; fail "the script exited with an error"; }
+	touch "$calls"
+}
+off() { grep -qxF 'nmcli radio wifi off' "$calls"; }
+on() { grep -qxF 'nmcli radio wifi on' "$calls"; }
+count() { grep -cxF "$1" "$calls" || true; }
+
+# eth0 with carrier, an address and a default route: Wi-Fi goes off, once.
+FAKE_IPV4=1 FAKE_ROUTE=1 run "1 1 1 1 1 1 1"
+off || fail "eth0 with carrier, an IPv4 address and a default route did not turn Wi-Fi off"
+[ "$(count 'nmcli radio wifi off')" = 1 ] || fail "Wi-Fi was switched off more than once while eth0 stayed up"
+
+# eth0 gone (no carrier): Wi-Fi comes back on, and it was never switched off.
+FAKE_IPV4=1 FAKE_ROUTE=1 run "0 0 0 0 0 0 0"
+on || fail "eth0 without carrier did not turn Wi-Fi on (also the boot case with no Ethernet)"
+! off || fail "eth0 without carrier turned Wi-Fi off"
+
+# An address but no default route through eth0: not ready, Wi-Fi stays on.
+FAKE_IPV4=1 FAKE_ROUTE= run "1 1 1 1 1 1 1"
+! off || fail "eth0 with carrier and an address but no default route turned Wi-Fi off"
+
+# A default route but no IPv4 address on eth0 (link-local only does not count either): Wi-Fi stays on.
+FAKE_IPV4= FAKE_ROUTE=1 run "1 1 1 1 1 1 1"
+! off || fail "eth0 with carrier and a default route but no IPv4 address turned Wi-Fi off"
+
+# Off while eth0 is up, then eth0 lost: the order is off, then on.
+FAKE_IPV4=1 FAKE_ROUTE=1 run "1 1 1 1 1 1 0 0 0 0 0 0"
+[ "$(head -n 1 "$calls")" = 'nmcli radio wifi off' ] && [ "$(count 'nmcli radio wifi on')" = 1 ] \
+	|| fail "losing eth0 after Wi-Fi went off did not bring Wi-Fi back on once, after the switch off"
+
+# Debounce: a link that is good for four samples and bad for one never reaches five in a row, so the radio never changes.
+FAKE_IPV4=1 FAKE_ROUTE=1 run "1 1 1 1 0 1 1 1 1 0 1 1 1 1 0 1 1 1 1 0"
+[ ! -s "$calls" ] || fail "a flapping link toggled Wi-Fi: $(cat "$calls" | tr '\n' ' ')"
+echo "behaviour: ok"
+echo "ethernet wifi: ok"

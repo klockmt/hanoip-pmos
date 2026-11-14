@@ -1,0 +1,32 @@
+#!/bin/sh
+# Wi-Fi off while the Ethernet adapter (eth0, the USB hub's cdc_ether) can carry the server: carrier, an IPv4 address and a
+# default route through eth0. Any of the three gone turns Wi-Fi back on. It polls, because NetworkManager's dispatcher does
+# not run when eth0 never appears at boot, nor when an address or a route is removed. NetworkManager keeps `nmcli radio wifi`
+# across reboots, so the unit turns Wi-Fi on when it stops. `nmcli radio wifi` is a software block (rfkill): the Wi-Fi
+# firmware stays loaded and hanoip-modem is not touched. The radio changes only after $stable samples in a row agree.
+set -u
+dev=${HANOIP_WIFI_DEV:-eth0}
+sysfs=${HANOIP_SYSFS:-/sys/class/net}
+stable=${HANOIP_WIFI_STABLE:-5}
+period=${HANOIP_WIFI_PERIOD:-1}
+samples=${HANOIP_WIFI_SAMPLES:-} # bounds the loop for the test; unset on the phone
+
+ready() {
+	[ "$(cat "$sysfs/$dev/carrier" 2>/dev/null)" = 1 ] || return 1
+	ip -4 -o addr show dev "$dev" scope global | grep -q 'inet ' || return 1
+	ip -4 route show default dev "$dev" | grep -q .
+}
+
+seen= run=0 applied= i=0
+while :; do
+	if ready; then want=off; else want=on; fi
+	if [ "$want" = "$seen" ]; then run=$((run + 1)); else seen=$want; run=1; fi
+	# Act once per change: $applied keeps a later manual `nmcli radio wifi` from being undone every second.
+	if [ "$run" -ge "$stable" ] && [ "$want" != "$applied" ] && nmcli radio wifi "$want"; then
+		applied=$want
+		echo "wifi $want ($dev ready: $([ "$want" = off ] && echo yes || echo no))"
+	fi
+	i=$((i + 1))
+	if [ -n "$samples" ] && [ "$i" -ge "$samples" ]; then exit 0; fi
+	sleep "$period"
+done

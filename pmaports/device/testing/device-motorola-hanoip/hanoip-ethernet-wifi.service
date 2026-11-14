@@ -1,0 +1,14 @@
+[Unit]
+Description=Wi-Fi off while the Ethernet adapter carries the server, on otherwise
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+ExecStart=/usr/bin/hanoip-ethernet-wifi
+# Wi-Fi on when the unit stops, so a stopped server is reachable over Wi-Fi again (the leading - ignores a NetworkManager that is gone).
+ExecStopPost=-/usr/bin/nmcli radio wifi on
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
