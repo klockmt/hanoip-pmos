@@ -114,7 +114,9 @@ the boot image.
 **Our own build, same day.** Linux 7.3 from kernel.org (`linux-7.3.tar.xz`, checked against `sha256sums.asc`; its git
 tree is `30fd2ef8`, the tree of tag v7.3) plus the 195 patches (`kernel/mainline/patches`) gives tree `0cf5808c`,
 the one that booted. Patch 0127 then changed to `dr_mode = "otg"` with a role switch (the hub never enumerated with
-`peripheral`): the tree is now `398868f4`, not booted yet, and it is the pin in the APKBUILD and `scripts/build-mainline-kernel`. `config-7.3-hanoip` plus `QCOM_WDT=y` and `WATCHDOG_SYSFS=y`, built with the host's
+`peripheral`): the tree is now `398868f4`, the pin in the APKBUILD and `scripts/build-mainline-kernel`, and it booted on the phone in
+images `26111302` and `26111303` (2026-11-13). The images carry no DTB of their own, so the DT that runs is still U-Boot's
+(already `otg`): the change keeps the kernel's DTB consistent with it and does not change a boot. `config-7.3-hanoip` plus `QCOM_WDT=y` and `WATCHDOG_SYSFS=y`, built with the host's
 `aarch64-linux-gnu-gcc` 16.2 (the first set used 13.3), with no errors. The DTB came out byte-identical to the first set's (`900e11eb`).
 Booted the same way with our modules in the initramfs and `panic=5 oops=panic` on the command line:
 
