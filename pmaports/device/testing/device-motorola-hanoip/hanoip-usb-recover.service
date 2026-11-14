@@ -1,0 +1,14 @@
+[Unit]
+Description=Recover the NAS disk when the USB hub under the Type-C port drops (issue #28)
+Documentation=man:systemd.service(5)
+DefaultDependencies=no
+After=hanoip-usb-role.service
+
+[Service]
+ExecStart=/usr/bin/hanoip-usb-recover watch
+Restart=on-failure
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=sysinit.target
