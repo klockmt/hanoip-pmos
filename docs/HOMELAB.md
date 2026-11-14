@@ -90,6 +90,15 @@ Switched off by the preset, because a headless server does not need them: avahi 
 the login prompt on the tty (`getty@`). LLMNR and mDNS are off in resolved (its stub stays; AdGuard binds loopback only),
 and core files are not written.
 
+**Wi-Fi off while Ethernet carries the server.** `hanoip-ethernet-wifi.service` (script `/usr/bin/hanoip-ethernet-wifi`)
+runs `nmcli radio wifi off` while eth0 has carrier, an IPv4 address and a default route through it, and `nmcli radio wifi on`
+when any of the three is gone (cable out, hub unplugged, lease lost). It samples once a second and changes the radio only
+after five samples in a row agree. The radio is a software block (rfkill): the Wi-Fi firmware stays loaded and `hanoip-modem`
+is not touched. NetworkManager keeps the radio state across reboots, so the unit decides at boot too, and stopping it turns
+Wi-Fi on. Expect an SSH session over Wi-Fi to drop about 5 s after eth0 comes up. Check: `nmcli radio wifi` and
+`ip -4 -o addr show dev eth0`. Tested with stand-ins only (`scripts/test-ethernet-wifi`), not yet on the phone. Known limit:
+an eth0 with an address and a route but no uplink keeps Wi-Fi off, and then the phone is reachable over eth0 or USB only.
+
 `systemctl is-system-running` says `running` when nothing failed (checked 2026-11-12, no failed unit). `hanoip-status` prints
 the health of the phone, one group of values per line (`hanoip-status -h` says what each is and where it is read).
 

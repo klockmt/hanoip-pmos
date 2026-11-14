@@ -4,7 +4,7 @@
 pkgname=device-motorola-hanoip
 pkgdesc="Motorola Moto G (60)"
 pkgver=0
-pkgrel=55
+pkgrel=56
 _qrtr_rev=29e36ae164389580a0f8ea7a7fdb728140ae978d
 _pdmapper_rev=5ecd2fe926aca7abfe40724177f63b942cff3947
 url="https://postmarketos.org"
@@ -109,6 +109,8 @@ source="
 	hanoip.preset
 	hanoip-health
 	hanoip-health.service
+	hanoip-ethernet-wifi
+	hanoip-ethernet-wifi.service
 	hanoip-local.service
 	adguardhome.service
 	smb.service
@@ -226,6 +228,9 @@ package() {
 	install -Dm644 "$srcdir/hanoip-usb-recover.service" "$pkgdir/etc/systemd/system/hanoip-usb-recover.service"
 	install -Dm755 "$srcdir/hanoip-health" "$pkgdir/usr/bin/hanoip-health"
 	install -Dm644 "$srcdir/hanoip-health.service" "$pkgdir/etc/systemd/system/hanoip-health.service"
+	# Wi-Fi off while eth0 carries the server (a poll loop: the NM dispatcher misses boot without eth0 and lost addresses).
+	install -Dm755 "$srcdir/hanoip-ethernet-wifi" "$pkgdir/usr/bin/hanoip-ethernet-wifi"
+	install -Dm644 "$srcdir/hanoip-ethernet-wifi.service" "$pkgdir/etc/systemd/system/hanoip-ethernet-wifi.service"
 	install -Dm644 "$srcdir/hanoip-local.service" "$pkgdir/etc/systemd/system/hanoip-local.service"
 	install -Dm644 "$srcdir/hanoip.preset" "$pkgdir/usr/lib/systemd/system-preset/10-hanoip.preset"
 	ln -s /dev/null "$pkgdir/etc/systemd/system/qbootctl.service"
@@ -340,6 +345,7 @@ mainline() {
 		usr/bin/hanoip-usb-role etc/systemd/system/hanoip-usb-role.service etc/systemd/system/hanoip-usb-role-watch.service \
 		usr/bin/hanoip-usb-recover etc/systemd/system/hanoip-usb-recover.service \
 		usr/bin/hanoip-health etc/systemd/system/hanoip-health.service \
+		usr/bin/hanoip-ethernet-wifi etc/systemd/system/hanoip-ethernet-wifi.service \
 		etc/systemd/system/hanoip-local.service \
 		usr/lib/systemd/system-preset etc/systemd/system/qbootctl.service etc/udev/rules.d/90-bootmac-bluetooth.rules \
 		etc/systemd/system/adguardhome.service etc/systemd/system/smb.service etc/systemd/system/syncthing.service etc/systemd/system/mnt-hd\\x2da.mount etc/systemd/system/mnt-hd\\x2db.mount usr/lib/sysusers.d/20-hanoip-services.conf \
@@ -424,9 +430,11 @@ c08b01b39d4bc6afaefd8935fc8012d82181b9e6c72f761929807448f844ec5cab0bfc7f433211eb
 b0bf18d5039d61e5479202ba56670d10cc3d81685a3d19b7690327fcbd7e2062792a389bfbad60a018a66d80a7d05750d6404e9f1852adbf7902c4ac1dbdd511  hanoip-usb-role-watch.service
 a098f2b93a670a247db1d6b434b73bd3b4809964a361296bd510aa073b67b7ffc0a76bcc6bb7f05566802de5dd6ce980117ec1b5afd03d2bedf65c62257754ae  hanoip-usb-recover
 fb545cc61ac690aac8b9065587f3dc5d8e7b938c3ad2820c26e0430ac8f168660be375acf90c252d3febd5c3efb535f6cf48b1641e6be7edc43393c01b425f63  hanoip-usb-recover.service
-0b17922dd9d1e4de8f03dc7d5f7a75f1ffaff5e4f04fd327fe491379fd3aaf918d72af512efef884e09b2df964803badad3c819a16743ce534a326b21d119133  hanoip.preset
+7463d07b81e068de2057406da17720bf34b423c6a7ab6c04fc32192178444d0d0296076d192ff90c8dbd56853687c0d2722c74709d71f7a7d53e44075fb6b889  hanoip.preset
 a7d7f15455264025e1d9d411af7f733ea2d3bace44d3920e3d328b3596bf454494e2e11c83231836f317773b6d7c24517cd7335f305d619f649dcf75621692b0  hanoip-health
 f7a55fa78f777b6bd8f59faed0370ce2a4147db68e41f93136c13384ccee61b9121c3fb02edc2f4515f5ccd18fc5150bd51426ba629e3becd9efbab92fc7a192  hanoip-health.service
+0b2c775e319d7ef348689fab38568468c33b1474ac4f478c0ec889ed102e2e8bcc7f20ee6752d820a761202157196b83a9dd1e6df10419a86fda4756d9143161  hanoip-ethernet-wifi
+ab229eef59dbb417ba1d87af51acd391cc710588996bf0bb95b90a74edf2f73314d680ea5c2361be668ffdcb4459a37f0394da8d8596da0c3838e659bb848412  hanoip-ethernet-wifi.service
 9a4ca1d97abaec198ef830542b92f5c17ab675223aae363b42e922bc7dd3a0db64939e419dbf2cdbf8f2784273b7da74585665c828c2ea6b38b3869bc5889c92  hanoip-local.service
 e8b7ee04edbc67e19c2936a8971f05b217488e6f72f5498afc942d9e3db04a126670c9a989182e32bec9aac26936f5014472538ea4b2279f6b9e2472afd37a09  adguardhome.service
 46369919006d0b53419468cf48035eefa53411c63d1e418a80217c5dd81150d746710b4773a93c502540aaefc162d96e369cd341348def86f51cdcad2eb13abb  smb.service
