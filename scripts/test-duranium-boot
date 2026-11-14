@@ -54,19 +54,26 @@ mkdir -p "$udcs/a600000.usb" "$typec" "$cfgr"
 usbrole() { # usbrole yes|no UDC_STATE: the role is device, the Type-C partner is there or not, the gadget is in that state
 	echo device > "$role"; rm -rf "$typec/port0-partner"
 	[ "$1" = yes ] && mkdir -p "$typec/port0-partner"
+	mkdir -p "$typec/port0"; echo '[dual] source sink' > "$typec/port0/port_type"
 	echo "$2" > "$udcs/a600000.usb/state"
+	: > "$calls"
 	return 0
 }
 roleenv() { HANOIP_ROLE=$role HANOIP_TYPEC_DIR=$typec HANOIP_UDC_DIR=$udcs HANOIP_CONFIGFS=$cfgr HANOIP_WAIT=2 HANOIP_ONCE=1 "$@"; }
 usbrole yes "not attached"
 roleenv sh "$d/hanoip-usb-role" boot || fail "the USB role script failed at boot"
 [ "$(cat "$role")" = host ] || fail "a hub on the cable with no PC enumerating the gadget did not get the host role at boot (no Ethernet, no disk)"
+# Only switching the role leaves a hub that was on the cable since boot at 12 Mbit/s (2026-11-14); a Type-C reconnection
+# (port type source, then dual) makes it attach again like a replug, and it comes up at 480 Mbit/s.
+grep -q 'reconnecting the Type-C port' "$calls" && [ "$(cat "$typec/port0/port_type")" = dual ] || fail "the hub on the cable at boot got the host role without a Type-C reconnection (it stays at 12 Mbit/s)"
 usbrole yes configured
 roleenv sh "$d/hanoip-usb-role" boot || fail "the USB role script failed at boot"
 [ "$(cat "$role")" = device ] || fail "a PC on the cable (gadget configured) was taken to the host role: usb0 would be lost"
+[ "$(cat "$typec/port0/port_type")" = '[dual] source sink' ] || fail "the Type-C port was reconnected with a PC on the cable"
 usbrole no "not attached"
 roleenv sh "$d/hanoip-usb-role" boot || fail "the USB role script failed at boot"
 [ "$(cat "$role")" = device ] || fail "nothing on the cable, but the role was changed"
+[ "$(cat "$typec/port0/port_type")" = '[dual] source sink' ] || fail "the Type-C port was reconnected with nothing on the cable"
 # Once the hub is unplugged the port goes back to the device role and the gadget comes back, so a PC plugged in later works.
 echo host > "$role"; rm -rf "$typec/port0-partner"; : > "$calls"
 roleenv sh "$d/hanoip-usb-role" watch || fail "the USB role script failed while watching"
@@ -292,6 +299,7 @@ reset() { # the port in the host role, nothing on the cable, both NAS partitions
 	rm -rf "$rc/usb" "$rc/labels" "$rc/typec" "$rc/state" "$rc/xhci" "$rc/port"
 	mkdir -p "$rc/usb" "$rc/labels" "$rc/typec" "$rc/xhci" "$rc/port"
 	echo host > "$rc/role"; echo 0 > "$rc/port/disable"; : > "$rc/xhci/unbind"; : > "$rc/xhci/bind"
+	mkdir -p "$rc/typec/port0"; echo '[dual] source sink' > "$rc/typec/port0/port_type"
 	: > "$rc/kmsg"; printf '/dev/sdb /mnt/hd-a btrfs rw,relatime 0 0\n' > "$rc/mounts"
 	: > "$calls"
 }
@@ -330,9 +338,10 @@ recover "" watch || fail "the USB watch exited with an error"
 [ ! -s "$calls" ] || fail "a hub on the cable started the recovery"
 set_hub off; : > "$calls"
 recover "" watch || fail "the USB watch exited with an error"
-inorder 'stopping smb and syncthing' 'umount -l /mnt/hd-a' 'rebinding xhci-hcd.1.auto' 'role none, then host' 'port 1 off, then on' \
+inorder 'stopping smb and syncthing' 'umount -l /mnt/hd-a' 'rebinding xhci-hcd.1.auto' 'Type-C port source, then dual' 'role none, then host' 'port 1 off, then on' \
 	'systemctl start mnt-hd' 'systemctl start smb.service syncthing.service' \
-	|| { cat "$calls" >&2; fail "the recovery did not run its steps in order (stop, unmount, rebind, role, port, mounts, services)"; }
+	|| { cat "$calls" >&2; fail "the recovery did not run its steps in order (stop, unmount, rebind, Type-C, role, port, mounts, services)"; }
+[ "$(cat "$rc/typec/port0/port_type")" = dual ] || fail "the Type-C port was left in the source type after the recovery"
 grep -qx xhci-hcd.1.auto "$rc/xhci/unbind" && grep -qx xhci-hcd.1.auto "$rc/xhci/bind" || fail "the xHCI was not rebound"
 [ "$(cat "$rc/port/disable")" = 0 ] && [ "$(cat "$rc/role")" = host ] || fail "the port was left disabled or in another role"
 # The hub back during the first wait (after the rebind): no role or port cycle, the services start again.
@@ -340,7 +349,13 @@ reset; set_partner on; set_hub on; recover "" watch || fail "the USB watch exite
 set_hub off; : > "$calls"
 recover 'rebinding xhci-hcd.1.auto' watch || fail "the USB watch exited with an error"
 inorder 'rebinding xhci-hcd.1.auto' 'systemctl start smb.service syncthing.service' || { cat "$calls" >&2; fail "the services did not start after the rebind brought the hub back"; }
-! grep -q 'role none' "$calls" && ! grep -q 'port 1 off' "$calls" || fail "the hub came back after the rebind, but the role or the port was cycled anyway"
+! grep -q 'Type-C port source' "$calls" && ! grep -q 'role none' "$calls" && ! grep -q 'port 1 off' "$calls" || fail "the hub came back after the rebind, but the Type-C port, the role or the port was cycled anyway"
+# The hub back after the Type-C reconnection (what a replug does): the role and the port are left alone.
+reset; set_partner on; set_hub on; recover "" watch || fail "the USB watch exited with an error"
+set_hub off; : > "$calls"
+recover 'Type-C port source, then dual' watch || fail "the USB watch exited with an error"
+inorder 'Type-C port source, then dual' 'systemctl start smb.service syncthing.service' || { cat "$calls" >&2; fail "the services did not start after the Type-C reconnection brought the hub back"; }
+! grep -q 'role none' "$calls" && ! grep -q 'port 1 off' "$calls" || fail "the hub came back after the Type-C reconnection, but the role or the port was cycled anyway"
 # The hub back after the role cycle: the port is left alone.
 reset; set_partner on; set_hub on; recover "" watch || fail "the USB watch exited with an error"
 set_hub off; : > "$calls"
